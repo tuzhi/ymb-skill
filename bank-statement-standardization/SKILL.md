@@ -16,6 +16,19 @@ description: >-
 把杂乱的原始银行流水变成**统一、可追溯、可校验**的标准化数据。流程分四个阶段，对应四份提示词，
 也对应 `scripts/` 下四个脚本。核心理念（务必遵守）：
 
+## 快速生产路径（真实任务默认且必须使用）
+
+收到一个客户流水文件夹后，不要预读 PDF、不要先猜客户姓名、不要逐份调用 `standardize.py`、不要手工执行阶段脚本。
+`--client` 只是授信客户归档名，不是流水账户户名；省略时主入口优先使用流水中识别出的唯一户名，
+无法唯一识别时才使用输入文件夹名。直接执行一次：
+
+```powershell
+python scripts\orchestrator.py run --folder "<客户流水文件夹>"
+```
+
+仅当主入口返回【错误】或产物进入人工复核时，才读取日志、映射报告或单独调用调试脚本。禁止为了确定户名而预读
+PDF：真实户名由 `standardize.py` 在主流程内部自动识别。
+
 - **字段统一用中文**；输出明细为 CSV、报告为 JSON。
 - **只处理非图片型流水，自动排除杂入的其它文件**：支持 Excel(.xlsx/.xls)/CSV/文本/**可抽取文本的 PDF**。
   用户常把图片、扫描件、Word/PPT、**发票/名册等非流水表格**混在一堆里——这些会被自动跳过（不报错、不污染结果），
@@ -75,8 +88,9 @@ description: >-
 
 ## 四阶段流程与脚本
 
-所有脚本在 `scripts/`，依赖 `pandas openpyxl xlrd pdfplumber`（缺失时先
-`pip install pandas openpyxl xlrd pdfplumber`）。
+所有脚本在 `scripts/`。正式任务直接使用宿主机 `python` 执行，不创建私有 venv、不套 PowerShell。
+仅当入口报告缺少依赖时，在部署阶段执行一次 `python -m pip install -r requirements-lock.txt`。
+禁止在每次任务中重复安装依赖，也不要执行不带锁定文件的裸 `pip install`。
 
 ### 阶段一 · 单文件标准化与字段映射 —— `standardize.py`
 识别表头、账户类型、本方户名/账号，把原始列按同义词词典映射到标准字段，并自动处理三种金额结构、
@@ -187,13 +201,13 @@ PDF 等无账号抬头的文件，账户按「未识别账户#文件名」隔离
 处理真实流水时，AI 必须执行：
 
 ```bash
-<私有 venv python> scripts/orchestrator.py run --client 客户名 --folder 客户原始文件夹
+python scripts/orchestrator.py run --folder 客户原始文件夹 [--client 授信客户归档名]
 ```
 
 执行前置要求：
 
-1. 首次使用先执行 `scripts/bootstrap.ps1`（Windows）或 `scripts/bootstrap.sh`（Linux/macOS）。
-   bootstrap 检测 Python `3.8.6`；缺失时安装；随后创建 skill 私有 venv 并安装 `requirements.txt`。
+1. 默认直接使用宿主机 `python`，不检测或自动安装特定 Python 版本、不创建 venv、不在任务内安装依赖。
+   缺少依赖时执行【错误】，按提示在部署阶段安装 `requirements-lock.txt` 后重试。
 2. 默认不限制模型，不要求宿主支持 `/model` 命令或注入模型环境变量。
 3. 仅在宿主确实支持模型信息注入时，可选传入 `--require-model <模型ID>`；
    此时宿主需设置 `SKILL_ACTIVE_MODEL=<模型ID>`，核验失败执行【错误】。
@@ -227,7 +241,7 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 ## 典型用法（推荐路径）
 
 1. 每个客户一个文件夹，放入其全部原始流水文件。
-2. 首次使用运行 `bootstrap.ps1` 或 `bootstrap.sh`，准备 Python `3.8.6` 私有 venv 与依赖。
+2. 缺少依赖时，在部署阶段执行一次 `python -m pip install -r requirements-lock.txt`。
 3. 对每个客户跑 `orchestrator.py run`，得到正式交付物、日志和阶段验收回执。
 4. 打开各客户的 `__整合报告.json`，处理 `人工复核事项`（余额断点、疑似重复、账户类型存疑等）；
    需要语义判断时配合 `references/` 的对应提示词。
@@ -241,8 +255,7 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 - `references/附件B-标签体系参考.md`：示例标签体系与打标基本原则。
 - `references/附件C-附件清单.md`：每个阶段建议随提示词附带的材料 + 脱敏与输出检查建议。
 - `assets/tag_rules.csv`：打标规则库（约 7200 条，由 `build_rules_from_xlsx.py` 从规则文档生成；可替换为机构规则库）。
-- `scripts/`：生产主入口 `orchestrator.py` + 阶段验收 `validate_stage.py` + 环境引导
-  `bootstrap.ps1/bootstrap.sh` + 内部业务脚本。
+- `scripts/`：生产主入口 `orchestrator.py` + 阶段验收 `validate_stage.py` + 内部业务脚本。
 - `版本说明.md`：相对最早版本的更新记录（字段口径、去重、行序按余额连续性还原、非流水文件排除、`--reuse`、断点率诊断等）。
 
 ## 安装与分发
@@ -252,7 +265,7 @@ Claude Code `~/.claude/skills/`、Kimi Code `~/.kimi/skills/`、WorkBuddy `~/.wo
 OpenClaw `~/.openclaw/skills/`（项目级则放各自 `.<client>/skills/` 或 `.claude/skills/`）。
 也可分发单文件 `bank-statement-standardization.skill`（zip，可解压到 skills 目录或在支持导入的客户端内导入）。
 详细各客户端命令、自检步骤与常见问题见 `README.md`「安装到各类大模型客户端」。
-脚本路径首次使用先运行 `scripts/bootstrap.ps1` 或 `scripts/bootstrap.sh`；纯提示词路径（`references/`）无需任何依赖、可离线。
+脚本路径依赖缺失时执行一次 `python -m pip install -r requirements-lock.txt`；纯提示词路径（`references/`）无需任何依赖、可离线。
 
 ## 数据安全与脱敏
 

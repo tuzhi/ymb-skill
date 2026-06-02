@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """Production entrypoint: audit, execute, validate, and package failures."""
 import argparse
+import csv
 import hashlib
 import json
 import locale
@@ -19,7 +20,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import validate_stage as V
 
 
-EXPECTED_PYTHON = (3, 8, 6)
 IMPORTS = ("pandas", "openpyxl", "xlrd", "pdfplumber")
 
 
@@ -116,13 +116,6 @@ class Runner:
         self.write_manifest()
 
     def preflight(self):
-        current = sys.version_info[:3]
-        if current != EXPECTED_PYTHON:
-            msg = f"需要 Python 3.8.6，当前为 {platform.python_version()}"
-            if self.args.allow_python_mismatch:
-                self.emit("WARNING", "PYTHON_VERSION_MISMATCH", msg)
-            else:
-                raise RuntimeError(msg)
         model = os.environ.get("SKILL_ACTIVE_MODEL", "")
         if self.args.require_model:
             if not model:
@@ -130,11 +123,18 @@ class Runner:
                     f"宿主未提供 SKILL_ACTIVE_MODEL，无法核验当前模型是否为 {self.args.require_model}")
             if model.lower() != self.args.require_model.lower():
                 raise RuntimeError(f"模型不符合要求：期望 {self.args.require_model}，当前 {model}")
-        if self.args.install_requirements:
-            req = os.path.join(os.path.dirname(os.path.dirname(__file__)), "requirements.txt")
-            subprocess.run([sys.executable, "-m", "pip", "install", "-r", req], check=True)
+        missing = []
         for name in IMPORTS:
-            __import__(name)
+            try:
+                __import__(name)
+            except ImportError:
+                missing.append(name)
+        if missing:
+            raise RuntimeError(
+                "缺少 Python 依赖："
+                + ", ".join(missing)
+                + "；请先执行 python -m pip install -r requirements-lock.txt 后重试"
+            )
         probe = os.path.join(self.run_dir, ".write-probe")
         with open(probe, "w", encoding="utf-8") as f:
             f.write(self.run_id)
@@ -156,15 +156,64 @@ class Runner:
         if self.args.force_name:
             cmd.append("--force-name")
         self.emit("INFO", "PIPELINE_START", "开始执行正式流水线", command=cmd)
-        cp = subprocess.run(cmd, text=True, encoding=locale.getpreferredencoding(False), errors="replace",
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        lines = []
+        cp = subprocess.Popen(
+            cmd,
+            text=True,
+            encoding=locale.getpreferredencoding(False),
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        for line in cp.stdout:
+            lines.append(line)
+            print(line, end="", flush=True)
+        returncode = cp.wait()
+        output = "".join(lines)
         with open(os.path.join(self.run_dir, "pipeline.stdout.log"), "w", encoding="utf-8") as f:
-            f.write(cp.stdout)
+            f.write(output)
         with open(os.path.join(self.run_dir, "pipeline.stderr.log"), "w", encoding="utf-8") as f:
-            f.write(cp.stderr)
-        if cp.returncode:
-            raise RuntimeError(f"业务流水线失败，退出码 {cp.returncode}：{cp.stderr[-1000:] or cp.stdout[-1000:]}")
+            f.write("stderr 已合并到 pipeline.stdout.log，以便实时显示。\n")
+        if returncode:
+            raise RuntimeError(f"业务流水线失败，退出码 {returncode}：{output[-1000:]}")
         self.receipt("package_deliverable", "ok", {"command": cmd})
+
+    def refine_client_name(self):
+        """省略 --client 时，用主流程已解析出的唯一户名替换暂存目录名。"""
+        if self.args.client_explicit:
+            return
+        old_client = self.args.client
+        old_work = os.path.join(self.out_dir, "_工作区", safe_name(old_client))
+        names = set()
+        for root, _, files in os.walk(old_work):
+            for filename in files:
+                if not filename.endswith("__standardized.csv"):
+                    continue
+                with open(os.path.join(root, filename), "r", encoding="utf-8-sig", newline="") as f:
+                    for row in csv.DictReader(f):
+                        name = (row.get("本方名称") or "").strip()
+                        if name and name.lower() not in {"nan", "none"}:
+                            names.add(name)
+        if len(names) != 1:
+            if names:
+                self.emit("WARNING", "CLIENT_NAME_AMBIGUOUS",
+                          f"识别到多个本方名称，保留输入文件夹名作为归档名：{old_client}",
+                          detected_names=sorted(names))
+            return
+        client = names.pop()
+        if client == old_client:
+            return
+        old_xlsx = os.path.join(self.out_dir, f"{old_client}_已清洗_待分析.xlsx")
+        new_xlsx = os.path.join(self.out_dir, f"{client}_已清洗_待分析.xlsx")
+        new_work = os.path.join(self.out_dir, "_工作区", safe_name(client))
+        if os.path.exists(old_xlsx):
+            os.replace(old_xlsx, new_xlsx)
+        if os.path.isdir(old_work) and os.path.abspath(old_work) != os.path.abspath(new_work):
+            os.replace(old_work, new_work)
+        self.args.client = client
+        self.manifest["client"] = client
+        self.write_manifest()
+        self.emit("INFO", "CLIENT_NAME_INFERRED", f"已从流水识别归档名：{client}")
 
     def validate(self):
         work = os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
@@ -215,6 +264,7 @@ class Runner:
         try:
             self.preflight()
             self.run_pipeline()
+            self.refine_client_name()
             final = self.validate()
             self.manifest.update({
                 "status": "success", "finished_at": now(),
@@ -250,18 +300,19 @@ def main():
     configure_console()
     ap = argparse.ArgumentParser(description="银行流水标准化正式生产编排器")
     ap.add_argument("command", choices=["run"], help="正式执行流水线")
-    ap.add_argument("--client", required=True)
+    ap.add_argument("--client", help="授信客户归档名；省略时优先使用流水中识别出的唯一户名")
     ap.add_argument("--folder", required=True)
     ap.add_argument("--run-root", help="每次运行的独立归档目录，默认 ./runs")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--force-name", action="store_true")
     ap.add_argument("--require-model",
                     help="可选：要求宿主通过 SKILL_ACTIVE_MODEL 提供并匹配模型 ID")
-    ap.add_argument("--install-requirements", action="store_true", help="执行 pip install -r requirements.txt")
-    ap.add_argument("--allow-python-mismatch", action="store_true", help="仅供迁移测试，不阻断非 3.8.6")
     ap.add_argument("--error-bundle-mode", choices=["full", "safe"], default="full",
                     help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full")
     args = ap.parse_args()
+    args.client_explicit = bool(args.client)
+    if not args.client:
+        args.client = os.path.basename(os.path.abspath(args.folder).rstrip(os.sep)) or "未命名客户"
     return Runner(args).execute()
 
 
