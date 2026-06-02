@@ -48,11 +48,11 @@ def main():
                 bank=args.bank, account_type=args.account_type)
             st = rep["标准化统计"]
             nrev = len(rep["人工复核事项"])
-            print(f"  · {os.path.basename(f)} -> {st['交易笔数']} 笔"
+            print(f"  [OK] {os.path.basename(f)} -> {st['交易笔数']} 笔"
                   f"（{st['金额结构']}）" + (f"，复核{nrev}项" if nrev else ""))
         except S.NotABankStatement as e:
             skipped.append((os.path.basename(f), e.reason))
-            print(f"  ⊘ 跳过 {os.path.basename(f)}：{e.reason}")
+            print(f"  [SKIP] {os.path.basename(f)}：{e.reason}")
         except Exception as e:
             skipped.append((os.path.basename(f), f"解析失败：{e}"))
             print(f"  ! {os.path.basename(f)} 失败：{e}")
@@ -60,7 +60,7 @@ def main():
     if skipped:
         print(f"\n[已跳过 {len(skipped)} 个非流水/无法解析文件]")
         for n, w in skipped:
-            print(f"  ⊘ {n}：{w}")
+            print(f"  [SKIP] {n}：{w}")
 
     print("\n[阶段二] 单客户多文件整合与验证")
     int_csv, int_json, irep = I.integrate(args.customer, [out_dir], out_dir=out_dir)
@@ -75,7 +75,7 @@ def main():
         pb_csv, pb_json, pbrep = PB.run(int_csv, out_dir=out_dir)
         v = pbrep["组合虚拟账户"]
         bc = pbrep["账户余额校验"]
-        print(f"  组合期初 {v['期初合计余额']} → 期末 {v['期末合计余额']}；峰值 {v['峰值合计余额']} 谷值 {v['谷值合计余额']}")
+        print(f"  组合期初 {v['期初合计余额']} -> 期末 {v['期末合计余额']}；峰值 {v['峰值合计余额']} 谷值 {v['谷值合计余额']}")
         print(f"  账户余额校验 {bc['通过账户数']}/{bc['账户总数']} 通过；组合连续性：{pbrep['组合连续性校验']['结论']}")
     except Exception as e:
         print(f"  ! 组合余额计算失败：{e}")

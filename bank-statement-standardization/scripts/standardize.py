@@ -17,7 +17,7 @@ standardize.py — 单个银行流水原始文件 -> 标准化流水（阶段一
   - 低置信项进入人工复核，不自动沉淀为模板。
 
 用法：
-  python standardize.py <原始文件> [--out-dir DIR] [--customer 客户名]
+  python standardize.py <原始文件> [--out-dir DIR] [--customer 户名兜底值]
       [--bank 银行名] [--account-type 对公|个人|未知] [--header-row N]
       [--map 原始列=标准字段 ...]   # 人工覆盖自动映射
 
@@ -487,7 +487,12 @@ def read_rows_pdf(path):
     import pdfplumber
     all_rows = []
     header_sig = None
+    preamble = ""
     with pdfplumber.open(path) as pdf:
+        # 表格页之外的证明抬头常包含真实户名，例如微信支付的「兹证明：张三（居民身份证...）」。
+        # 保留首页文本供统一的账户信息嗅探使用，不能只保留 extract_tables() 的结果。
+        if pdf.pages:
+            preamble = pdf.pages[0].extract_text() or ""
         for page in pdf.pages:
             for tbl in page.extract_tables():
                 for r in tbl:
@@ -506,7 +511,7 @@ def read_rows_pdf(path):
             text = "\n".join(page.extract_text() or "" for page in pdf.pages)
             if "中国农业银行账户活期交易明细清单" in text:
                 return _read_abc_text_pdf(pdf)
-    return "", all_rows
+    return preamble, all_rows
 
 
 def read_rows(path):
@@ -549,6 +554,8 @@ def sniff_account_info(rows, header_idx, preamble=""):
         str(c) for r in upper for c in r if c
     )
     m = re.search(r"(?:户名|账户名称|账户名)[:：]?\s*([^\s,，:：\-]+)", meta)
+    if not m:
+        m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
         info["本方名称"] = m.group(1)
     # 账号：优先带「账号/卡号/账户」标签的；支持掩码 6226****4806
@@ -609,7 +616,8 @@ def build_unique_id(fingerprint, occurrence):
 
 
 def standardize(path, out_dir=None, customer=None, bank=None,
-                account_type=None, header_row=None, overrides=None):
+                account_type=None, header_row=None, overrides=None,
+                force_customer=False):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     file_kind, preamble, rows = read_rows(path)
@@ -633,7 +641,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     data_rows = rows[header_idx + 1:]
 
     acct = sniff_account_info(rows, header_idx, preamble)
-    if customer:
+    if customer and (force_customer or not acct["本方名称"]):
         acct["本方名称"] = customer
     if not account_type:
         account_type = acct["账户类型线索"] or "未知"
@@ -824,7 +832,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         row_self_acct = cell(field_to_cols.get("本方账户", []))
         row_self_name = cell(field_to_cols.get("本方名称", []))
         self_acct = row_self_acct or acct["本方账户"]
-        cust = customer or row_self_name or acct["本方名称"]
+        cust = customer if force_customer and customer else (row_self_name or acct["本方名称"] or customer)
 
         # 交易金额 = 收入金额(空→0) − 支出金额(空→0)，带符号（流入为正、流出为负）；
         # 两者皆空（本行未解析出金额）时留空，不臆造 0。
@@ -972,6 +980,8 @@ def main():
     ap.add_argument("file")
     ap.add_argument("--out-dir")
     ap.add_argument("--customer")
+    ap.add_argument("--force-customer", action="store_true",
+                    help="强制用 --customer 覆盖原始文件识别出的本方名称；默认 --customer 仅作缺失兜底")
     ap.add_argument("--bank")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--header-row", type=int)
@@ -988,16 +998,17 @@ def main():
     try:
         csv_path, json_path, report = standardize(
             args.file, out_dir=args.out_dir, customer=args.customer, bank=args.bank,
-            account_type=args.account_type, header_row=args.header_row, overrides=overrides)
+            account_type=args.account_type, header_row=args.header_row, overrides=overrides,
+            force_customer=args.force_customer)
     except NotABankStatement as e:
-        sys.exit(f"⊘ 跳过 {os.path.basename(args.file)}：{e.reason}")
+        sys.exit(f"[SKIP] {os.path.basename(args.file)}：{e.reason}")
 
     print(f"[OK] {os.path.basename(args.file)}")
     print(f"  标准化流水 -> {csv_path}（{report['标准化统计']['交易笔数']} 笔，"
           f"金额结构「{report['标准化统计']['金额结构']}」）")
     print(f"  映射报告   -> {json_path}")
     if report["人工复核事项"]:
-        print(f"  ⚠ 人工复核 {len(report['人工复核事项'])} 项：" +
+        print(f"  [WARNING] 人工复核 {len(report['人工复核事项'])} 项：" +
               "; ".join(r["问题"] for r in report["人工复核事项"]))
 
 

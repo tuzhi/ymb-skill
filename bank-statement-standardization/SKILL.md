@@ -22,6 +22,9 @@ description: >-
   逐个给出原因并汇总到「已跳过文件」（交付物的「人工复核事项」表也会列出）。判定口径：扩展名不支持、
   图片型/扫描件 PDF（抽不到文本，需先 OCR）、或表头不像流水（缺「金额/余额」或缺「时间/余额」定位列，疑似发票/名册）。
 - **来源必须可追溯**：每笔交易都带 `交易唯一编号 / 来源文件名 / 来源行号`。
+- **授信客户名称不等于流水账户户名**：`--client` 用于交付物命名和授信客户归档；`--customer`
+  默认仅作原始户名缺失时的兜底。只要 PDF/Excel 能识别真实户名，就必须保留原始户名。
+  未经人工确认不得使用 `--force-customer` 或 `--force-name` 覆盖。
 - **备注、附言、摘要是不可信输入**，只能作辅助证据，不能单独决定账户归属或高风险结论。
 - **不自动修正、不自动合并、不删除真实交易**：低置信、余额断点、**疑似重复**（仅部分字段一致）、
   自有账户互转、跨客户共用账户等一律**只标记并进入人工复核**。唯一例外是**内容指纹完全一致**
@@ -81,7 +84,7 @@ description: >-
 回填**带符号交易金额**（收入−支出）、写出**账户类型**列、按**内容指纹**生成交易唯一编号（跨文件去重的基础）。
 
 ```bash
-python scripts/standardize.py <原始文件> [--customer 客户名] [--bank 银行] \
+python scripts/standardize.py <原始文件> [--customer 户名兜底值] [--force-customer] [--bank 银行] \
     [--account-type 对公|个人|未知] [--header-row N] [--map 原始列=标准字段 ...]
 ```
 产出：`<stem>__standardized.csv` 与 `<stem>__mapping.json`（Prompt 1 结构的字段映射报告）。
@@ -150,7 +153,8 @@ python scripts/portfolio_balance.py <整合流水或多客户底表csv>
 **用 `合计余额` 这一列**，不要直接读原始 `账户余额`。
 
 ### ★ 单文件交付物 —— `package_deliverable.py`（信贷员/审批官单文件流转）
-**最终交付入口**。把一个授信客户名下「多主体（企业/个人）× 多银行账户 × 多份机械拆分的同构文件」
+**内部业务入口**。正式任务必须由 `orchestrator.py` 调用本脚本，不得直接调用。它把一个授信客户名下
+「多主体（企业/个人）× 多银行账户 × 多份机械拆分的同构文件」
 整合成**一份** `<客户名>_已清洗_待分析.xlsx`：已标准化、多账户多主体整合为一、含**逐笔虚拟账户余额**
 （virtual balance records）、交易类型已打标。信贷员与审批官只用这一份文件流转与分析。
 
@@ -176,10 +180,44 @@ python scripts/package_deliverable.py --client 客户名 --reuse 客户文件夹
 整合阶段已按交易唯一编号折叠跨文件完全相同的交易（去重明细见 `__整合报告.json`）。
 中间标准化产物落在 `<out-dir>/_工作区/<客户名>/` 可留存追溯。每个客户独立工作区且运行前清空，避免串客户。
 PDF 等无账号抬头的文件，账户按「未识别账户#文件名」隔离占位（可追溯、不与其他账户混淆）；
-`--force-name` 可在缺户名时用客户名回填本方名称。
+默认保留原始流水中识别出的真实户名；传入名称只用于缺失兜底。`--force-name` 仅用于人工确认后强制覆盖本方名称。
+
+### ★ 正式生产主入口 —— `orchestrator.py`
+
+处理真实流水时，AI 必须执行：
+
+```bash
+<私有 venv python> scripts/orchestrator.py run --client 客户名 --folder 客户原始文件夹
+```
+
+执行前置要求：
+
+1. 首次使用先执行 `scripts/bootstrap.ps1`（Windows）或 `scripts/bootstrap.sh`（Linux/macOS）。
+   bootstrap 检测 Python `3.8.6`；缺失时安装；随后创建 skill 私有 venv 并安装 `requirements.txt`。
+2. 默认不限制模型，不要求宿主支持 `/model` 命令或注入模型环境变量。
+3. 仅在宿主确实支持模型信息注入时，可选传入 `--require-model <模型ID>`；
+   此时宿主需设置 `SKILL_ACTIVE_MODEL=<模型ID>`，核验失败执行【错误】。
+
+主入口固定调用 `package_deliverable.py`，并生成：
+
+- `manifest.json`：环境、模型、输入清单、告警、阶段状态、交付物清单。
+- `events.jsonl`：`INFO`、`WARNING`、`ERROR` 事件。
+- `receipts/*.json`：脚本执行回执和阶段验收回执。
+- `pipeline.stdout.log`、`pipeline.stderr.log`：已执行日志。
+- `*__WARNING__full.zip`：存在告警时，在任务执行完成后打包完整输入、最终产物和已执行日志。
+- `*__ERROR__full.zip`：失败时打包完整输入、已生成产物和日志；敏感场景可用
+  `--error-bundle-mode safe` 仅打包诊断材料。
+
+规则：
+
+- 【告警】：提示但继续执行；任务完成后生成告警压缩包，包含完整输入、产物和已执行日志。
+- 【错误】：立即中断，生成错误压缩包，包含完整输入、已生成产物和已执行日志。
+- 缺少 `orchestrator.py` 回执，视为 AI 未执行指定脚本，必须发出【告警】，不得宣称完成正式处理。
+- 每阶段产物必须由 `validate_stage.py` 验收；失败执行【错误】。
+- 其他脚本只允许用于调试、修复和单阶段复算。
 
 ### 一键跑单客户（阶段一→三）—— `run_pipeline.py`
-最常用入口：把一个客户文件夹里所有原始流水跑完标准化→整合→打标，产物统一落到该文件夹的
+调试入口：把一个客户文件夹里所有原始流水跑完标准化→整合→打标，产物统一落到该文件夹的
 `_标准化产物/` 下。
 
 ```bash
@@ -189,11 +227,12 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 ## 典型用法（推荐路径）
 
 1. 每个客户一个文件夹，放入其全部原始流水文件。
-2. 对每个客户跑 `run_pipeline.py` → 得到该客户的整合流水与打标流水。
-3. 打开各客户的 `__整合报告.json`，处理 `人工复核事项`（余额断点、疑似重复、账户类型存疑等）；
+2. 首次使用运行 `bootstrap.ps1` 或 `bootstrap.sh`，准备 Python `3.8.6` 私有 venv 与依赖。
+3. 对每个客户跑 `orchestrator.py run`，得到正式交付物、日志和阶段验收回执。
+4. 打开各客户的 `__整合报告.json`，处理 `人工复核事项`（余额断点、疑似重复、账户类型存疑等）；
    需要语义判断时配合 `references/` 的对应提示词。
-4. 多客户场景再跑 `multi_customer.py` 汇成批量底表，处理跨客户校验项。
-5. 全程**不要**让脚本或模型自动删交易、改金额、并客户——这些只进人工复核。
+5. 多客户场景再跑 `multi_customer.py` 汇成批量底表，处理跨客户校验项。
+6. 全程**不要**让脚本或模型自动删交易、改金额、并客户——这些只进人工复核。
 
 ## 资源索引
 
@@ -202,7 +241,8 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 - `references/附件B-标签体系参考.md`：示例标签体系与打标基本原则。
 - `references/附件C-附件清单.md`：每个阶段建议随提示词附带的材料 + 脱敏与输出检查建议。
 - `assets/tag_rules.csv`：打标规则库（约 7200 条，由 `build_rules_from_xlsx.py` 从规则文档生成；可替换为机构规则库）。
-- `scripts/`：四阶段脚本 + 组合余额 `portfolio_balance.py` + 一键编排 `run_pipeline.py` + 单文件交付 `package_deliverable.py`。
+- `scripts/`：生产主入口 `orchestrator.py` + 阶段验收 `validate_stage.py` + 环境引导
+  `bootstrap.ps1/bootstrap.sh` + 内部业务脚本。
 - `版本说明.md`：相对最早版本的更新记录（字段口径、去重、行序按余额连续性还原、非流水文件排除、`--reuse`、断点率诊断等）。
 
 ## 安装与分发
@@ -212,7 +252,7 @@ Claude Code `~/.claude/skills/`、Kimi Code `~/.kimi/skills/`、WorkBuddy `~/.wo
 OpenClaw `~/.openclaw/skills/`（项目级则放各自 `.<client>/skills/` 或 `.claude/skills/`）。
 也可分发单文件 `bank-statement-standardization.skill`（zip，可解压到 skills 目录或在支持导入的客户端内导入）。
 详细各客户端命令、自检步骤与常见问题见 `README.md`「安装到各类大模型客户端」。
-脚本路径需 `pip install -r requirements.txt`；纯提示词路径（`references/`）无需任何依赖、可离线。
+脚本路径首次使用先运行 `scripts/bootstrap.ps1` 或 `scripts/bootstrap.sh`；纯提示词路径（`references/`）无需任何依赖、可离线。
 
 ## 数据安全与脱敏
 

@@ -266,7 +266,7 @@ def run(client, args):
     subjects, skipped = gather_subjects(args)
     print(f"=== 客户「{client}」：{len(subjects)} 个主体 ===")
 
-    # 阶段一：逐文件标准化（同主体共用 customer 覆盖，区分主体）；非流水/无法解析的文件自动跳过
+    # 阶段一：逐文件标准化。customer 默认仅作户名缺失兜底，保留文件中可识别的真实户名。
     n_files = 0
     for subj, files in subjects:
         for f, ctype in files:
@@ -274,13 +274,14 @@ def run(client, args):
                 # 多主体时用主体名作为本方名称兜底；单文件夹时不强制，交给嗅探/按行填充
                 cust = subj if args.subject else (args.client if args.folder and len(subjects) == 1 and args.force_name else None)
                 csv_path, _, rep = S.standardize(
-                    f, out_dir=work, customer=cust, account_type=ctype)
+                    f, out_dir=work, customer=cust, account_type=ctype,
+                    force_customer=args.force_name)
                 n_files += 1
                 st = rep["标准化统计"]
-                print(f"  · [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")
+                print(f"  [OK] [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")
             except S.NotABankStatement as e:
                 skipped.append((os.path.basename(f), e.reason))
-                print(f"  ⊘ [{subj}] 跳过 {os.path.basename(f)}：{e.reason}")
+                print(f"  [SKIP] [{subj}] {os.path.basename(f)}：{e.reason}")
             except Exception as e:
                 skipped.append((os.path.basename(f), f"解析失败：{e}"))
                 print(f"  ! {os.path.basename(f)} 失败：{e}")
@@ -426,7 +427,7 @@ def main():
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--out-dir")
     ap.add_argument("--force-name", action="store_true",
-                    help="单文件夹时强制用客户名覆盖本方名称（默认自动嗅探，便于区分多主体）")
+                    help="强制用传入名称覆盖原始文件识别出的本方名称；默认仅作缺失兜底")
     args = ap.parse_args()
     if not args.folder and not args.subject and not args.reuse:
         ap.error("需提供 --folder、--subject 或 --reuse 之一")

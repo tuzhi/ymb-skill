@@ -27,6 +27,10 @@ bank-statement-standardization/
 │   ├── tag.py               # 阶段三：交易打标与规则沉淀
 │   ├── multi_customer.py    # 阶段四：多客户批量整合与验证（含整合后余额校验）
 │   ├── portfolio_balance.py # 组合(虚拟账户)余额时间序列 + 余额校验
+│   ├── orchestrator.py      # ★ 正式生产主入口：检查、留痕、验收、告警/错误打包
+│   ├── validate_stage.py    # 每阶段产物检测
+│   ├── bootstrap.ps1        # Windows：准备 Python 3.8.6 私有 venv 与依赖
+│   ├── bootstrap.sh         # Linux/macOS：准备 Python 3.8.6 私有 venv 与依赖
 │   ├── package_deliverable.py # ★ 单文件交付物 <客户名>_已清洗_待分析.xlsx
 │   ├── run_pipeline.py      # 一键跑单客户（阶段一→三 + 组合余额）
 │   └── build_rules_from_xlsx.py  # 从规则文档生成 tag_rules.csv
@@ -41,10 +45,14 @@ bank-statement-standardization/
 ## 快速开始（方式 A · 脚本）
 
 ```bash
-pip install -r requirements.txt          # pandas openpyxl xlrd pdfplumber
+# 首次使用
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1  # Windows
+bash scripts/bootstrap.sh                                      # Linux/macOS
 
-# ★ 推荐：一步生成单文件交付物 <客户名>_已清洗_待分析.xlsx
-#   （已标准化 + 多账户多主体整合为一 + 含逐笔虚拟账户余额 + 已打标，信贷员/审批官单文件流转）
+# ★ 正式生产：默认不限制模型，不依赖 /model 命令
+.runtime\venv-3.8.6\Scripts\python.exe scripts/orchestrator.py run --client "客户名" --folder "/path/to/客户文件夹"
+
+# 调试时才直接调用内部业务入口
 python scripts/package_deliverable.py --client "客户名" --folder "/path/to/客户文件夹" --account-type 对公
 #   多主体（企业+关联个人，各主体可多账户多文件）：
 python scripts/package_deliverable.py --client "客户名" \
@@ -71,7 +79,7 @@ python scripts/multi_customer.py --batch "批次名" \
 ## 安装到各类大模型客户端（Skill 安装说明）
 
 本技能遵循 Agent Skill 通用规范（一个含 `SKILL.md` 的目录），可装入任何兼容该规范的客户端。
-通用前提：先装 Python 依赖 `pip install -r requirements.txt`（脚本路径需要；纯提示词路径不需要）。
+通用前提：先运行 `scripts/bootstrap.ps1` 或 `scripts/bootstrap.sh` 准备 Python `3.8.6` 私有 venv 与依赖。
 
 > 通用原理：把整个 `bank-statement-standardization/` 目录放进客户端的「skills 目录」，
 > 客户端读取 `SKILL.md` 的 `description`，在用户提到流水标准化/字段映射/流水合并去重/余额校验/
@@ -128,12 +136,10 @@ unzip bank-statement-standardization.skill -d ~/.kimi/skills/
 
 ### 安装自检（任意客户端通用）
 ```bash
-# 依赖与脚本可用性
-pip install -r requirements.txt
-python scripts/standardize.py -h        # 不报错即脚本就绪
-# 端到端冒烟：对任意一个客户文件夹生成交付物
-python scripts/package_deliverable.py --client "测试客户" --folder "<某客户文件夹>" --out-dir ./out
-# 成功标志：./out/测试客户_已清洗_待分析.xlsx 生成，且终端打印「[交付] ...」
+# Windows 环境准备
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+.runtime\venv-3.8.6\Scripts\python.exe scripts/orchestrator.py run --client "测试客户" --folder "<某客户文件夹>"
+# 成功标志：runs/<run-id>/manifest.json 的 status 为 success，且 receipts/ 回执完整
 ```
 若客户端「技能列表/`/skills`」里能看到 `bank-statement-standardization`，即安装成功。
 
@@ -151,6 +157,7 @@ python scripts/package_deliverable.py --client "测试客户" --folder "<某客�
 
 - 字段统一中文；明细 CSV、报告 JSON。
 - 每笔交易可追溯：`交易唯一编号 / 来源文件名 / 来源行号`。
+- `--client` 是授信客户归档名，不是流水账户户名；原始户名可识别时不得覆盖。
 - 备注/附言/摘要不可信，仅作辅助证据。
 - **不自动修正、不自动删除、不自动合并**；余额断点、疑似重复、自有账户互转、跨客户共用账户等
   一律只标记、进人工复核。
@@ -162,6 +169,7 @@ python scripts/package_deliverable.py --client "测试客户" --folder "<某客�
 
 - 用 `--header-row N` 指定表头行；
 - 用 `--map "原始列名=标准字段"` 手工覆盖个别列；
+- `--customer` 默认仅在原始户名缺失时兜底；只有人工确认后才使用 `--force-customer` 强制覆盖；
 - 或在 `scripts/standardize.py` 的 `SYNONYMS` 词典里补充该行的列名同义词。
 
 ## 测试验证
