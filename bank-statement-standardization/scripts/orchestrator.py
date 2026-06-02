@@ -3,6 +3,7 @@
 """Production entrypoint: audit, execute, validate, and package failures."""
 import argparse
 import csv
+import glob
 import hashlib
 import json
 import locale
@@ -155,6 +156,8 @@ class Runner:
             cmd += ["--account-type", self.args.account_type]
         if self.args.force_name:
             cmd.append("--force-name")
+        if not self.args.client_explicit:
+            cmd.append("--infer-client-name")
         self.emit("INFO", "PIPELINE_START", "开始执行正式流水线", command=cmd)
         lines = []
         cp = subprocess.Popen(
@@ -184,16 +187,23 @@ class Runner:
             return
         old_client = self.args.client
         old_work = os.path.join(self.out_dir, "_工作区", safe_name(old_client))
+        work_roots = [old_work] if os.path.isdir(old_work) else []
+        if not work_roots:
+            work_roots = [
+                path for path in glob.glob(os.path.join(self.out_dir, "_工作区", "*"))
+                if os.path.isdir(path)
+            ]
         names = set()
-        for root, _, files in os.walk(old_work):
-            for filename in files:
-                if not filename.endswith("__standardized.csv"):
-                    continue
-                with open(os.path.join(root, filename), "r", encoding="utf-8-sig", newline="") as f:
-                    for row in csv.DictReader(f):
-                        name = (row.get("本方名称") or "").strip()
-                        if name and name.lower() not in {"nan", "none"}:
-                            names.add(name)
+        for work_root in work_roots:
+            for root, _, files in os.walk(work_root):
+                for filename in files:
+                    if not filename.endswith("__standardized.csv"):
+                        continue
+                    with open(os.path.join(root, filename), "r", encoding="utf-8-sig", newline="") as f:
+                        for row in csv.DictReader(f):
+                            name = (row.get("本方名称") or "").strip()
+                            if name and name.lower() not in {"nan", "none"}:
+                                names.add(name)
         if len(names) != 1:
             if names:
                 self.emit("WARNING", "CLIENT_NAME_AMBIGUOUS",

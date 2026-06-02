@@ -254,6 +254,18 @@ def _safe(name):
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in name)
 
 
+def _infer_unique_client_name(work):
+    """从本轮标准化产物中提取唯一户名；多主体或无法识别时不猜测。"""
+    names = set()
+    for path in glob.glob(os.path.join(work, "*__standardized.csv")):
+        df = pd.read_csv(path, dtype=str, usecols=lambda col: col == "本方名称")
+        if "本方名称" not in df:
+            continue
+        values = df["本方名称"].dropna().astype(str).str.strip()
+        names.update(v for v in values if v and v.lower() not in {"nan", "none"})
+    return next(iter(names)) if len(names) == 1 else None
+
+
 def run(client, args):
     import shutil
     out_dir = args.out_dir or os.getcwd()
@@ -291,6 +303,17 @@ def run(client, args):
     if n_files == 0:
         detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "目录内无候选文件"
         sys.exit(f"客户「{client}」无可处理的银行流水文件。已跳过：{detail}")
+
+    if args.infer_client_name:
+        inferred = _infer_unique_client_name(work)
+        if inferred and inferred != client:
+            new_work = os.path.join(out_dir, "_工作区", _safe(inferred))
+            if os.path.isdir(new_work):
+                shutil.rmtree(new_work)
+            os.replace(work, new_work)
+            work = new_work
+            print(f"  [INFO] 已从流水识别归档名：{client} -> {inferred}")
+            client = inferred
 
     # 阶段二：整合（全部主体/账户合并为一）
     int_csv, int_json, irep = I.integrate(client, [work], out_dir=work)
@@ -428,6 +451,8 @@ def main():
     ap.add_argument("--out-dir")
     ap.add_argument("--force-name", action="store_true",
                     help="强制用传入名称覆盖原始文件识别出的本方名称；默认仅作缺失兜底")
+    ap.add_argument("--infer-client-name", action="store_true",
+                    help="标准化后若识别到唯一户名，则用它替换暂存目录名作为归档名")
     args = ap.parse_args()
     if not args.folder and not args.subject and not args.reuse:
         ap.error("需提供 --folder、--subject 或 --reuse 之一")
