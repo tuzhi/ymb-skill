@@ -103,7 +103,7 @@ SYNONYMS = {
     "本方账户":   ["账号", "账户号", "卡号", "本方账户", "账户号码", "本方账号"],
     "对手名称":   ["对方户名", "对手信息", "交易对手名称", "对方账户名", "对手户名",
                   "对方名称", "对手名称", "对方账户名称", "对手账户名",
-                  "对方单位", "对方单位名称", "对方账户名", "对方客户名"],
+                  "对方单位", "对方单位名称", "对方账户名", "对方客户名", "交易对方"],
     "对手账户":   ["对方账号", "对方账户", "交易对手账号", "对手账户", "对方账户号",
                   "对方卡号", "交易对手账号"],
     "收入金额":   ["收入金额", "收入", "贷方发生额", "存入金额", "贷方金额", "贷方",
@@ -112,7 +112,7 @@ SYNONYMS = {
                   "转出金额", "转出", "借方发生额(支取)", "借方发生额（支取）"],
     "交易金额":   ["交易金额", "发生额", "金额"],
     "账户余额":   ["账户余额", "余额", "本次余额", "当前余额"],
-    "收支方向":   ["收支方向", "收支", "借贷标志", "借贷", "方向", "借贷方向"],
+    "收支方向":   ["收支方向", "收支", "收/支/其他", "借贷标志", "借贷", "方向", "借贷方向"],
     "银行备注":   ["交易摘要", "摘要", "用途", "交易类型", "交易备注", "相关信息",
                   "备注", "交易种类", "业务摘要", "附言摘要"],
     "账户方附言": ["交易附言", "附言", "留言", "客户附言"],
@@ -425,6 +425,63 @@ def read_rows_csv(path):
     return "\n".join(preamble), out
 
 
+def _read_abc_text_pdf(pdf):
+    """解析农行文本版流水清单。
+
+    这类 PDF 没有表格边框，pdfplumber.extract_tables() 会返回空列表，
+    但 extract_text() 可以稳定取得每笔交易。续行并入交易附言，避免漏笔。
+    """
+    header = ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额",
+              "对手信息", "日志号", "交易渠道", "交易附言"]
+    txn_re = re.compile(
+        r"^(\d{8})\s+(?:(\d{6})\s+)?(\S+)\s+([+-]\d[\d,]*\.\d{2})\s+"
+        r"([\d,]+\.\d{2})\s+(.*)$")
+    journal_re = re.compile(r"^(.*?)\s+([A-Za-z]\d{9}|\d{10})\s*(.*)$")
+    channels = ("掌上银行", "电子商务", "中国人寿代扣", "个人活期结息",
+                "超级网银", "短信费", "自动柜员机")
+    rows = [header]
+    preamble = []
+
+    for page in pdf.pages:
+        for raw_line in (page.extract_text() or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith(("中国农业银行账户活期交易明细清单", "币种：", "起止日期：",
+                                "交易日期 ", "该交易明细因", "第")):
+                if line.startswith(("中国农业银行", "币种：", "起止日期：")):
+                    preamble.append(line)
+                continue
+            if line.startswith("户名："):
+                preamble.append(line)
+                continue
+
+            m = txn_re.match(line)
+            if m:
+                date, time, summary, amount, balance, tail = m.groups()
+                jm = journal_re.match(tail)
+                if jm:
+                    opponent, journal, remainder = jm.groups()
+                else:
+                    opponent, journal, remainder = tail, "", ""
+                channel = ""
+                memo = remainder
+                for candidate in channels:
+                    if remainder.startswith(candidate):
+                        channel = candidate
+                        memo = remainder[len(candidate):].strip()
+                        break
+                rows.append([date, time or "", summary, amount, balance,
+                             opponent.strip(), journal, channel, memo])
+                continue
+
+            # PDF 列宽导致的对手名称/附言换行，保留在上一笔附言中供追溯。
+            if len(rows) > 1:
+                rows[-1][-1] = (rows[-1][-1] + " " + line).strip()
+
+    return " ".join(preamble), rows if len(rows) > 1 else []
+
+
 def read_rows_pdf(path):
     """用 pdfplumber 抽表；逐页拼接，跳过重复表头行；多行单元格内换行去掉。"""
     import pdfplumber
@@ -445,7 +502,11 @@ def read_rows_pdf(path):
                         continue  # 跳过每页重复表头
                     else:
                         all_rows.append(cells)
-    return None, all_rows
+        if not all_rows:
+            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+            if "中国农业银行账户活期交易明细清单" in text:
+                return _read_abc_text_pdf(pdf)
+    return "", all_rows
 
 
 def read_rows(path):
@@ -458,8 +519,8 @@ def read_rows(path):
         pre, rows = read_rows_csv(path)
         return ("csv", pre, rows)
     if ext == ".pdf":
-        _, rows = read_rows_pdf(path)
-        return ("pdf", "", rows)
+        preamble, rows = read_rows_pdf(path)
+        return ("pdf", preamble, rows)
     raise NotABankStatement(f"不支持的文件类型：{ext}")
 
 
@@ -735,9 +796,9 @@ def standardize(path, out_dir=None, customer=None, bank=None,
                     income = abs(amt)
                 elif is_expense and not is_income:
                     expense = abs(amt)
-                elif amt >= 0:
+                elif not direction and amt >= 0:
                     income = amt
-                else:
+                elif not direction:
                     expense = abs(amt)
 
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
