@@ -19,8 +19,6 @@ import integrate as I
 import tag as T
 import portfolio_balance as PB
 
-RAW_EXT = (".xlsx", ".xls", ".csv", ".pdf", ".txt", ".tsv")
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -34,12 +32,14 @@ def main():
     out_dir = args.out_dir or os.path.join(args.folder, "_标准化产物")
     os.makedirs(out_dir, exist_ok=True)
 
-    raw_files = [f for f in sorted(glob.glob(os.path.join(args.folder, "*")))
-                 if os.path.splitext(f)[1].lower() in RAW_EXT and os.path.isfile(f)]
+    raw_files, skipped = S.screen_files(sorted(glob.glob(os.path.join(args.folder, "*"))))
     if not raw_files:
-        sys.exit(f"未在 {args.folder} 找到原始流水文件")
+        msg = f"未在 {args.folder} 找到可处理的银行流水文件（支持 Excel/CSV/文本/非图片PDF）"
+        if skipped:
+            msg += "；已跳过：" + "，".join(f"{n}（{w}）" for n, w in skipped)
+        sys.exit(msg)
 
-    print(f"=== 客户：{args.customer}  原始文件 {len(raw_files)} 个 ===")
+    print(f"=== 客户：{args.customer}  候选流水文件 {len(raw_files)} 个 ===")
     print("\n[阶段一] 单文件标准化与字段映射")
     for f in raw_files:
         try:
@@ -50,8 +50,17 @@ def main():
             nrev = len(rep["人工复核事项"])
             print(f"  · {os.path.basename(f)} -> {st['交易笔数']} 笔"
                   f"（{st['金额结构']}）" + (f"，复核{nrev}项" if nrev else ""))
+        except S.NotABankStatement as e:
+            skipped.append((os.path.basename(f), e.reason))
+            print(f"  ⊘ 跳过 {os.path.basename(f)}：{e.reason}")
         except Exception as e:
+            skipped.append((os.path.basename(f), f"解析失败：{e}"))
             print(f"  ! {os.path.basename(f)} 失败：{e}")
+
+    if skipped:
+        print(f"\n[已跳过 {len(skipped)} 个非流水/无法解析文件]")
+        for n, w in skipped:
+            print(f"  ⊘ {n}：{w}")
 
     print("\n[阶段二] 单客户多文件整合与验证")
     int_csv, int_json, irep = I.integrate(args.customer, [out_dir], out_dir=out_dir)

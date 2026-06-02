@@ -31,11 +31,14 @@ except ImportError:
 
 def _prep(df):
     df = df.copy()
+    # 整合流水/底表的行序即正确时序（整合阶段已按文件时序+文件内原始行序排好、倒序文件已翻正）。
+    # 余额校验据此 __seq 排序，不再按交易时间重排，避免同秒多笔被打乱产生伪断点。
+    df["__seq"] = range(len(df))
     df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce")
     df["__row"] = pd.to_numeric(df.get("来源行号"), errors="coerce")
     for c in ["收入金额", "支出金额", "账户余额"]:
         df["__" + c] = pd.to_numeric(df.get(c), errors="coerce")
-    return df.dropna(subset=["__t"])
+    return df
 
 
 def _acct_key(df):
@@ -50,7 +53,7 @@ def balance_check_per_account(df):
     df = df.assign(__k=_acct_key(df))
     out = []
     for k, g in df.groupby("__k"):
-        g = g.sort_values(["__t", "__row"])
+        g = g.sort_values("__seq")          # 保持整合后的原始时序
         bal = g["__账户余额"]
         if bal.notna().sum() < 2:
             out.append({"账户": k, "交易数": int(len(g)), "校验状态": "未校验",
@@ -59,8 +62,12 @@ def balance_check_per_account(df):
         net = g["__收入金额"].fillna(0) - g["__支出金额"].fillna(0)
         diff = (bal - (bal.shift(1) + net)).abs()
         nb = int((diff >= 0.01).sum())
+        rate = nb / max(1, int(bal.notna().sum()) - 1)
         out.append({"账户": k, "交易数": int(len(g)),
                     "校验状态": "通过" if nb == 0 else "预警", "余额断点": nb,
+                    "断点率": round(rate, 3),
+                    # 断点率畸高几乎必然是解析不全/漏行（大表被截断/抽样），而非真实排序问题
+                    "疑似解析不全": bool(nb and rate > 0.3),
                     "断点交易示例": g.loc[diff >= 0.01, "交易唯一编号"].head(5).tolist(),
                     "期末余额": float(bal.dropna().iloc[-1])})
     return out
@@ -68,10 +75,10 @@ def balance_check_per_account(df):
 
 def daily_portfolio(df):
     """每日组合总余额。返回 (daily_df[日期,各账户...,合计余额], 账户列表)。"""
-    df = df.assign(__k=_acct_key(df))
+    df = df.assign(__k=_acct_key(df)).dropna(subset=["__t"]).copy()  # 日聚合需要有效时间
     df["__day"] = df["__t"].dt.normalize()
-    # 每账户每日日末余额（当天最后一笔的账户余额）
-    eod = (df.sort_values(["__k", "__t", "__row"])
+    # 每账户每日日末余额（当天最后一笔 = 整合时序里当天的最后一笔）
+    eod = (df.sort_values(["__k", "__seq"])
              .groupby(["__k", "__day"])["__账户余额"].last().reset_index())
     eod = eod.dropna(subset=["__账户余额"])
     if eod.empty:
@@ -89,7 +96,7 @@ def portfolio_continuity(df, daily):
     """组合连续性：相邻日总余额变动 ≈ 当日净流入(收入-支出)。返回异常日数。"""
     if daily.empty:
         return 0
-    tmp = df.assign(__day=df["__t"].dt.normalize())
+    tmp = df.dropna(subset=["__t"]).assign(__day=lambda d: d["__t"].dt.normalize())
     net_by_day = (tmp["__收入金额"].fillna(0) - tmp["__支出金额"].fillna(0)).groupby(tmp["__day"]).sum()
     s = daily.set_index("日期")["合计余额"]
     chg = s.diff()

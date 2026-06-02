@@ -54,7 +54,13 @@ def load_customers(specs):
         df.insert(0, "客户名称", name)
         df.insert(0, "客户编号", cid)
         frames.append(df)
-        meta.append({"客户编号": cid, "客户名称": name, "来源文件": os.path.basename(csv),
+        # 客户类型：取该客户各账户的 账户类型 去重；既有对公又有个人记为「混合」
+        types = sorted(set(t for t in df.get("账户类型", pd.Series([], dtype=str))
+                           .dropna().astype(str).str.strip()
+                           if t and t not in ("nan", "None", "未知")))
+        ctype = types[0] if len(types) == 1 else ("混合" if len(types) > 1 else "未知")
+        meta.append({"客户编号": cid, "客户名称": name, "客户类型": ctype,
+                     "来源文件": os.path.basename(csv),
                      "交易数": int(len(df)), "账户数": int(df["本方账户"].nunique())})
     return pd.concat(frames, ignore_index=True), meta
 
@@ -65,7 +71,7 @@ def balance_check_by_account(df):
     out = []
     for kv, g in df.groupby(["客户编号", df["本方账户"].fillna("")]):
         cid, acct = kv
-        g = g.sort_values(["__t", "来源行号_num"])
+        g = g.sort_values("__seq")          # 保持整合后的原始时序，不按交易时间重排
         bal = g["账户余额_num"]
         if bal.notna().sum() < 2:
             out.append({"客户编号": cid, "本方账户": acct, "交易数": int(len(g)),
@@ -84,6 +90,7 @@ def multi(batch, specs, out_dir=None):
     df, meta = load_customers(specs)
     df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce")
     df["来源行号_num"] = pd.to_numeric(df.get("来源行号"), errors="coerce")
+    df["__seq"] = range(len(df))   # 保持各客户整合流水的原始时序，余额校验据此排序（不按时间重排）
     for c in ["收入金额", "支出金额", "账户余额"]:
         df[c + "_num"] = pd.to_numeric(df.get(c), errors="coerce")
 
@@ -240,7 +247,7 @@ def multi(batch, specs, out_dir=None):
     os.makedirs(out_dir, exist_ok=True)
     out_csv = os.path.join(out_dir, f"{batch}__多客户底表.csv")
     out_json = os.path.join(out_dir, f"{batch}__多客户报告.json")
-    drop = [c for c in df.columns if c.endswith("_num") or c == "__t"]
+    drop = [c for c in df.columns if c.endswith("_num") or c.startswith("__")]
     df.drop(columns=drop).to_csv(out_csv, index=False, encoding="utf-8-sig")
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
