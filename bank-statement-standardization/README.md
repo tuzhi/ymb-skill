@@ -19,8 +19,8 @@
 bank-statement-standardization/
 ├── SKILL.md                 # Agent Skill 主文件（Claude 自动加载）
 ├── README.md                # 本文件
-├── requirements.txt         # 直接依赖版本
-├── requirements-lock.txt    # 部署时使用的完整锁定依赖
+├── requirements.txt         # 直接依赖兼容范围
+├── requirements-lock.txt    # 部署时使用的兼容范围约束（适配 Python 3.11+ / 3.13）
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
 │   ├── standardize.py       # 阶段一：单文件标准化与字段映射
@@ -44,7 +44,7 @@ bank-statement-standardization/
 ## 快速开始（方式 A · 脚本）
 
 ```bash
-# 首次部署且入口报告缺少依赖时，只执行一次
+# 首次部署且入口报告缺少依赖时，只执行一次；适配常见 Python 3.11+ / 3.13
 python -m pip install -r requirements-lock.txt
 
 # ★ 正式生产：只执行一次主入口。省略 --client 时优先使用流水中识别出的唯一户名
@@ -77,8 +77,9 @@ python scripts/multi_customer.py --batch "批次名" \
 ## 安装到各类大模型客户端（Skill 安装说明）
 
 本技能遵循 Agent Skill 通用规范（一个含 `SKILL.md` 的目录），可装入任何兼容该规范的客户端。
-通用前提：使用客户端可调用的宿主机 `python`。缺少依赖时在部署阶段执行一次
-`python -m pip install -r requirements-lock.txt`，不要在每次任务中重复安装。
+通用前提：使用客户端可调用的宿主机 `python`，推荐 Python 3.11+。缺少依赖时在部署阶段执行一次
+`python -m pip install -r requirements-lock.txt`，不要在每次任务中重复安装。`requirements-lock.txt`
+不是 Python 3.8 专用 freeze 文件，而是主依赖兼容范围，让 pip 按当前 Python 版本解析可用 wheel。
 
 > 通用原理：把整个 `bank-statement-standardization/` 目录放进客户端的「skills 目录」，
 > 客户端读取 `SKILL.md` 的 `description`，在用户提到流水标准化/字段映射/流水合并去重/余额校验/
@@ -144,7 +145,9 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 ### 常见问题
 - **不自动触发**：确认目录层级是 `skills/bank-statement-standardization/SKILL.md`（不要多套一层），
   并重启会话；或在对话里直接点名「用 bank-statement-standardization 技能」。
-- **缺依赖报错**：在该客户端使用的 Python 环境里执行 `python -m pip install -r requirements-lock.txt`
+- **缺依赖报错 / Python 3.13 安装冲突**：在该客户端使用的 Python 环境里执行
+  `python -m pip install -r requirements-lock.txt`。若仍看到 `pandas==2.0.3`，说明客户端还在使用旧版技能包，
+  需要重新导入新版。
   （`pandas openpyxl xlrd pdfplumber`）。
 - **离线/内网环境**：脚本全程本地运行、不联网；纯提示词路径（`references/`）连 Python 都不需要。
 - **目录名因客户端而异**：上面的 `~/.kimi`、`~/.workbuddy`、`~/.openclaw` 为常见约定；

@@ -90,7 +90,8 @@ PDF：真实户名由 `standardize.py` 在主流程内部自动识别。
 
 所有脚本在 `scripts/`。正式任务直接使用宿主机 `python` 执行，不创建私有 venv、不套 PowerShell。
 仅当入口报告缺少依赖时，在部署阶段执行一次 `python -m pip install -r requirements-lock.txt`。
-禁止在每次任务中重复安装依赖，也不要执行不带锁定文件的裸 `pip install`。
+该文件使用主依赖兼容范围，适配常见 Python 3.11+ / 3.13；禁止在每次任务中重复安装依赖，
+也不要执行不带约束文件的裸 `pip install`。
 
 ### 阶段一 · 单文件标准化与字段映射 —— `standardize.py`
 识别表头、账户类型、本方户名/账号，把原始列按同义词词典映射到标准字段，并自动处理三种金额结构、
@@ -207,7 +208,8 @@ python scripts/orchestrator.py run --folder 客户原始文件夹 [--client 授�
 执行前置要求：
 
 1. 默认直接使用宿主机 `python`，不检测或自动安装特定 Python 版本、不创建 venv、不在任务内安装依赖。
-   缺少依赖时执行【错误】，按提示在部署阶段安装 `requirements-lock.txt` 后重试。
+   缺少依赖时执行【错误】，按提示在部署阶段安装 `requirements-lock.txt` 后重试。依赖约束面向
+   Python 3.11+ / 3.13，不再使用 Python 3.8 专用锁定版本。
 2. 默认不限制模型，不要求宿主支持 `/model` 命令或注入模型环境变量。
 3. 仅在宿主确实支持模型信息注入时，可选传入 `--require-model <模型ID>`；
    此时宿主需设置 `SKILL_ACTIVE_MODEL=<模型ID>`，核验失败执行【错误】。
