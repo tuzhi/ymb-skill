@@ -193,7 +193,8 @@ class Runner:
                 path for path in glob.glob(os.path.join(self.out_dir, "_工作区", "*"))
                 if os.path.isdir(path)
             ]
-        names = set()
+        bank_names = set()
+        all_names = set()
         for work_root in work_roots:
             for root, _, files in os.walk(work_root):
                 for filename in files:
@@ -203,7 +204,12 @@ class Runner:
                         for row in csv.DictReader(f):
                             name = (row.get("本方名称") or "").strip()
                             if name and name.lower() not in {"nan", "none"}:
-                                names.add(name)
+                                all_names.add(name)
+                                account = (row.get("本方账户") or "").strip()
+                                balance = (row.get("账户余额") or "").strip()
+                                if account and balance:
+                                    bank_names.add(name)
+        names = bank_names or all_names
         if len(names) != 1:
             if names:
                 self.emit("WARNING", "CLIENT_NAME_AMBIGUOUS",

@@ -255,14 +255,27 @@ def _safe(name):
 
 
 def _infer_unique_client_name(work):
-    """从本轮标准化产物中提取唯一户名；多主体或无法识别时不猜测。"""
-    names = set()
+    """从本轮标准化产物中提取唯一户名；优先使用有账号和余额的银行账户行。
+
+    微信/支付宝等支付流水通常没有可校验余额，也可能把交易参与人映射进「本方名称」。
+    这些名称只适合做主体/交易分析，不适合作为交付物归档名的首要证据。
+    """
+    bank_names = set()
+    all_names = set()
     for path in glob.glob(os.path.join(work, "*__standardized.csv")):
-        df = pd.read_csv(path, dtype=str, usecols=lambda col: col == "本方名称")
+        df = pd.read_csv(path, dtype=str, encoding="utf-8-sig",
+                         usecols=lambda col: col in {"本方名称", "本方账户", "账户余额"})
         if "本方名称" not in df:
             continue
-        values = df["本方名称"].dropna().astype(str).str.strip()
-        names.update(v for v in values if v and v.lower() not in {"nan", "none"})
+        names = df["本方名称"].fillna("").astype(str).str.strip()
+        valid_name = names.ne("") & ~names.str.lower().isin({"nan", "none"})
+        all_names.update(names[valid_name].tolist())
+        if {"本方账户", "账户余额"}.issubset(df.columns):
+            accounts = df["本方账户"].fillna("").astype(str).str.strip()
+            balances = df["账户余额"].fillna("").astype(str).str.strip()
+            bank_like = valid_name & accounts.ne("") & balances.ne("")
+            bank_names.update(names[bank_like].tolist())
+    names = bank_names or all_names
     return next(iter(names)) if len(names) == 1 else None
 
 
