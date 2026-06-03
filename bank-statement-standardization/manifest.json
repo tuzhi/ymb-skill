@@ -1,0 +1,37 @@
+{
+  "stage_1_standardize": {
+    "name": "单文件标准化与字段映射",
+    "script": "scripts/standardize.py",
+    "ai_fallback": "SKILL.md#stage_1_standardize",
+    "validator": "scripts/validate_stage.py::validate_standardize",
+    "status": ""
+  },
+  "stage_2_integrate": {
+    "name": "单客户多文件整合与验证",
+    "script": "scripts/integrate.py",
+    "ai_fallback": "SKILL.md#stage_2_integrate",
+    "validator": "scripts/validate_stage.py::validate_integrate",
+    "status": ""
+  },
+  "stage_2b_portfolio_balance": {
+    "name": "组合余额与余额校验",
+    "script": "scripts/portfolio_balance.py",
+    "ai_fallback": "SKILL.md#stage_2b_portfolio_balance",
+    "validator": "scripts/validate_stage.py::validate_portfolio",
+    "status": ""
+  },
+  "stage_3_tag": {
+    "name": "交易打标与规则沉淀",
+    "script": "scripts/tag.py",
+    "ai_fallback": "SKILL.md#stage_3_tag",
+    "validator": "scripts/validate_stage.py::validate_tag",
+    "status": ""
+  },
+  "stage_4_package": {
+    "name": "单文件交付物组装",
+    "script": "scripts/package_deliverable.py",
+    "ai_fallback": "SKILL.md#stage_4_package",
+    "validator": "scripts/validate_stage.py::validate_final",
+    "status": ""
+  }
+}
