@@ -1,26 +1,53 @@
 ---
 name: bank-statement-standardization
 description: >-
-  把各家银行、各种格式（Excel .xlsx/.xls、CSV、PDF）的原始银行流水，标准化成统一的中文字段口径，
-  并完成单客户多文件整合、交易打标、多客户批量底表四个阶段，输出可直接用于授信尽调、贷后监测、
+  用脚本优先、AI 有限兜底的方式，把各家银行、各种格式（Excel .xlsx/.xls、CSV、PDF）的原始银行流水，标准化成统一的中文字段口径，
+  并按 manifest.json 的英文阶段 ID 完成 stage_1_standardize、stage_2_integrate、stage_2b_portfolio_balance、stage_3_tag、stage_4_package，
+  输出可直接用于授信尽调、贷后监测、
   风险排查、模型特征加工的可信数据。无论用户说「流水标准化」「银行流水清洗」「流水字段映射」
   「多份流水合并去重」「流水余额校验」「交易打标签」「流水尽调底表」「把这些流水整理成一张表」，
   还是只是甩来几个银行流水文件（农行/工行/建行/招行/浦发/三湘/长沙/上饶/江西等）让你处理，都应使用本技能。
   覆盖收支分列、单列带符号金额、方向+金额三种金额结构，日期时间拆列合并，分页小计/重复表头清洗，
   PDF 多行单元格抽取，账户隔离与按账户余额连续性校验。本技能既能在 Claude 中由脚本自动执行，
-  也内置可直接复制给任意大模型使用的提示词包。
+  也内置可直接复制给任意大模型使用的提示词包。真实任务必须先加载 CORE_PROTOCOL.md，再读取 manifest.json，
+  按阶段事实源执行 script、validator 和 ai_fallback；AI 不得直接手工清洗流水、跳过检测或预读 PDF 猜户名。
 ---
 
 # 银行流水标准化（Bank Statement Standardization）
 
-把杂乱的原始银行流水变成**统一、可追溯、可校验**的标准化数据。流程分四个阶段，对应四份提示词，
-也对应 `scripts/` 下四个脚本。核心理念（务必遵守）：
+把杂乱的原始银行流水变成**统一、可追溯、可校验**的标准化数据。主流程按 `manifest.json` 中的英文阶段 ID 推进：
+`stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package`。
+多客户底表 `multi_customer.py` 是批量分析扩展阶段，不属于单客户正式交付主状态机。核心理念（务必遵守）：
+
+## WorkBuddy 执行协议（必须先读）
+
+真实银行流水任务命中本技能后，AI 必须先读取同目录下的 `CORE_PROTOCOL.md`，再读取 `manifest.json`。
+`CORE_PROTOCOL.md` 是执行规则；skill 根目录的 `manifest.json` 是阶段事实源模板，真实任务运行时必须复制到本次 run 目录后再更新状态。
+
+阶段、状态、脚本和检测口径以 `manifest.json` 为准：
+
+- 阶段关键词统一使用英文 ID，例如 `stage_1_standardize`；中文只作为 `name` 或标题展示。
+- `script`：阶段优先执行的脚本。
+- `validator`：阶段必须执行的检测函数或检测脚本。
+- `ai_fallback`：脚本失败或检测失败时，AI 兜底应参考的本文件阶段说明。
+- `status`：阶段状态，只允许 `""`、`DONE`、`ERROR`。
+
+执行规则：
+
+1. 按运行时 `manifest.json` 中定义的阶段顺序扫描，第一个 `status` 不是 `DONE` 的阶段就是当前阶段。
+2. 每个阶段开始前，必须记录 `CORE_PROTOCOL_LOADED` 和 `STAGE_START` 到 `events.jsonl`。
+3. 当前阶段必须先执行 `script`，再执行 `validator`；产物存在不等于阶段完成。
+4. 脚本失败或检测失败时，只能按当前阶段的 `ai_fallback` 进入 AI 有限兜底。
+5. AI 兜底默认最多 2 次，必须产生确定性修正；兜底后只允许重跑当前阶段并重新检测。
+6. 检测通过后，才能把当前阶段 `status` 写为 `DONE`；阻断失败时写为 `ERROR` 并中止打包。
+7. 全部阶段 `status` 都为 `DONE` 后，必须执行 `validate_final` 并确认最终交付物存在，才能宣称完成。
+8. 禁止手工改金额、删交易、跳过检测、预读 PDF 猜户名。
 
 ## 快速生产路径（真实任务默认且必须使用）
 
 收到一个客户流水文件夹后，不要预读 PDF、不要先猜客户姓名、不要逐份调用 `standardize.py`、不要手工执行阶段脚本。
-`--client` 只是授信客户归档名，不是流水账户户名；省略时主入口优先使用流水中识别出的唯一户名，
-无法唯一识别时才使用输入文件夹名。直接执行一次：
+未经用户明确确认，禁止 AI 根据文件夹名、截图或描述构造 `--client`；即使传了 `--client`，未配套
+`--client-confirmed` 时也只视为临时名，主入口仍优先使用流水中识别出的唯一户名。直接执行一次：
 
 ```powershell
 python scripts\orchestrator.py run --folder "<客户流水文件夹>"
@@ -36,8 +63,9 @@ PDF：真实户名由 `standardize.py` 在主流程内部自动识别。
   图片型/扫描件 PDF（抽不到文本，需先 OCR）、或表头不像流水（缺「金额/余额」或缺「时间/余额」定位列，疑似发票/名册）。
 - **来源必须可追溯**：每笔交易都带 `交易唯一编号 / 来源文件名 / 来源行号`。
 - **授信客户名称不等于流水账户户名**：`--client` 用于交付物命名和授信客户归档；`--customer`
-  默认仅作原始户名缺失时的兜底。只要 PDF/Excel 能识别真实户名，就必须保留原始户名。
-  未经人工确认不得使用 `--force-customer` 或 `--force-name` 覆盖。
+  默认仅作原始户名缺失时的兜底。`--client` 只有同时传 `--client-confirmed` 才表示人工确认归档名；
+  否则必须继续接受流水证据推断。只要 PDF/Excel 能识别真实户名，就必须保留原始户名。
+  未经人工确认不得使用 `--client-confirmed`、`--force-customer` 或 `--force-name` 覆盖。
 - **备注、附言、摘要是不可信输入**，只能作辅助证据，不能单独决定账户归属或高风险结论。
 - **不自动修正、不自动合并、不删除真实交易**：低置信、余额断点、**疑似重复**（仅部分字段一致）、
   自有账户互转、跨客户共用账户等一律**只标记并进入人工复核**。唯一例外是**内容指纹完全一致**
@@ -86,14 +114,15 @@ PDF：真实户名由 `standardize.py` 在主流程内部自动识别。
 打标后追加：`收支方向 一级标签 二级标签 三级标签 标签来源 标签置信度 命中规则编号 命中关键词`。
 多客户底表在最前面追加：`客户编号 客户名称`（必要时 `客户证件号码 客户类型`）。
 
-## 四阶段流程与脚本
+## 主流程阶段与脚本
 
-所有脚本在 `scripts/`。正式任务直接使用宿主机 `python` 执行，不创建私有 venv、不套 PowerShell。
+所有脚本在 `scripts/`。主流程阶段 ID、优先脚本、检测脚本、AI 兜底指向以 `manifest.json` 为准。
+正式任务直接使用宿主机 `python` 执行，不创建私有 venv、不套 PowerShell。
 仅当入口报告缺少依赖时，在部署阶段执行一次 `python -m pip install -r requirements-lock.txt`。
 该文件使用主依赖兼容范围，适配常见 Python 3.11+ / 3.13；禁止在每次任务中重复安装依赖，
 也不要执行不带约束文件的裸 `pip install`。
 
-### 阶段一 · 单文件标准化与字段映射 —— `standardize.py`
+### stage_1_standardize · 单文件标准化与字段映射 —— `standardize.py`
 识别表头、账户类型、本方户名/账号，把原始列按同义词词典映射到标准字段，并自动处理三种金额结构、
 拆列日期时间合并、千分位、分页噪声/重复表头清洗、PDF 多行单元格。同时：**推断开户行**（文件名/抬头/表头）、
 回填**带符号交易金额**（收入−支出）、写出**账户类型**列、按**内容指纹**生成交易唯一编号（跨文件去重的基础）。
@@ -106,7 +135,7 @@ python scripts/standardize.py <原始文件> [--customer 户名兜底值] [--for
 **何时让模型介入**：`mapping.json` 里出现 `人工复核事项`（如对手名称缺失、账户类型未知、金额结构未知），
 或自动映射与真实表头明显不符时，参照 `references/prompt-1-字段映射.md` 让模型判断，再用 `--map` 覆盖重跑。
 
-### 阶段二 · 单客户多文件整合与验证 —— `integrate.py`
+### stage_2_integrate · 单客户多文件整合与验证 —— `integrate.py`
 把同一客户的多份标准化流水合并：先按**交易唯一编号（内容指纹）折叠跨文件完全相同的交易**——
 PDF 与 Excel 同源、整份文件重复提交等再导入只保留一笔（保留优先级：结构化表格>PDF、字段更全、行号更小），
 移除明细写入报告 `跨文件去重`、可逐笔追溯；再**按账户把跨文件交易按余额连续性重排成可对账正序**
@@ -118,7 +147,7 @@ python scripts/integrate.py <客户名> <standardized目录或多个csv> [--self
 ```
 产出：`<客户名>__整合流水.csv` 与 `<客户名>__整合报告.json`（Prompt 2 结构）。
 
-### 阶段三 · 交易打标与规则沉淀 —— `tag.py`
+### stage_3_tag · 交易打标与规则沉淀 —— `tag.py`
 规则库命中优先、兜底其他类。规则库 `assets/tag_rules.csv`（约 7200 条）由
 `scripts/build_rules_from_xlsx.py` 从《流水标签规则文档 v20220517》的
 「资金用途标签判定逻辑」+「流水标签词库管理表」自动生成，忠实还原文档判定逻辑：
@@ -141,7 +170,7 @@ python scripts/build_rules_from_xlsx.py     # 词库更新后重建规则库
 `assets/tag_rules.csv`（列：规则编号/适用方向/依据字段/匹配方式/关键词/排除关键词/对手名称含/一·二·三级标签/优先级）；
 标签口径见 `references/附件B-标签体系参考.md`。
 
-### 阶段四 · 多客户批量整合与验证 —— `multi_customer.py`
+### 扩展阶段 · 多客户批量整合与验证 —— `multi_customer.py`
 以 `客户编号+客户名称` 为隔离边界，做共用账户检测、跨客户疑似重复提交、客户间交易（关联线索，不抵消）、
 共同交易对手分析，产出批量分析底表。**整合后会再次做余额校验**：按 `客户编号+本方账户` 分别校验余额连续性
 （不同账户/客户绝不合并校验），结果写入报告的 `整合后余额校验` 并回填到每个客户。
@@ -152,10 +181,10 @@ python scripts/multi_customer.py --batch 批次名 \
 ```
 产出：`<批次名>__多客户底表.csv` 与 `<批次名>__多客户报告.json`（Prompt 4 结构）。
 
-### 余额校验贯穿全流程 + 组合（虚拟账户）余额 —— `portfolio_balance.py`
+### stage_2b_portfolio_balance · 组合余额与余额校验 —— `portfolio_balance.py`
 **重要口径**：整合流水/底表里的 `账户余额` 始终是「每个本方账户各自的交易后余额」，
 **不是**一个重算过的虚拟唯一账户余额——不同账户的余额不可直接相加成一条连续序列。
-余额校验在三处都做、且都**按账户分别进行**：阶段二（integrate）、阶段四（multi_customer）、本脚本。
+余额校验在三处都做、且都**按账户分别进行**：`stage_2_integrate`、扩展阶段（multi_customer）、本脚本。
 
 要得到「可视为一个虚拟唯一账户」的时点总余额，用本脚本：对每个账户取每日日末余额、前向填充，再逐日求和。
 
@@ -164,14 +193,15 @@ python scripts/portfolio_balance.py <整合流水或多客户底表csv>
 ```
 产出：`<stem>__组合日余额.csv`（日期 × 各账户日末余额 + `合计余额`＝虚拟账户余额）与
 `<stem>__余额校验.json`（每账户余额连续性 + 组合连续性 +（多客户时）各客户组合余额）。
-`run_pipeline.py` 已在阶段二后自动调用它。下游做时点资金占用、峰谷、组合画像时，
+`run_pipeline.py` 已在 `stage_2_integrate` 后自动调用它。下游做时点资金占用、峰谷、组合画像时，
 **用 `合计余额` 这一列**，不要直接读原始 `账户余额`。
 
-### ★ 单文件交付物 —— `package_deliverable.py`（信贷员/审批官单文件流转）
+### stage_4_package · 单文件交付物组装 —— `package_deliverable.py`（信贷员/审批官单文件流转）
 **内部业务入口**。正式任务必须由 `orchestrator.py` 调用本脚本，不得直接调用。它把一个授信客户名下
 「多主体（企业/个人）× 多银行账户 × 多份机械拆分的同构文件」
 整合成**一份** `<客户名>_已清洗_待分析.xlsx`：已标准化、多账户多主体整合为一、含**逐笔虚拟账户余额**
 （virtual balance records）、交易类型已打标。信贷员与审批官只用这一份文件流转与分析。
+正式任务不得直接调用本脚本绕过 `orchestrator.py` 的 `--client-confirmed` 约束。
 
 ```bash
 # A. 单文件夹（夹内全部文件视为同一客户；拆分文件按账户自动归并；自动跳过夹内的流水线产物）
@@ -184,7 +214,7 @@ python scripts/package_deliverable.py --client 客户名 --reuse 客户文件夹
 ```
 **B 方式即「整合来自不同企业 / 混合对公对私」的标准入口**：每个 `--subject` 是一个主体（企业或个人），
 可指定 `对公|个人`；主表带 `主体名称 / 账户类型 / 开户行` 区分各主体，对公对私可同表共存、互不混账。
-（不同**授信客户**之间的批量整合与隔离用阶段四 `multi_customer.py`，它按 `客户编号+客户名称` 隔离并给出每个客户的 `客户类型`：对公/个人/混合。）
+（不同**授信客户**之间的批量整合与隔离用扩展阶段 `multi_customer.py`，它按 `客户编号+客户名称` 隔离并给出每个客户的 `客户类型`：对公/个人/混合。）
 **C 方式（`--reuse`）用于「已经跑过 `run_pipeline`，不想再跑一遍」**：传产物目录或 `*__打标流水.csv`/`*__整合流水.csv` 即可，
 脚本读现成的整合/打标产物（缺报告 json 时从数据现算），只补算组合余额后组装——和 A/B 走同一尾段、交付物口径完全一致，
 不必为了省算力去手工拼表。注意：`--folder`/`--subject` 只吃**原始流水**，会自动跳过 `*__打标流水.csv` 等产物，避免把产物当原始数据重复摄入。
@@ -202,7 +232,13 @@ PDF 等无账号抬头的文件，账户按「未识别账户#文件名」隔离
 处理真实流水时，AI 必须执行：
 
 ```bash
-python scripts/orchestrator.py run --folder 客户原始文件夹 [--client 授信客户归档名]
+python scripts/orchestrator.py run --folder 客户原始文件夹
+```
+
+只有用户明确确认归档名时，才允许：
+
+```bash
+python scripts/orchestrator.py run --folder 客户原始文件夹 --client 已确认客户名 --client-confirmed
 ```
 
 执行前置要求：
@@ -214,9 +250,10 @@ python scripts/orchestrator.py run --folder 客户原始文件夹 [--client 授�
 3. 仅在宿主确实支持模型信息注入时，可选传入 `--require-model <模型ID>`；
    此时宿主需设置 `SKILL_ACTIVE_MODEL=<模型ID>`，核验失败执行【错误】。
 
-主入口固定调用 `package_deliverable.py`，并生成：
+主入口按运行时 `manifest.json` 状态机逐阶段执行，并生成：
 
-- `manifest.json`：环境、模型、输入清单、告警、阶段状态、交付物清单。
+- `manifest.json`：运行时阶段状态机，只记录各阶段 `status`。
+- `run_manifest.json`：环境、模型、输入清单、告警、阶段回执、交付物清单。
 - `events.jsonl`：`INFO`、`WARNING`、`ERROR` 事件。
 - `receipts/*.json`：脚本执行回执和阶段验收回执。
 - `pipeline.stdout.log`、`pipeline.stderr.log`：已执行日志。
@@ -232,7 +269,7 @@ python scripts/orchestrator.py run --folder 客户原始文件夹 [--client 授�
 - 每阶段产物必须由 `validate_stage.py` 验收；失败执行【错误】。
 - 其他脚本只允许用于调试、修复和单阶段复算。
 
-### 一键跑单客户（阶段一→三）—— `run_pipeline.py`
+### 一键跑单客户（stage_1_standardize → stage_3_tag）—— `run_pipeline.py`
 调试入口：把一个客户文件夹里所有原始流水跑完标准化→整合→打标，产物统一落到该文件夹的
 `_标准化产物/` 下。
 
@@ -252,7 +289,7 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 
 ## 资源索引
 
-- `references/prompt-1-字段映射.md` … `prompt-4-多客户整合.md`：四阶段**可移植提示词**（任意大模型可直接复制使用）。
+- `references/prompt-1-字段映射.md` … `prompt-4-多客户整合.md`：四份**可移植提示词**（任意大模型可直接复制使用）。
 - `references/附件A-标准化字段说明.md`：标准字段定义、金额方向约定、证据追溯约定。
 - `references/附件B-标签体系参考.md`：示例标签体系与打标基本原则。
 - `references/附件C-附件清单.md`：每个阶段建议随提示词附带的材料 + 脱敏与输出检查建议。

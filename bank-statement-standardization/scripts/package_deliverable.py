@@ -28,7 +28,7 @@ package_deliverable.py — 生成「<客户名>_已清洗_待分析.xlsx」单�
   <out-dir>/<客户名>_已清洗_待分析.xlsx
   （中间标准化产物落在 <out-dir>/_工作区/，可留存追溯）
 """
-import argparse, glob, json, os, sys
+import argparse, glob, json, os, re, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
@@ -254,29 +254,102 @@ def _safe(name):
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in name)
 
 
+def _parse_balance(value):
+    text = str(value or "").strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return None
+    text = text.replace(",", "").replace("，", "").replace("￥", "").replace("¥", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _is_archive_name_candidate(name):
+    text = str(name or "").strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return False
+    if text in {"称", "户名", "账户名称", "本方名称"}:
+        return False
+    if any(mark in text for mark in ("/", "\\", "*", "＊")):
+        return False
+    if re.search(r"\d{6,}", text):
+        return False
+    if re.fullmatch(r"[A-Za-z0-9_\- ]+", text):
+        return False
+    return True
+
+
+def _rank_client_name_candidates_from_work(work):
+    """按账户聚合归档名候选；只使用有本方账户和账户余额的标准化行。"""
+    by_account = {}
+    for path in glob.glob(os.path.join(work, "*__standardized.csv")):
+        try:
+            df = pd.read_csv(
+                path,
+                dtype=str,
+                encoding="utf-8-sig",
+                usecols=lambda col: col in {"本方名称", "本方账户", "账户余额", "来源文件名"},
+            )
+        except ValueError:
+            continue
+        required = {"本方名称", "本方账户", "账户余额"}
+        if not required.issubset(df.columns):
+            continue
+        source_col = "来源文件名" if "来源文件名" in df.columns else None
+        for _, row in df.iterrows():
+            name = str(row.get("本方名称") or "").strip()
+            account = str(row.get("本方账户") or "").strip()
+            balance = _parse_balance(row.get("账户余额"))
+            if not account or balance is None or not _is_archive_name_candidate(name):
+                continue
+            source = str(row.get(source_col) or os.path.basename(path)).strip() if source_col else os.path.basename(path)
+            bucket = by_account.setdefault(account, {})
+            stats = bucket.setdefault(name, {"rows": 0, "sources": set()})
+            stats["rows"] += 1
+            if source:
+                stats["sources"].add(source)
+
+    candidates = {}
+    for account, names in by_account.items():
+        if not names:
+            continue
+        name, account_stats = max(names.items(), key=lambda item: (item[1]["rows"], len(item[1]["sources"]), item[0]))
+        stats = candidates.setdefault(name, {"accounts": set(), "rows": 0, "sources": set()})
+        stats["accounts"].add(account)
+        stats["rows"] += account_stats["rows"]
+        stats["sources"].update(account_stats["sources"])
+
+    ranked = []
+    for name, stats in candidates.items():
+        account_count = len(stats["accounts"])
+        source_count = len(stats["sources"])
+        row_count = stats["rows"]
+        ranked.append({
+            "name": name,
+            "account_count": account_count,
+            "balance_row_count": row_count,
+            "source_file_count": source_count,
+            "score": account_count * 100 + source_count * 10 + min(row_count, 99),
+        })
+    return sorted(ranked, key=lambda item: (-item["score"], -item["account_count"], -item["source_file_count"], item["name"]))
+
+
 def _infer_unique_client_name(work):
-    """从本轮标准化产物中提取唯一户名；优先使用有账号和余额的银行账户行。
+    """从本轮标准化产物中提取唯一高分户名；优先使用银行账户证据。
 
     微信/支付宝等支付流水通常没有可校验余额，也可能把交易参与人映射进「本方名称」。
     这些名称只适合做主体/交易分析，不适合作为交付物归档名的首要证据。
     """
-    bank_names = set()
-    all_names = set()
-    for path in glob.glob(os.path.join(work, "*__standardized.csv")):
-        df = pd.read_csv(path, dtype=str, encoding="utf-8-sig",
-                         usecols=lambda col: col in {"本方名称", "本方账户", "账户余额"})
-        if "本方名称" not in df:
-            continue
-        names = df["本方名称"].fillna("").astype(str).str.strip()
-        valid_name = names.ne("") & ~names.str.lower().isin({"nan", "none"})
-        all_names.update(names[valid_name].tolist())
-        if {"本方账户", "账户余额"}.issubset(df.columns):
-            accounts = df["本方账户"].fillna("").astype(str).str.strip()
-            balances = df["账户余额"].fillna("").astype(str).str.strip()
-            bank_like = valid_name & accounts.ne("") & balances.ne("")
-            bank_names.update(names[bank_like].tolist())
-    names = bank_names or all_names
-    return next(iter(names)) if len(names) == 1 else None
+    ranked = _rank_client_name_candidates_from_work(work)
+    if not ranked:
+        return None
+    if len(ranked) == 1:
+        return ranked[0]["name"]
+    top, second = ranked[0], ranked[1]
+    if top["score"] >= second["score"] * 2 and top["account_count"] > second["account_count"]:
+        return top["name"]
+    return None
 
 
 def run(client, args):

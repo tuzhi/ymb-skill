@@ -1,7 +1,8 @@
 # 银行流水标准化技能包 · bank-statement-standardization
 
 把各家银行、各种格式（Excel `.xlsx/.xls`、CSV、PDF）的原始银行流水，标准化成统一中文字段口径，
-并完成「单文件标准化 → 单客户整合 → 交易打标 → 多客户底表」四阶段处理，输出可直接用于授信尽调、
+并按 `manifest.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
+输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
 本包同时提供两种使用方式，**支持各类大模型分发**：
@@ -18,20 +19,22 @@
 ```
 bank-statement-standardization/
 ├── SKILL.md                 # Agent Skill 主文件（Claude 自动加载）
+├── CORE_PROTOCOL.md         # WorkBuddy 执行核心协议：脚本优先、AI 有限兜底、可恢复/可验收/可追溯
+├── manifest.json            # 阶段事实源模板：每阶段 script / ai_fallback / validator / status
 ├── README.md                # 本文件
 ├── requirements.txt         # 直接依赖兼容范围
 ├── requirements-lock.txt    # 部署时使用的兼容范围约束（适配 Python 3.11+ / 3.13）
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
-│   ├── standardize.py       # 阶段一：单文件标准化与字段映射
-│   ├── integrate.py         # 阶段二：单客户多文件整合与验证
-│   ├── tag.py               # 阶段三：交易打标与规则沉淀
-│   ├── multi_customer.py    # 阶段四：多客户批量整合与验证（含整合后余额校验）
-│   ├── portfolio_balance.py # 组合(虚拟账户)余额时间序列 + 余额校验
+│   ├── standardize.py       # stage_1_standardize：单文件标准化与字段映射
+│   ├── integrate.py         # stage_2_integrate：单客户多文件整合与验证
+│   ├── tag.py               # stage_3_tag：交易打标与规则沉淀
+│   ├── multi_customer.py    # 扩展阶段：多客户批量整合与验证（含整合后余额校验）
+│   ├── portfolio_balance.py # stage_2b_portfolio_balance：组合(虚拟账户)余额时间序列 + 余额校验
 │   ├── orchestrator.py      # ★ 正式生产主入口：检查、留痕、验收、告警/错误打包
 │   ├── validate_stage.py    # 每阶段产物检测
-│   ├── package_deliverable.py # ★ 单文件交付物 <客户名>_已清洗_待分析.xlsx
-│   ├── run_pipeline.py      # 一键跑单客户（阶段一→三 + 组合余额）
+│   ├── package_deliverable.py # stage_4_package：单文件交付物 <客户名>_已清洗_待分析.xlsx
+│   ├── run_pipeline.py      # 一键跑单客户（stage_1_standardize → stage_3_tag + 组合余额）
 │   └── build_rules_from_xlsx.py  # 从规则文档生成 tag_rules.csv
 ├── references/              # 可移植提示词包（任意大模型可用）
 │   ├── prompt-1-字段映射.md ~ prompt-4-多客户整合.md
@@ -47,8 +50,11 @@ bank-statement-standardization/
 # 首次部署且入口报告缺少依赖时，只执行一次；适配常见 Python 3.11+ / 3.13
 python -m pip install -r requirements-lock.txt
 
-# ★ 正式生产：只执行一次主入口。省略 --client 时优先使用流水中识别出的唯一户名
+# ★ 正式生产：只执行一次主入口。默认不传 --client，优先使用流水中识别出的唯一户名
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹"
+
+# 只有用户明确确认归档名时，才传 --client-confirmed
+python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "已确认客户名" --client-confirmed
 
 # 调试时才直接调用内部业务入口
 python scripts/package_deliverable.py --client "客户名" --folder "/path/to/客户文件夹" --account-type 对公
@@ -158,7 +164,7 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 
 - 字段统一中文；明细 CSV、报告 JSON。
 - 每笔交易可追溯：`交易唯一编号 / 来源文件名 / 来源行号`。
-- `--client` 是授信客户归档名，不是流水账户户名；原始户名可识别时不得覆盖。
+- 正式入口中 `--client` 未配套 `--client-confirmed` 时只是临时归档名；AI 不得根据文件夹名、截图或描述构造确认客户名。原始户名可识别时不得覆盖。
 - 备注/附言/摘要不可信，仅作辅助证据。
 - **不自动修正、不自动删除、不自动合并**；余额断点、疑似重复、自有账户互转、跨客户共用账户等
   一律只标记、进人工复核。
