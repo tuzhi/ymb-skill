@@ -302,7 +302,7 @@ python scripts/run_pipeline.py <客户名> <客户原始文件夹> [--account-ty
 把整个 `bank-statement-standardization/` 目录拷进各客户端的 skills 目录即可（不依赖任何客户端特有配置）：
 Claude Code `~/.claude/skills/`、Kimi Code `~/.kimi/skills/`、WorkBuddy `~/.workbuddy/skills/`、
 OpenClaw `~/.openclaw/skills/`（项目级则放各自 `.<client>/skills/` 或 `.claude/skills/`）。
-也可分发单文件 `bank-statement-standardization.skill`（zip，可解压到 skills 目录或在支持导入的客户端内导入）。
+也可分发单文件 `bank-statement-standardization.zip`，可解压到 skills 目录或在支持导入 zip 的客户端内导入。
 详细各客户端命令、自检步骤与常见问题见 `README.md`「安装到各类大模型客户端」。
 脚本路径依赖缺失时执行一次 `python -m pip install -r requirements-lock.txt`；纯提示词路径（`references/`）无需任何依赖、可离线。
 

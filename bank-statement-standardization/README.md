@@ -118,7 +118,7 @@ WorkBuddy 通过「技能/插件」目录加载 Agent Skill：
 mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbuddy/skills/
 ```
 - 若 WorkBuddy 提供图形界面：进入「设置 → 技能/Skills → 导入」，选择本目录或下方的
-  `bank-statement-standardization.skill` 单文件导入。
+  `bank-statement-standardization.zip` 单文件导入或解压安装。
 - 导入后在对话中上传客户流水文件夹路径，请它「生成《客户名_已清洗_待分析.xlsx》」。
 
 ### 4) OpenClaw
@@ -131,14 +131,15 @@ mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skil
 ```
 - 启动后用客户端的技能列表命令确认已加载。
 
-### 5) 单文件 `.skill` 分发（推荐发给同事/批量部署）
-本仓库已附打包好的 `bank-statement-standardization.skill`（zip 格式）。三种装法：
+### 5) 单文件 `.zip` 分发（推荐发给同事/批量部署）
+本仓库可打包生成 `bank-statement-standardization.zip`。三种装法：
 ```bash
 # 通用：解压到目标客户端的 skills 目录（以 Kimi 为例）
-unzip bank-statement-standardization.skill -d ~/.kimi/skills/
+unzip bank-statement-standardization.zip -d ~/.kimi/skills/
 ```
-- 支持「导入 .skill」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：`python -m scripts.package_skill <skill目录>`（需 skill-creator 工具）。
+- 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
+- 重新打包（改动后）：在本目录运行 `python scripts/package_skill.py`，产物写入 `dist/bank-statement-standardization.zip`。
+  归档会自动排除 `dist/` 和 `scripts/package_skill.py` 本身。
 
 ### 安装自检（任意客户端通用）
 ```bash

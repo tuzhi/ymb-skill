@@ -25,7 +25,7 @@ standardize.py — 单个银行流水原始文件 -> 标准化流水（阶段一
   <stem>__standardized.csv      标准化流水
   <stem>__mapping.json          字段映射报告（Prompt 1 结构）
 """
-import argparse, json, os, re, sys, hashlib
+import argparse, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
@@ -41,8 +41,9 @@ KNOWN_NONSTATEMENT_EXT = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif",
     ".doc", ".docx", ".ppt", ".pptx", ".key", ".pages", ".numbers", ".zip", ".rar", ".7z",
 }
-# 本技能自身产物的后缀；扫描原始流水时跳过，避免把产物当原始数据重复摄入
-PRODUCT_SUFFIXES = ("__standardized.csv", "__整合流水.csv", "__打标流水.csv",
+# 本技能自身的下游产物后缀；扫描原始流水时跳过，避免把整合/打标/交付物重复摄入。
+# <stem>__standardized.csv 是阶段一标准产物，也允许作为输入直接透传。
+PRODUCT_SUFFIXES = ("__整合流水.csv", "__打标流水.csv",
                     "__组合日余额.csv", "__多客户底表.csv", "_已清洗_待分析.xlsx")
 
 
@@ -89,6 +90,12 @@ def screen_files(paths):
 STD_FIELDS = [
     "交易时间", "本方名称", "本方账户", "对手名称", "对手账户",
     "收入金额", "支出金额", "交易金额", "账户余额",
+    "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号",
+]
+
+OUTPUT_FIELDS = [
+    "交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
+    "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
     "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号",
 ]
 
@@ -615,6 +622,67 @@ def build_unique_id(fingerprint, occurrence):
     return base if occurrence == 0 else f"{base}-{occurrence + 1}"
 
 
+def is_standardized_input_name(path):
+    """文件名为 <stem>__standardized.csv 时，直接视为已完成阶段一标准化。"""
+    return os.path.basename(path).lower().endswith("__standardized.csv")
+
+
+def _standardized_output_stem(path):
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return stem[:-len("__standardized")] if stem.endswith("__standardized") else stem
+
+
+def adopt_standardized_input(path, out_dir=None):
+    """接收已完成阶段一标准化的 CSV：复制到工作区，并生成最小 mapping 报告供状态机验收。"""
+    fname = os.path.basename(path)
+    if not is_standardized_input_name(path):
+        raise NotABankStatement("文件名不是 <stem>__standardized.csv，不能按已标准化输入接收")
+    if out_dir is None:
+        out_dir = os.path.join(os.path.dirname(path), "standardized")
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, fname)
+    if os.path.abspath(path) != os.path.abspath(csv_path):
+        shutil.copy2(path, csv_path)
+
+    df = pd.read_csv(csv_path, dtype=str, encoding="utf-8-sig")
+    stem = _standardized_output_stem(path)
+    json_path = os.path.join(out_dir, f"{stem}__mapping.json")
+    report = {
+        "文件画像": {
+            "确认银行": "已标准化输入",
+            "开户行": "",
+            "账户类型": "",
+            "文件类型": "csv",
+            "命中模板": "文件名已标准化输入",
+            "整体置信度": 1.0,
+            "本方名称": "",
+            "本方账户": "",
+        },
+        "预处理方案": [
+            {"步骤": "文件名识别", "处理动作": "按 <stem>__standardized.csv 判定为已标准化输入",
+             "处理原因": "用户或前置系统已完成阶段一标准化", "影响范围": "阶段一跳过解析"},
+            {"步骤": "文件接收", "处理动作": "复制标准化 CSV 到阶段工作区",
+             "处理原因": "让 manifest、receipt、validate_stage.py 按正常阶段一产物验收", "影响范围": "文件路径"},
+        ],
+        "表头识别": {"表头行号": 0, "表头字段": list(df.columns), "置信度": 1.0},
+        "字段映射": {},
+        "校验预期": {
+            "日期可解析": "交易时间" in df.columns,
+            "金额可解析": bool({"收入金额", "支出金额", "交易金额"}.intersection(df.columns)),
+            "余额可校验": "账户余额" in df.columns,
+            "缺失关键字段": [],
+            "可能冲突字段": [],
+        },
+        "人工复核事项": [],
+        "标准化统计": {"交易笔数": len(df), "金额结构": "已标准化",
+                    "丢弃噪声行": 0, "行序整理策略": "保持已标准化输入原样"},
+        "判断依据": "文件名匹配 <stem>__standardized.csv，阶段一视为已完成标准化。",
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    return csv_path, json_path, report
+
+
 def standardize(path, out_dir=None, customer=None, bank=None,
                 account_type=None, header_row=None, overrides=None,
                 force_customer=False):
@@ -627,6 +695,9 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         raise NotABankStatement(
             "图片型/扫描件 PDF，未抽取到文本（需先 OCR 转文本）" if file_kind == "pdf"
             else "空文件或无可解析内容")
+
+    if is_standardized_input_name(path):
+        return adopt_standardized_input(path, out_dir=out_dir)
 
     if header_row is None:
         header_idx, hits = find_header_row(rows)
@@ -964,11 +1035,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     csv_path = os.path.join(out_dir, f"{stem}__standardized.csv")
     json_path = os.path.join(out_dir, f"{stem}__mapping.json")
 
-    pd.DataFrame(std_records, columns=[
-        "交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
-        "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
-        "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号",
-    ]).to_csv(csv_path, index=False, encoding="utf-8-sig")
+    pd.DataFrame(std_records, columns=OUTPUT_FIELDS).to_csv(csv_path, index=False, encoding="utf-8-sig")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
