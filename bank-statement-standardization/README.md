@@ -18,9 +18,8 @@
 
 ```
 bank-statement-standardization/
-├── SKILL.md                 # Agent Skill 主文件（Claude 自动加载）
-├── CORE_PROTOCOL.md         # WorkBuddy 执行核心协议：脚本优先、AI 有限兜底、可恢复/可验收/可追溯
-├── manifest.json            # 阶段事实源模板：每阶段 script / ai_fallback / validator / status
+├── SKILL.md                 # Agent Skill harness：入口、状态机、AI 兜底、写入边界
+├── manifest.json            # 阶段事实源模板：script / validator / ai_fallback_refs / fallback 产物 / started_at / duration_seconds / status
 ├── README.md                # 本文件
 ├── requirements.txt         # 直接依赖兼容范围
 ├── requirements-lock.txt    # 部署时使用的兼容范围约束（适配 Python 3.11+ / 3.13）
@@ -37,7 +36,7 @@ bank-statement-standardization/
 │   ├── run_pipeline.py      # 一键跑单客户（stage_1_standardize → stage_3_tag + 组合余额）
 │   └── build_rules_from_xlsx.py  # 从规则文档生成 tag_rules.csv
 ├── references/              # 可移植提示词包（任意大模型可用）
-│   ├── prompt-1-字段映射.md ~ prompt-4-多客户整合.md
+│   ├── prompt-1-字段映射.md ~ prompt-5-交付物组装.md
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
@@ -77,7 +76,7 @@ python scripts/multi_customer.py --batch "批次名" \
 
 1. 打开 `references/prompt-1-字段映射.md`，把其中代码块的提示词整段复制给你的大模型。
 2. 按提示词里的 `{{占位符}}` 附上：原始文件脱敏样本行、文件名/类型/疑似银行、`附件A`。
-3. 模型按要求输出 JSON。再依次用 prompt-2 / 3 / 4 完成后续阶段。
+3. 模型按要求输出 JSON。再依次按对应阶段使用 prompt-2 / 3 / 4；`prompt-5-交付物组装.md` 对应 `stage_4_package` 兜底，不代表新增状态机阶段。
 4. 交给外部模型前请按 `附件C` 做脱敏。
 
 ## 安装到各类大模型客户端（Skill 安装说明）
@@ -145,7 +144,8 @@ unzip bank-statement-standardization.zip -d ~/.kimi/skills/
 ```bash
 # 正式入口直接使用宿主机 Python
 python scripts/orchestrator.py run --folder "<某客户文件夹>"
-# 成功标志：runs/<run-id>/manifest.json 的 status 为 success，且 receipts/ 回执完整
+# 成功标志：runs/<run-id>/run_manifest.json 的 status 为 success；
+# runs/<run-id>/manifest.json 各阶段 status 均为 DONE，且 receipts/ 回执完整
 ```
 若客户端「技能列表/`/skills`」里能看到 `bank-statement-standardization`，即安装成功。
 

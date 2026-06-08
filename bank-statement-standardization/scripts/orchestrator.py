@@ -16,7 +16,7 @@ import sys
 import traceback
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import integrate as I
@@ -31,6 +31,7 @@ IMPORTS = ("pandas", "openpyxl", "xlrd", "pdfplumber")
 DONE = "DONE"
 ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
+LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 
 
 def configure_console():
@@ -40,7 +41,7 @@ def configure_console():
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(LOCAL_TZ).isoformat()
 
 
 def safe_name(value):
@@ -164,9 +165,8 @@ class Runner:
     def __init__(self, args):
         self.args = args
         self.skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.core_protocol_path = os.path.join(self.skill_dir, "CORE_PROTOCOL.md")
         self.template_manifest_path = os.path.join(self.skill_dir, "manifest.json")
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
         self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
         root = os.path.abspath(args.run_root or os.path.join(os.getcwd(), "runs"))
         self.run_dir = os.path.join(root, self.run_id)
@@ -199,7 +199,20 @@ class Runner:
     def copy_stage_manifest(self):
         if not os.path.isfile(self.template_manifest_path):
             raise RuntimeError(f"缺少 skill 根目录 manifest.json：{self.template_manifest_path}")
-        shutil.copyfile(self.template_manifest_path, self.stage_manifest_path)
+        with open(self.template_manifest_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.write_stage_manifest(self.sanitize_stage_manifest_template(data))
+
+    def sanitize_stage_manifest_template(self, data):
+        """Reset runtime-only fields before creating a new run manifest."""
+        for spec in data.values():
+            spec["ai_fallback_used"] = False
+            spec["ai_fallback_dir"] = ""
+            spec["ai_fallback_artifacts"] = []
+            spec["started_at"] = ""
+            spec["duration_seconds"] = None
+            spec["status"] = ""
+        return data
 
     def read_stage_manifest(self):
         with open(self.stage_manifest_path, "r", encoding="utf-8") as f:
@@ -216,6 +229,36 @@ class Runner:
         data[stage_id]["status"] = status
         self.write_stage_manifest(data)
 
+    def mark_stage_started(self, stage_id):
+        data = self.read_stage_manifest()
+        if stage_id not in data:
+            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
+        if not data[stage_id].get("started_at"):
+            data[stage_id]["started_at"] = now()
+        self.write_stage_manifest(data)
+
+    def mark_stage_done(self, stage_id):
+        data = self.read_stage_manifest()
+        if stage_id not in data:
+            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
+        finished_at = datetime.now(LOCAL_TZ)
+        started_at = data[stage_id].get("started_at")
+        if started_at:
+            started_dt = datetime.fromisoformat(started_at)
+            data[stage_id]["duration_seconds"] = round((finished_at - started_dt).total_seconds(), 3)
+        else:
+            data[stage_id]["duration_seconds"] = None
+        self.write_stage_manifest(data)
+
+    def mark_stage_ai_fallback_used(self, stage_id, fallback_dir, artifacts=None):
+        data = self.read_stage_manifest()
+        if stage_id not in data:
+            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
+        data[stage_id]["ai_fallback_used"] = True
+        data[stage_id]["ai_fallback_dir"] = fallback_dir
+        data[stage_id]["ai_fallback_artifacts"] = artifacts or data[stage_id].get("ai_fallback_artifacts", [])
+        self.write_stage_manifest(data)
+
     def first_pending_stage(self):
         data = self.read_stage_manifest()
         for stage_id, spec in data.items():
@@ -225,22 +268,6 @@ class Runner:
             if status != DONE:
                 return stage_id, spec
         return None, None
-
-    def load_core_protocol_for_stage(self, stage_id):
-        if not os.path.isfile(self.core_protocol_path):
-            raise RuntimeError(f"缺少 CORE_PROTOCOL.md：{self.core_protocol_path}")
-        with open(self.core_protocol_path, "r", encoding="utf-8") as f:
-            text = f.read()
-        self.emit(
-            "INFO",
-            "CORE_PROTOCOL_LOADED",
-            f"阶段 {stage_id} 已加载 CORE_PROTOCOL.md",
-            stage=stage_id,
-            path=self.core_protocol_path,
-            sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
-            lines=len(text.splitlines()),
-        )
-        return text
 
     def write_manifest(self):
         with open(self.manifest_path, "w", encoding="utf-8") as f:
@@ -266,6 +293,9 @@ class Runner:
 
     def work_dir(self):
         return os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
+
+    def fallback_dir(self, stage_id):
+        return os.path.join(self.run_dir, "fallback", stage_id)
 
     def latest_artifact(self, pattern):
         hits = sorted(glob.glob(os.path.join(self.work_dir(), pattern)))
@@ -415,6 +445,9 @@ class Runner:
         if stage_id not in handlers:
             raise RuntimeError(f"未知阶段：{stage_id}")
         return handlers[stage_id]()
+
+    def stage_handler_name(self, stage_id):
+        return f"Runner.{stage_id}"
 
     def validate_stage(self, stage_id):
         work = self.work_dir()
@@ -577,20 +610,42 @@ class Runner:
         return os.path.join(self.run_dir, f"{self.run_id}__{level}__{self.args.error_bundle_mode}.zip")
 
     def handle_stage_failure(self, stage_id, spec, exc):
+        fallback_dir = self.fallback_dir(stage_id)
+        os.makedirs(fallback_dir, exist_ok=True)
+        fallback_request = {
+            "stage": stage_id,
+            "name": spec.get("name", ""),
+            "script": spec.get("script", ""),
+            "validator": spec.get("validator", ""),
+            "ai_fallback_refs": spec.get("ai_fallback_refs", []),
+            "error": str(exc),
+            "created_at": now(),
+            "instruction": "AI 兜底产生的脚本、补丁、参数文件必须保存在本目录，并追加记录到运行时 manifest 的 ai_fallback_artifacts。",
+        }
+        fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
+        with open(fallback_request_path, "w", encoding="utf-8") as f:
+            json.dump(fallback_request, f, ensure_ascii=False, indent=2)
+        fallback_artifacts = ["fallback_request.json"]
         self.emit(
             "WARNING",
             "AI_FALLBACK_REQUIRED",
-            f"阶段 {stage_id} 失败，需要按 ai_fallback 处理；未产生确定性修正前不自动重跑",
+            f"阶段 {stage_id} 失败，需要 AI 按 ai_fallback_refs 读取兜底资料；未产生确定性修正前不自动重跑",
             stage=stage_id,
-            ai_fallback=spec.get("ai_fallback", ""),
+            ai_fallback_refs=spec.get("ai_fallback_refs", []),
+            ai_fallback_dir=fallback_dir,
             max_retry=MAX_AI_FALLBACK_RETRY,
             error=str(exc),
         )
+        self.mark_stage_ai_fallback_used(stage_id, fallback_dir, fallback_artifacts)
         self.update_stage_status(stage_id, ERROR)
         self.receipt(stage_id, "error", {
             "script": spec.get("script", ""),
+            "orchestrator_handler": self.stage_handler_name(stage_id),
             "validator": spec.get("validator", ""),
-            "ai_fallback": spec.get("ai_fallback", ""),
+            "ai_fallback_refs": spec.get("ai_fallback_refs", []),
+            "ai_fallback_used": True,
+            "ai_fallback_dir": fallback_dir,
+            "ai_fallback_artifacts": fallback_artifacts,
             "error": str(exc),
         })
 
@@ -599,7 +654,7 @@ class Runner:
             stage_id, spec = self.first_pending_stage()
             if not stage_id:
                 return
-            self.load_core_protocol_for_stage(stage_id)
+            self.mark_stage_started(stage_id)
             self.emit(
                 "INFO",
                 "STAGE_START",
@@ -612,9 +667,17 @@ class Runner:
             )
             try:
                 script_result = self.execute_stage_script(stage_id)
-                self.receipt(stage_id, "script_ok", script_result)
+                self.receipt(stage_id, "script_ok", {
+                    "script": spec.get("script", ""),
+                    "orchestrator_handler": self.stage_handler_name(stage_id),
+                    "result": script_result,
+                })
                 validate_result = self.validate_stage(stage_id)
-                self.receipt(f"{stage_id}__validator", "ok", validate_result)
+                self.receipt(f"{stage_id}__validator", "ok", {
+                    "validator": spec.get("validator", ""),
+                    "result": validate_result,
+                })
+                self.mark_stage_done(stage_id)
                 self.update_stage_status(stage_id, DONE)
                 self.emit("INFO", "STAGE_DONE", f"阶段 {stage_id} 已通过脚本和检测", stage=stage_id)
             except Exception as exc:

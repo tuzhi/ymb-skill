@@ -2,36 +2,77 @@
   "stage_1_standardize": {
     "name": "单文件标准化与字段映射",
     "script": "scripts/standardize.py",
-    "ai_fallback": "SKILL.md#stage_1_standardize",
+    "ai_fallback_refs": [
+      "references/prompt-1-字段映射.md",
+      "references/附件A-标准化字段说明.md"
+    ],
     "validator": "scripts/validate_stage.py::validate_standardize",
+    "ai_fallback_used": false,
+    "ai_fallback_dir": "",
+    "ai_fallback_artifacts": [],
+    "started_at": "",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_2_integrate": {
     "name": "单客户多文件整合与验证",
     "script": "scripts/integrate.py",
-    "ai_fallback": "SKILL.md#stage_2_integrate",
+    "ai_fallback_refs": [
+      "references/prompt-2-单客户整合.md",
+      "references/附件A-标准化字段说明.md"
+    ],
     "validator": "scripts/validate_stage.py::validate_integrate",
+    "ai_fallback_used": false,
+    "ai_fallback_dir": "",
+    "ai_fallback_artifacts": [],
+    "started_at": "",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_2b_portfolio_balance": {
     "name": "组合余额与余额校验",
     "script": "scripts/portfolio_balance.py",
-    "ai_fallback": "SKILL.md#stage_2b_portfolio_balance",
+    "ai_fallback_refs": [
+      "references/prompt-2-单客户整合.md",
+      "references/附件A-标准化字段说明.md"
+    ],
     "validator": "scripts/validate_stage.py::validate_portfolio",
+    "ai_fallback_used": false,
+    "ai_fallback_dir": "",
+    "ai_fallback_artifacts": [],
+    "started_at": "",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_3_tag": {
     "name": "交易打标与规则沉淀",
     "script": "scripts/tag.py",
-    "ai_fallback": "SKILL.md#stage_3_tag",
+    "ai_fallback_refs": [
+      "references/prompt-3-交易打标.md",
+      "references/附件B-标签体系参考.md"
+    ],
     "validator": "scripts/validate_stage.py::validate_tag",
+    "ai_fallback_used": false,
+    "ai_fallback_dir": "",
+    "ai_fallback_artifacts": [],
+    "started_at": "",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_4_package": {
     "name": "单文件交付物组装",
     "script": "scripts/package_deliverable.py",
-    "ai_fallback": "SKILL.md#stage_4_package",
+    "ai_fallback_refs": [
+      "references/prompt-5-交付物组装.md",
+      "references/附件A-标准化字段说明.md",
+      "references/附件B-标签体系参考.md"
+    ],
     "validator": "scripts/validate_stage.py::validate_final",
+    "ai_fallback_used": false,
+    "ai_fallback_dir": "",
+    "ai_fallback_artifacts": [],
+    "started_at": "",
+    "duration_seconds": null,
     "status": ""
   }
 }
