@@ -12,4 +12,5 @@ runs/
 workbuddy_result/
 resources/
 .codegraph/
+*.csv
 
