@@ -32,6 +32,7 @@ DONE = "DONE"
 ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
+MAX_JOINED_CLIENT_NAME_PART_LEN = 20
 
 
 def configure_console():
@@ -130,6 +131,15 @@ def rank_client_name_candidates(work_roots):
     return sorted(ranked, key=lambda item: (-item["score"], -item["account_count"], -item["source_file_count"], item["name"]))
 
 
+def joined_short_client_name_candidates(ranked):
+    names = []
+    for item in ranked:
+        name = item.get("name", "").strip()
+        if name and len(name) <= MAX_JOINED_CLIENT_NAME_PART_LEN and name not in names:
+            names.append(name)
+    return "_".join(names) if names else None
+
+
 def infer_unique_client_name(work_roots):
     ranked = rank_client_name_candidates(work_roots)
     if not ranked:
@@ -139,7 +149,7 @@ def infer_unique_client_name(work_roots):
     top, second = ranked[0], ranked[1]
     if top["score"] >= second["score"] * 2 and top["account_count"] > second["account_count"]:
         return top["name"], ranked
-    return None, ranked
+    return joined_short_client_name_candidates(ranked), ranked
 
 
 def inventory(folder):

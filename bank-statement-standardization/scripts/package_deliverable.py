@@ -37,6 +37,8 @@ import integrate as I
 import tag as T
 import portfolio_balance as PB
 
+MAX_JOINED_CLIENT_NAME_PART_LEN = 20
+
 # 格式初筛 / 产物识别 / 非流水排除 统一由 standardize 提供（S.screen_files / S.NotABankStatement）。
 
 # 主表列序：金额→账户余额→虚拟账户余额→银行备注/账户方附言→收支方向/标签→渠道/来源。
@@ -335,6 +337,15 @@ def _rank_client_name_candidates_from_work(work):
     return sorted(ranked, key=lambda item: (-item["score"], -item["account_count"], -item["source_file_count"], item["name"]))
 
 
+def _joined_short_client_name_candidates(ranked):
+    names = []
+    for item in ranked:
+        name = item.get("name", "").strip()
+        if name and len(name) <= MAX_JOINED_CLIENT_NAME_PART_LEN and name not in names:
+            names.append(name)
+    return "_".join(names) if names else None
+
+
 def _infer_unique_client_name(work):
     """从本轮标准化产物中提取唯一高分户名；优先使用银行账户证据。
 
@@ -349,7 +360,7 @@ def _infer_unique_client_name(work):
     top, second = ranked[0], ranked[1]
     if top["score"] >= second["score"] * 2 and top["account_count"] > second["account_count"]:
         return top["name"]
-    return None
+    return _joined_short_client_name_candidates(ranked)
 
 
 def run(client, args):
@@ -550,3 +561,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

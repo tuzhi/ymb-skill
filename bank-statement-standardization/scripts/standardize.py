@@ -400,10 +400,30 @@ def read_rows_excel(path):
         df = xl.parse(sheet, header=None, dtype=str)
         if df.dropna(how="all").shape[0] >= 2:
             rows = df.where(pd.notnull(df), None).values.tolist()
+            rows = _sanitize_nan_strings(rows)
             return sheet, rows
     sheet = xl.sheet_names[0]
     df = xl.parse(sheet, header=None, dtype=str)
-    return sheet, df.where(pd.notnull(df), None).values.tolist()
+    rows = df.where(pd.notnull(df), None).values.tolist()
+    return sheet, _sanitize_nan_strings(rows)
+
+
+def _sanitize_nan_strings(rows):
+    """修复 pandas/xlrd 读取 .xls 时空单元格变为 float('nan') 或字符串 'nan' 的问题。
+    统一转为 None，保持与下游空值检查（None/""/ "nan"）的一致性。"""
+    import math
+    sanitized = []
+    for row in rows:
+        new_row = []
+        for v in row:
+            if isinstance(v, float) and math.isnan(v):
+                new_row.append(None)
+            elif isinstance(v, str) and v.strip().lower() == "nan":
+                new_row.append(None)
+            else:
+                new_row.append(v)
+        sanitized.append(new_row)
+    return sanitized
 
 
 def read_rows_csv(path):
