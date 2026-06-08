@@ -7,7 +7,7 @@ dist/
 .idea/
 bank-statement-standardization/.runtime/
 bank-statement-standardization/bootstrap-logs/
-runs
+runs/
 *.zip
 workbuddy_result/
 resources/
