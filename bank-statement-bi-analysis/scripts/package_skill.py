@@ -18,9 +18,7 @@ def _is_excluded(relative_path):
     parts = relative_path.parts
     if not parts:
         return True
-    if parts[0] == "dist":
-        return True
-    if parts[0] == "testdata":
+    if any(part in {"dist", "testdata", "runs", ".claude", "tests", "__pycache__"} for part in parts):
         return True
     if relative_path == PACKAGER_RELATIVE:
         return True
