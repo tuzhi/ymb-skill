@@ -201,8 +201,13 @@ def match_field(col):
     c = _norm(col)
     if not c or c.lower() == "nan":
         return None
+    # 列名里出现「对方/对手/交易对手」时，即使包含「户名/账号」，也不能映射成本方字段。
+    # 例如建行列「对方账号与户名」包含“户名”，但它描述的是交易对手，不是本方客户名称。
+    is_counterparty_col = any(k in c for k in ("对方", "对手", "交易对手"))
     best = None
     for field, syns in SYNONYMS.items():
+        if is_counterparty_col and field in ("本方名称", "本方账户"):
+            continue
         for syn in syns:
             sn = _norm(syn)
             if c == sn:
@@ -556,11 +561,14 @@ def sniff_account_info(rows, header_idx, preamble=""):
     info = {"本方名称": "", "本方账户": "", "账户类型线索": ""}
     # 只取表头以上的抬头行；header_idx 可能为 0（CSV 表头即首行），此时仅用 preamble，
     # 不能误取数据行——否则交易备注里的「…有限公司」会把个人账户错判成对公。
+    # 注意：这里是“抬头/元数据”识别，和 SYNONYMS 里的“数据列名映射”是两套逻辑。
+    # 例如建行 PDF 的「客户名称:张三」通常在表格上方抬头里，不在明细表头列里，
+    # 因此必须在这里显式匹配，不能只依赖 SYNONYMS["本方名称"]。
     upper = rows[:header_idx] if header_idx is not None else rows[:6]
     meta = preamble + " " + " ".join(
         str(c) for r in upper for c in r if c
     )
-    m = re.search(r"(?:户名|账户名称|账户名)[:：]?\s*([^\s,，:：\-]+)", meta)
+    m = re.search(r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*([^\s,，:：\-]+)", meta)
     if not m:
         m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
@@ -898,8 +906,11 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             dropped_noise += 1
             continue
 
-        # 本方账户/本方名称：若文件把它们放在每行的数据列里（如建行账号列），优先用行内值；
-        # 否则用从抬头元数据嗅探到的常量。这样既支持单账户抬头式，也支持多账户混在一文件的情况。
+        # 本方账户/本方名称有两类来源：
+        # 1) 数据列来源：表格明细中存在「本方名称/客户名称/账户名称」等列，已通过 SYNONYMS 映射到标准字段；
+        # 2) 抬头来源：表格上方元数据中存在「户名/客户名称/账号」等信息，由 sniff_account_info() 抽成常量。
+        # 若行内数据列有值，优先使用行内值；否则使用抬头常量。这样既支持单账户抬头式流水，
+        # 也支持同一文件中多账户/多主体混在明细列里的情况。
         row_self_acct = cell(field_to_cols.get("本方账户", []))
         row_self_name = cell(field_to_cols.get("本方名称", []))
         self_acct = row_self_acct or acct["本方账户"]
