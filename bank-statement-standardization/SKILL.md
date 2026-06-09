@@ -13,8 +13,14 @@ description: >-
 
 ## 正式入口
 
+## 工作空间
+
+- 执行命令的当前目录必须是本次任务工作空间；不要从 skill 安装目录启动正式任务。
+- 临时文件、`runs/`、`artifacts/`、`receipts/`、错误包和交付物都以当前工作空间为基准目录。
+- 脚本路径可以指向 skill 目录，但 `--run-root` 必须显式落到当前工作空间的 `runs`。
+
 ```powershell
-python scripts\orchestrator.py run --folder "<客户流水文件夹>"
+python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件夹>" --run-root ".\runs"
 ```
 
 ## 状态机
@@ -58,7 +64,7 @@ python scripts\orchestrator.py run --folder "<客户流水文件夹>"
 AI 兜底修复后必须重新调用 orchestrator，且每次重跑都生成新的 `run_id`。重跑命令必须带上上一轮失败 run：
 
 ```powershell
-python scripts\orchestrator.py run --folder "<客户流水文件夹>" --parent-run-id "<失败run_id>" --rerun-reason ai_fallback_after_stage_failure
+python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件夹>" --run-root ".\runs" --parent-run-id "<失败run_id>" --rerun-reason ai_fallback_after_stage_failure
 ```
 
 新的 `run_manifest.json` 会记录 `parent_run_id`、`rerun_reason`、`parent_run.inherited_fallbacks`，并记录
