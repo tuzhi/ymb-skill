@@ -33,6 +33,8 @@ ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 MAX_JOINED_CLIENT_NAME_PART_LEN = 20
+SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests"}
+SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
 
 
 def configure_console():
@@ -55,6 +57,104 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def read_json_if_exists(path, default=None):
+    if not os.path.isfile(path):
+        return default
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def normalize_relpath(path):
+    return path.replace(os.sep, "/")
+
+
+def run_git_capture(args, cwd):
+    try:
+        cp = subprocess.run(
+            ["git"] + args,
+            cwd=cwd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except Exception:
+        return ""
+    if cp.returncode:
+        return ""
+    return cp.stdout.strip()
+
+
+def collect_skill_source_snapshot(skill_dir):
+    skill_dir = os.path.abspath(skill_dir)
+    file_sha256 = {}
+    for root, dirs, files in os.walk(skill_dir):
+        dirs[:] = [d for d in dirs if d not in SOURCE_SNAPSHOT_EXCLUDE_DIRS]
+        for filename in files:
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in SOURCE_SNAPSHOT_EXTS:
+                continue
+            path = os.path.join(root, filename)
+            rel = normalize_relpath(os.path.relpath(path, skill_dir))
+            file_sha256[rel] = sha256(path)
+
+    status = run_git_capture(["status", "--short", "--", skill_dir], skill_dir)
+    modified_files = []
+    for line in status.splitlines():
+        if not line.strip():
+            continue
+        rel = normalize_relpath(line[3:].strip().strip('"'))
+        marker = "bank-statement-standardization/"
+        if marker in rel:
+            rel = rel.split(marker, 1)[1]
+        if rel.split("/", 1)[0] in SOURCE_SNAPSHOT_EXCLUDE_DIRS:
+            continue
+        modified_files.append(rel)
+
+    return {
+        "git_commit": run_git_capture(["rev-parse", "HEAD"], skill_dir),
+        "dirty": bool(modified_files),
+        "modified_files": modified_files,
+        "file_sha256": dict(sorted(file_sha256.items())),
+    }
+
+
+def load_parent_run_context(run_root, parent_run_id):
+    if not parent_run_id:
+        return None
+    parent_dir = os.path.abspath(os.path.join(run_root, parent_run_id))
+    if not os.path.isdir(parent_dir):
+        raise RuntimeError(f"parent run 不存在：{parent_dir}")
+
+    stage_manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
+    run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
+    inherited_fallbacks = []
+    for stage_id, spec in stage_manifest.items():
+        if not isinstance(spec, dict):
+            continue
+        if not (spec.get("ai_fallback_used") or spec.get("ai_fallback_dir") or spec.get("ai_fallback_artifacts")):
+            continue
+        inherited_fallbacks.append({
+            "stage": stage_id,
+            "name": spec.get("name", ""),
+            "script": spec.get("script", ""),
+            "validator": spec.get("validator", ""),
+            "parent_status": spec.get("status", ""),
+            "parent_fallback_dir": spec.get("ai_fallback_dir", ""),
+            "parent_fallback_artifacts": spec.get("ai_fallback_artifacts", []),
+        })
+
+    return {
+        "parent_run_id": parent_run_id,
+        "parent_run_dir": parent_dir,
+        "parent_status": run_manifest.get("status", ""),
+        "parent_error": run_manifest.get("error", ""),
+        "inherited_fallbacks": inherited_fallbacks,
+    }
 
 
 def parse_balance(value):
@@ -179,6 +279,7 @@ class Runner:
         stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
         self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
         root = os.path.abspath(args.run_root or os.path.join(os.getcwd(), "runs"))
+        self.run_root = root
         self.run_dir = os.path.join(root, self.run_id)
         self.out_dir = os.path.join(self.run_dir, "artifacts")
         self.receipt_dir = os.path.join(self.run_dir, "receipts")
@@ -200,6 +301,10 @@ class Runner:
             "error_bundle_mode": args.error_bundle_mode,
             "python": platform.python_version(),
             "model": os.environ.get("SKILL_ACTIVE_MODEL", ""),
+            "parent_run_id": args.parent_run_id or "",
+            "rerun_reason": args.rerun_reason or "",
+            "parent_run": load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None,
+            "skill_source": collect_skill_source_snapshot(self.skill_dir),
             "stages": [],
             "warnings": [],
             "input_inventory": inventory(args.folder),
@@ -746,6 +851,10 @@ def main():
     ap.add_argument("--force-name", action="store_true")
     ap.add_argument("--require-model",
                     help="可选：要求宿主通过 SKILL_ACTIVE_MODEL 提供并匹配模型 ID")
+    ap.add_argument("--parent-run-id",
+                    help="可选：AI 兜底修复后重跑时，记录关联的上一轮失败 run_id")
+    ap.add_argument("--rerun-reason",
+                    help="可选：重跑原因，例如 ai_fallback_after_stage_failure")
     ap.add_argument("--error-bundle-mode", choices=["full", "safe"], default="full",
                     help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full")
     args = ap.parse_args()

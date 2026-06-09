@@ -650,6 +650,33 @@ def build_unique_id(fingerprint, occurrence):
     return base if occurrence == 0 else f"{base}-{occurrence + 1}"
 
 
+def infer_account_from_records(records):
+    """从已生成的标准化明细反推报告层本方户名/账号，避免元数据停留在抬头嗅探结果。"""
+    candidates = {}
+    for row in records:
+        account = str(row.get("本方账户") or "").strip()
+        name = str(row.get("本方名称") or "").strip()
+        if not account or account.startswith("未识别账户#"):
+            continue
+        key = (account, name)
+        stats = candidates.setdefault(key, {"rows": 0, "balance_rows": 0, "sources": set()})
+        stats["rows"] += 1
+        if row.get("账户余额") not in (None, ""):
+            stats["balance_rows"] += 1
+        source = str(row.get("来源文件名") or "").strip()
+        if source:
+            stats["sources"].add(source)
+
+    if not candidates:
+        return {}
+
+    (account, name), _stats = max(
+        candidates.items(),
+        key=lambda item: (item[1]["balance_rows"], item[1]["rows"], len(item[1]["sources"]), item[0][1], item[0][0]),
+    )
+    return {"本方账户": account, "本方名称": name}
+
+
 def is_standardized_input_name(path):
     """文件名为 <stem>__standardized.csv 时，直接视为已完成阶段一标准化。"""
     return os.path.basename(path).lower().endswith("__standardized.csv")
@@ -744,10 +771,6 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         acct["本方名称"] = customer
     if not account_type:
         account_type = acct["账户类型线索"] or "未知"
-    # 账号识别失败时，用「按文件隔离」的占位账号，避免不同文件错误合并到同一空账户做余额校验
-    if not acct["本方账户"]:
-        acct["本方账户"] = f"未识别账户#{stem}"
-        acct["_账号未识别"] = True
 
     # 开户行：优先 --bank（仍做规范化），否则从文件名/抬头/表头文本推断
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
@@ -933,7 +956,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         # 也支持同一文件中多账户/多主体混在明细列里的情况。
         row_self_acct = cell(field_to_cols.get("本方账户", []))
         row_self_name = cell(field_to_cols.get("本方名称", []))
-        self_acct = row_self_acct or acct["本方账户"]
+        # 抬头和数据列都没有账号时，才在行级写入文件隔离占位账号，避免跨文件错误合并。
+        self_acct = row_self_acct or acct["本方账户"] or f"未识别账户#{stem}"
         cust = customer if force_customer and customer else (row_self_name or acct["本方名称"] or customer)
 
         # 交易金额 = 收入金额(空→0) − 支出金额(空→0)，带符号（流入为正、流出为负）；
@@ -975,6 +999,12 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     # 让下游严格按「文件内原始顺序」做余额校验，避免按时间排序打乱同秒/同日多笔产生伪断点。
     _order, order_strategy = best_continuity_order(_rows_from_records(std_records))
     std_records = [std_records[i] for i in _order]
+
+    record_account = infer_account_from_records(std_records)
+    if record_account.get("本方账户"):
+        acct["本方账户"] = record_account["本方账户"]
+    if record_account.get("本方名称") and not (force_customer and customer):
+        acct["本方名称"] = record_account["本方名称"]
 
     # ---- 映射报告 ----
     for field in STD_FIELDS:

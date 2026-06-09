@@ -55,6 +55,15 @@ python scripts\orchestrator.py run --folder "<客户流水文件夹>"
 5. 一旦进入兜底，运行时该阶段必须记录 `ai_fallback_used = true`，并把兜底产物保存到 `ai_fallback_dir`。
 6. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
 
+AI 兜底修复后必须重新调用 orchestrator，且每次重跑都生成新的 `run_id`。重跑命令必须带上上一轮失败 run：
+
+```powershell
+python scripts\orchestrator.py run --folder "<客户流水文件夹>" --parent-run-id "<失败run_id>" --rerun-reason ai_fallback_after_stage_failure
+```
+
+新的 `run_manifest.json` 会记录 `parent_run_id`、`rerun_reason`、`parent_run.inherited_fallbacks`，并记录
+`skill_source` 源码快照；不得复用旧 run 目录覆盖失败现场。
+
 ## 写入边界
 
 - 默认只写本次运行目录，例如 `runs/<run-id>/fallback/<stage-id>/`、`runs/<run-id>/artifacts/`、`receipts/`、`events.jsonl`。
