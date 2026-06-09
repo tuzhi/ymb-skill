@@ -29,6 +29,10 @@ import argparse, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
+SCRIPT_DIR = os.path.dirname(__file__)
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
 try:
     import pandas as pd
 except ImportError:
@@ -118,7 +122,7 @@ SYNONYMS = {
     "支出金额":   ["支出金额", "支出", "借方发生额", "取出金额", "借方金额", "借方",
                   "转出金额", "转出", "借方发生额(支取)", "借方发生额（支取）"],
     "交易金额":   ["交易金额", "发生额", "金额"],
-    "账户余额":   ["账户余额", "余额", "本次余额", "当前余额"],
+    "账户余额":   ["账户余额", "余额", "本次余额", "当前余额", "交易后余额"],
     "收支方向":   ["收支方向", "收支", "收/支/其他", "借贷标志", "借贷", "方向", "借贷方向"],
     "银行备注":   ["交易摘要", "摘要", "用途", "交易类型", "交易备注", "相关信息",
                   "备注", "交易种类", "业务摘要", "附言摘要"],
@@ -457,107 +461,29 @@ def read_rows_csv(path):
     return "\n".join(preamble), out
 
 
-def _read_abc_text_pdf(pdf):
-    """解析农行文本版流水清单。
-
-    这类 PDF 没有表格边框，pdfplumber.extract_tables() 会返回空列表，
-    但 extract_text() 可以稳定取得每笔交易。续行并入交易附言，避免漏笔。
-    """
-    header = ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额",
-              "对手信息", "日志号", "交易渠道", "交易附言"]
-    txn_re = re.compile(
-        r"^(\d{8})\s+(?:(\d{6})\s+)?(\S+)\s+([+-]\d[\d,]*\.\d{2})\s+"
-        r"([\d,]+\.\d{2})\s+(.*)$")
-    journal_re = re.compile(r"^(.*?)\s+([A-Za-z]\d{9}|\d{10})\s*(.*)$")
-    channels = ("掌上银行", "电子商务", "中国人寿代扣", "个人活期结息",
-                "超级网银", "短信费", "自动柜员机")
-    rows = [header]
-    preamble = []
-
-    for page in pdf.pages:
-        for raw_line in (page.extract_text() or "").splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            if line.startswith(("中国农业银行账户活期交易明细清单", "币种：", "起止日期：",
-                                "交易日期 ", "该交易明细因", "第")):
-                if line.startswith(("中国农业银行", "币种：", "起止日期：")):
-                    preamble.append(line)
-                continue
-            if line.startswith("户名："):
-                preamble.append(line)
-                continue
-
-            m = txn_re.match(line)
-            if m:
-                date, time, summary, amount, balance, tail = m.groups()
-                jm = journal_re.match(tail)
-                if jm:
-                    opponent, journal, remainder = jm.groups()
-                else:
-                    opponent, journal, remainder = tail, "", ""
-                channel = ""
-                memo = remainder
-                for candidate in channels:
-                    if remainder.startswith(candidate):
-                        channel = candidate
-                        memo = remainder[len(candidate):].strip()
-                        break
-                rows.append([date, time or "", summary, amount, balance,
-                             opponent.strip(), journal, channel, memo])
-                continue
-
-            # PDF 列宽导致的对手名称/附言换行，保留在上一笔附言中供追溯。
-            if len(rows) > 1:
-                rows[-1][-1] = (rows[-1][-1] + " " + line).strip()
-
-    return " ".join(preamble), rows if len(rows) > 1 else []
-
-
 def read_rows_pdf(path):
     """用 pdfplumber 抽表；逐页拼接，跳过重复表头行；多行单元格内换行去掉。"""
-    import pdfplumber
-    all_rows = []
-    header_sig = None
-    preamble = ""
-    with pdfplumber.open(path) as pdf:
-        # 表格页之外的证明抬头常包含真实户名，例如微信支付的「兹证明：张三（居民身份证...）」。
-        # 保留首页文本供统一的账户信息嗅探使用，不能只保留 extract_tables() 的结果。
-        if pdf.pages:
-            preamble = pdf.pages[0].extract_text() or ""
-        for page in pdf.pages:
-            for tbl in page.extract_tables():
-                for r in tbl:
-                    cells = [(c or "").replace("\n", "").strip() for c in r]
-                    if not any(cells):
-                        continue
-                    sig = "|".join(cells)
-                    if header_sig is None:
-                        header_sig = sig
-                        all_rows.append(cells)
-                    elif sig == header_sig:
-                        continue  # 跳过每页重复表头
-                    else:
-                        all_rows.append(cells)
-        if not all_rows:
-            text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-            if "中国农业银行账户活期交易明细清单" in text:
-                return _read_abc_text_pdf(pdf)
-    return preamble, all_rows
+    from parsers.router import read_pdf_rows
+
+    return read_pdf_rows(path)
 
 
 def read_rows(path):
-    """返回 (kind, preamble, rows)。preamble 为表格之外的抬头文本（可为空）。"""
+    """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm", ".xls"):
         sheet, rows = read_rows_excel(path)
-        return ("excel", "", rows)
+        route_info = {"parser": "generic_excel", "route_confidence": 0.7,
+                      "route_evidence": {"ext": ext, "sheet": sheet}, "ocr_used": False}
+        return ("excel", "", rows, route_info)
     if ext in (".csv", ".txt", ".tsv"):
         pre, rows = read_rows_csv(path)
-        return ("csv", pre, rows)
+        route_info = {"parser": "generic_csv", "route_confidence": 0.7,
+                      "route_evidence": {"ext": ext}, "ocr_used": False}
+        return ("csv", pre, rows, route_info)
     if ext == ".pdf":
-        preamble, rows = read_rows_pdf(path)
-        return ("pdf", preamble, rows)
+        preamble, rows, route_info = read_rows_pdf(path)
+        return ("pdf", preamble, rows, route_info)
     raise NotABankStatement(f"不支持的文件类型：{ext}")
 
 
@@ -743,10 +669,13 @@ def standardize(path, out_dir=None, customer=None, bank=None,
                 force_customer=False):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
-    file_kind, preamble, rows = read_rows(path)
+    file_kind, preamble, rows, route_info = read_rows(path)
+    route_info = dict(route_info or {})
 
-    # 空文件 / 图片型(扫描件)PDF：抽不到任何文本内容 -> 自动排除（需先 OCR）
+    # 空文件 / PDF 无可解析记录：区分“完全无文本”和“有文本但没有命中结构化/专属解析器”。
     if not rows or not any(any(c not in (None, "", "nan") for c in (r or [])) for r in rows):
+        if file_kind == "pdf" and route_info.get("route_evidence", {}).get("text_length", 0):
+            raise NotABankStatement("PDF 可抽取文本，但未识别到结构化流水表格或已支持的专属文本模板")
         raise NotABankStatement(
             "图片型/扫描件 PDF，未抽取到文本（需先 OCR 转文本）" if file_kind == "pdf"
             else "空文件或无可解析内容")
@@ -770,12 +699,14 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     if customer and (force_customer or not acct["本方名称"]):
         acct["本方名称"] = customer
     if not account_type:
-        account_type = acct["账户类型线索"] or "未知"
+        account_type = route_info.get("账户类型线索") or acct["账户类型线索"] or "未知"
 
     # 开户行：优先 --bank（仍做规范化），否则从文件名/抬头/表头文本推断
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
     bank_text = f"{fname} {preamble} {upper_text}"
     bank_name = (infer_bank(bank) or bank) if bank else infer_bank(bank_text)
+    if not bank_name and route_info.get("parser") == "jiangxi_rural_commercial_pdf_text":
+        bank_name = "农村商业银行"
 
     # ---- 列 -> 标准字段 映射 ----
     overrides = overrides or {}
@@ -1063,8 +994,16 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "整体置信度": overall_conf,
             "本方名称": acct["本方名称"],
             "本方账户": acct["本方账户"],
+            "parser": route_info.get("parser", ""),
+            "route_confidence": route_info.get("route_confidence", ""),
+            "route_evidence": route_info.get("route_evidence", {}),
+            "ocr_used": bool(route_info.get("ocr_used", False)),
+            "page_count": route_info.get("page_count", ""),
         },
         "预处理方案": [
+            {"步骤": "输入路由", "处理动作": f"使用 parser={route_info.get('parser', 'unknown')}",
+             "处理原因": "按文件类型/银行/模板/抽取模式选择确定性解析器",
+             "影响范围": "文件读取与字段初始结构"},
             {"步骤": "表头定位", "处理动作": f"识别第 {header_idx} 行为表头（0-based）",
              "处理原因": "原始文件含标题/账户信息抬头", "影响范围": "全表"},
             {"步骤": "金额结构", "处理动作": f"采用「{amount_mode}」金额拆分",
@@ -1084,7 +1023,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         "人工复核事项": review_items,
         "标准化统计": {"交易笔数": len(std_records), "金额结构": amount_mode,
                     "丢弃噪声行": dropped_noise, "行序整理策略": order_strategy},
-        "判断依据": f"基于表头同义词匹配命中 {hits} 列；金额结构判为「{amount_mode}」；"
+        "判断依据": f"路由 parser={route_info.get('parser', 'unknown')}；"
+                    f"基于表头同义词匹配命中 {hits} 列；金额结构判为「{amount_mode}」；"
                     f"账户类型线索：{account_type}。摘要/附言按不可信输入仅作辅助。",
     }
 
