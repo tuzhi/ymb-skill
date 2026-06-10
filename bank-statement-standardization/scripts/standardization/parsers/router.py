@@ -1,7 +1,7 @@
 import re
 
-from parsers.abc_text_pdf import read_abc_text_pdf
-from parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
+from standardization.parsers.abc_text_pdf import read_abc_text_pdf
+from standardization.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 
 
 def route_pdf(text, table_row_count, page_count):
