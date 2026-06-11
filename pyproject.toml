@@ -1,0 +1,20 @@
+[project]
+name = "ymb-skill-workspace"
+version = "1.2.4"
+description = "YMB 流水技能与共享标准化包工作区。"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+  "bank-statement-standardization/tests",
+]
+pythonpath = [
+  "packages/ymb_standardization_core",
+  "bank-statement-standardization/scripts",
+]

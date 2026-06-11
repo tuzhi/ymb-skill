@@ -53,6 +53,27 @@ class PackageSkillTest(unittest.TestCase):
             self.assertFalse(any(name.startswith("demo-skill/__pycache__/") for name in names))
             self.assertFalse(any("/__pycache__/" in name for name in names))
 
+    def test_package_includes_shared_standardization_core(self):
+        spec = importlib.util.spec_from_file_location("package_skill", PACKAGE_SCRIPT)
+        package_skill = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(package_skill)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "skill.zip"
+            package_skill.package_skill(SKILL_ROOT, output=archive)
+            with zipfile.ZipFile(archive) as zf:
+                names = set(zf.namelist())
+
+        self.assertIn(
+            "bank-statement-standardization/packages/ymb_standardization_core/pyproject.toml",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/packages/ymb_standardization_core/"
+            "ymb_standardization_core/core.py",
+            names,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

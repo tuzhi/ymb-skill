@@ -1,0 +1,18 @@
+[project]
+name = "ymb-standardization-core"
+version = "1.2.4"
+description = "供 YMB 技能和脱敏流程复用的银行流水标准化核心包。"
+requires-python = ">=3.8"
+dependencies = [
+  "pandas",
+  "openpyxl",
+  "pdfplumber",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ymb_standardization_core*"]

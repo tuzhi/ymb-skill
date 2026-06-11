@@ -26,9 +26,6 @@ bank-statement-standardization/
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
 │   ├── standardize.py       # stage_1_standardize：兼容旧命令的 CLI 薄入口
-│   ├── standardization/     # 单文件标准化内核，可被脱敏等其他项目直接 import
-│   │   ├── core.py          # 标准字段映射、金额结构、账户识别、mapping 落盘
-│   │   └── parsers/         # PDF/银行模板路由和专属解析器
 │   ├── integrate.py         # stage_2_integrate：单客户多文件整合与验证
 │   ├── tag.py               # stage_3_tag：交易打标与规则沉淀
 │   ├── multi_customer.py    # 扩展阶段：多客户批量整合与验证（含整合后余额校验）
@@ -45,6 +42,8 @@ bank-statement-standardization/
 └── assets/
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
+
+源码仓库中，共享标准化内核位于仓库根目录的 `packages/ymb_standardization_core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `scripts/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
 
 ## 快速开始（方式 A · 脚本）
 

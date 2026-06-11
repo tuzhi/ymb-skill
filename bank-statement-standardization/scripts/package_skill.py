@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Package this skill as a .zip archive.
+"""把当前 skill 打包成 .zip 归档。
 
-The archive is written to <skill_dir>/dist and contains the skill directory as
-the top-level folder. The dist directory and this packager script are excluded.
+归档写入 <skill_dir>/dist，并以 skill 目录作为 zip 顶层目录。
+dist 目录和本打包脚本自身会被排除。
 """
 import argparse
 import os
@@ -12,6 +12,7 @@ from pathlib import Path
 
 
 PACKAGER_RELATIVE = Path("scripts") / "package_skill.py"
+CORE_PACKAGE_RELATIVE = Path("packages") / "ymb_standardization_core"
 
 
 def _is_excluded(relative_path):
@@ -48,13 +49,26 @@ def package_skill(skill_dir, output=None):
                 if _is_excluded(rel_file):
                     continue
                 zf.write(current_path / filename, Path(top) / rel_file)
+        repo_root = root.parent
+        core_package = repo_root / CORE_PACKAGE_RELATIVE
+        if core_package.is_dir():
+            for current, dirs, files in os.walk(core_package):
+                current_path = Path(current)
+                rel_dir = current_path.relative_to(core_package)
+                dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+                for filename in sorted(files):
+                    if filename.endswith((".pyc", ".pyo")):
+                        continue
+                    rel_file = rel_dir / filename
+                    archive_path = Path(top) / CORE_PACKAGE_RELATIVE / rel_file
+                    zf.write(current_path / filename, archive_path)
 
     return archive
 
 
 def main():
     default_root = Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(description="Package a Codex/WorkBuddy skill into dist/*.zip")
+    parser = argparse.ArgumentParser(description="把 Codex/WorkBuddy skill 打包到 dist/*.zip")
     parser.add_argument("skill_dir", nargs="?", default=str(default_root),
                         help="skill directory to package; defaults to this skill directory")
     parser.add_argument("--output", help="optional output .zip path")

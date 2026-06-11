@@ -8,20 +8,26 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
+CORE_PACKAGE = REPO_ROOT / "packages" / "ymb_standardization_core"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if str(CORE_PACKAGE) not in sys.path:
+    sys.path.insert(0, str(CORE_PACKAGE))
 SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / "standardize.py")
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
 
 PARSER_SPEC = importlib.util.spec_from_file_location(
-    "jxrcb_pdf_text", ROOT / "scripts" / "standardization" / "parsers" / "jxrcb_pdf_text.py")
+    "jxrcb_pdf_text",
+    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "jxrcb_pdf_text.py")
 jxrcb_pdf_text = importlib.util.module_from_spec(PARSER_SPEC)
 PARSER_SPEC.loader.exec_module(jxrcb_pdf_text)
 
 ROUTER_SPEC = importlib.util.spec_from_file_location(
-    "router", ROOT / "scripts" / "standardization" / "parsers" / "router.py")
+    "router",
+    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "router.py")
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 

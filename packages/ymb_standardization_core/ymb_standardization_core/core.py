@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-standardization.core — 单个银行流水原始文件 -> 标准化流水（阶段一：识别与字段映射）
+ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流水（阶段一：识别与字段映射）
 
 读取一个原始流水文件（.xlsx/.xls/.csv/.pdf），自动：
   1. 识别表头所在行、账户类型线索、本方户名/账号；
@@ -459,7 +459,7 @@ def read_rows_csv(path):
 
 def read_rows_pdf(path):
     """用标准化输入路由读取 PDF，命中专属模板时交给对应 parser。"""
-    from standardization.parsers.router import read_pdf_rows
+    from ymb_standardization_core.parsers.router import read_pdf_rows
 
     return read_pdf_rows(path)
 
