@@ -4,11 +4,14 @@ __pycache__/
 .Rhistory
 .claude/
 dist/
+build/
+*.egg-info/
 .idea/
 bank-statement-standardization/.runtime/
 bank-statement-standardization/bootstrap-logs/
 runs/
 *.zip
+tokenized_batch_bundle/
 workbuddy_result/
 resources/
 .codegraph/
