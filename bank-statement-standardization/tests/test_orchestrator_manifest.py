@@ -3,6 +3,7 @@ import csv
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,7 +31,120 @@ class OrchestratorManifestTest(unittest.TestCase):
             writer.writeheader()
             writer.writerow(row)
 
-    def test_stage_1_uses_token_vault_manifest_declared_standardized_outputs(self):
+    def test_skill_metadata_reads_name_and_version_from_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            skill = Path(tmp) / "skill"
+            skill.mkdir()
+            (skill / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "skill": {
+                            "name": "bank-statement-standardization",
+                            "version": "1.2.6",
+                        },
+                        "stage_1_standardize": {},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            metadata = orchestrator.load_skill_metadata(str(skill))
+
+            self.assertEqual(metadata["name"], "bank-statement-standardization")
+            self.assertEqual(metadata["version"], "1.2.6")
+
+    def test_default_run_root_stays_in_current_working_directory_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = Path(tmp) / "workspace"
+
+            root = orchestrator.resolve_run_root(
+                explicit_run_root="",
+                cwd=str(cwd),
+            )
+
+            self.assertEqual(Path(root), (cwd / "runs").resolve())
+
+    def test_explicit_run_root_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            explicit = Path(tmp) / "custom-runs"
+
+            root = orchestrator.resolve_run_root(
+                explicit_run_root=str(explicit),
+                cwd=str(Path(tmp) / "cwd"),
+            )
+
+            self.assertEqual(Path(root), explicit.resolve())
+
+    def test_inventory_excludes_token_vault_secret_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            summary = root / "summary"
+            summary.mkdir()
+            (summary / "tokenized_batch_bundle_token_vault.json").write_text("secret", encoding="utf-8")
+            (summary / "token_vault_manifest.json").write_text("secret", encoding="utf-8")
+            (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
+            (summary / "manifest.json").write_text("{}", encoding="utf-8")
+
+            rows = orchestrator.inventory(str(root))
+            paths = {row["path"].replace("\\", "/") for row in rows}
+
+            self.assertNotIn("summary/tokenized_batch_bundle_token_vault.json", paths)
+            self.assertNotIn("summary/token_vault_manifest.json", paths)
+            self.assertIn("summary/tokenized_batch_bundle_token_vault_ref.json", paths)
+            self.assertIn("summary/manifest.json", paths)
+
+    def test_error_bundle_excludes_token_vault_secret_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_dir = root / "input"
+            summary = input_dir / "summary"
+            summary.mkdir(parents=True)
+            (summary / "tokenized_batch_bundle_token_vault.json").write_text("secret", encoding="utf-8")
+            (summary / "token_vault_manifest.json").write_text("secret", encoding="utf-8")
+            (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.run_id = "test-run"
+            runner.run_dir = str(root / "run")
+            runner.args = SimpleNamespace(folder=str(input_dir), error_bundle_mode="full")
+            Path(runner.run_dir).mkdir()
+            (Path(runner.run_dir) / "events.jsonl").write_text("", encoding="utf-8")
+
+            bundle = runner.bundle("ERROR")
+
+            with zipfile.ZipFile(bundle) as zf:
+                names = {name.replace("\\", "/") for name in zf.namelist()}
+            self.assertNotIn("raw_inputs/summary/tokenized_batch_bundle_token_vault.json", names)
+            self.assertNotIn("raw_inputs/summary/token_vault_manifest.json", names)
+            self.assertIn("raw_inputs/summary/tokenized_batch_bundle_token_vault_ref.json", names)
+
+    def test_first_pending_stage_skips_skill_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp) / "manifest.json"
+            runtime.write_text(
+                json.dumps(
+                    {
+                        "skill": {
+                            "name": "bank-statement-standardization",
+                            "version": "1.2.6",
+                        },
+                        "stage_1_standardize": {"status": ""},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.stage_manifest_path = str(runtime)
+
+            stage_id, spec = runner.first_pending_stage()
+
+            self.assertEqual(stage_id, "stage_1_standardize")
+            self.assertEqual(spec, {"status": ""})
+
+    def test_stage_1_ignores_token_vault_archive_name_and_keeps_alias_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             bundle = tmp_path / "tokenized_batch_bundle"
@@ -45,7 +159,9 @@ class OrchestratorManifestTest(unittest.TestCase):
                     {
                         "schema_version": "bank-statement-standardization.manifest/v1",
                         "producer": "token_vault_service",
-                        "archive_name": "江西省鹏达石业有限公司",
+                        "archive_name": "真实客户名称",
+                        "archive_id": "tv_20260612_fa8d03d0",
+                        "client_alias": "陈某001",
                         "stage_1_standardize": {
                             "status": "DONE",
                             "outputs": [
@@ -79,9 +195,12 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(result["mode"], "manifest_declared_standardized_input")
             self.assertEqual(result["processed_files"], 2)
             self.assertEqual(result["upstream_manifest"]["schema_version"], "bank-statement-standardization.manifest/v1")
-            self.assertEqual(runner.args.client, "江西省鹏达石业有限公司")
-            self.assertEqual(runner.manifest["client"], "江西省鹏达石业有限公司")
-            self.assertEqual(result["upstream_manifest"]["archive_name"], "江西省鹏达石业有限公司")
+            self.assertEqual(runner.args.client, "陈某001")
+            self.assertEqual(runner.manifest["client"], "陈某001")
+            self.assertNotIn("archive_name", result["upstream_manifest"])
+            self.assertEqual(result["upstream_manifest"]["archive_id"], "tv_20260612_fa8d03d0")
+            self.assertEqual(result["upstream_manifest"]["client_alias"], "陈某001")
+            self.assertTrue(result["upstream_manifest"]["archive_name_present"])
             self.assertTrue((work / "001_raw-a__standardized.csv").is_file())
             self.assertTrue((work / "002_raw-b__standardized.csv").is_file())
             self.assertTrue((work / "001_raw-a__mapping.json").is_file())
@@ -104,13 +223,15 @@ class OrchestratorManifestTest(unittest.TestCase):
 
         runner.apply_upstream_archive_metadata(
             {
-                "archive_name": ""
+                "archive_name": "真实客户名称"
             }
         )
 
         self.assertEqual(runner.args.client, "tokenized_batch_bundle")
         self.assertEqual(events[0]["level"], "WARNING")
         self.assertEqual(events[0]["code"], "CLIENT_NAME_UNCONFIRMED")
+        self.assertNotIn("真实客户名称", str(events[0]))
+        self.assertTrue(events[0]["upstream_archive_name_present"])
 
     def test_copy_stage_manifest_resets_runtime_fields(self):
         with tempfile.TemporaryDirectory() as tmp:

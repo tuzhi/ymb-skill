@@ -36,6 +36,9 @@ MAX_JOINED_CLIENT_NAME_PART_LEN = 20
 TECHNICAL_ARCHIVE_NAMES = {"tokenized_batch_bundle", "batch", "bundle"}
 SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests", "build"}
 SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
+DEFAULT_SKILL_NAME = "bank-statement-standardization"
+DEFAULT_SKILL_VERSION = "0.0.0"
+TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
 
 
 def configure_console():
@@ -67,8 +70,32 @@ def read_json_if_exists(path, default=None):
         return json.load(f)
 
 
+def load_skill_metadata(skill_dir):
+    data = read_json_if_exists(os.path.join(skill_dir, "manifest.json"), {})
+    skill = data.get("skill") if isinstance(data, dict) else {}
+    if not isinstance(skill, dict):
+        skill = {}
+    return {
+        "name": str(skill.get("name") or DEFAULT_SKILL_NAME),
+        "version": str(skill.get("version") or DEFAULT_SKILL_VERSION),
+    }
+
+
+def resolve_run_root(explicit_run_root, cwd=None):
+    if explicit_run_root:
+        return os.path.abspath(explicit_run_root)
+    return os.path.abspath(os.path.join(cwd or os.getcwd(), "runs"))
+
+
 def normalize_relpath(path):
     return path.replace(os.sep, "/")
+
+
+def is_token_vault_secret_artifact(path):
+    name = os.path.basename(str(path)).lower()
+    if name in TOKEN_VAULT_SECRET_FILENAMES:
+        return True
+    return name.endswith("_token_vault.json") and not name.endswith("_token_vault_ref.json")
 
 
 def run_git_capture(args, cwd):
@@ -138,6 +165,8 @@ def load_parent_run_context(run_root, parent_run_id):
     run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
     inherited_fallbacks = []
     for stage_id, spec in stage_manifest.items():
+        if not str(stage_id).startswith("stage_"):
+            continue
         if not isinstance(spec, dict):
             continue
         if not (spec.get("ai_fallback_used") or spec.get("ai_fallback_dir") or spec.get("ai_fallback_artifacts")):
@@ -273,6 +302,8 @@ def inventory(folder):
         dirs[:] = [d for d in dirs if d not in {".git", "__pycache__"}]
         for name in sorted(files):
             path = os.path.join(root, name)
+            if is_token_vault_secret_artifact(path):
+                continue
             try:
                 rows.append({
                     "path": os.path.relpath(path, folder),
@@ -289,9 +320,10 @@ class Runner:
         self.args = args
         self.skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.template_manifest_path = os.path.join(self.skill_dir, "manifest.json")
+        self.skill_metadata = load_skill_metadata(self.skill_dir)
         stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
         self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
-        root = os.path.abspath(args.run_root or os.path.join(os.getcwd(), "runs"))
+        root = resolve_run_root(args.run_root)
         self.run_root = root
         self.run_dir = os.path.join(root, self.run_id)
         self.out_dir = os.path.join(self.run_dir, "artifacts")
@@ -307,6 +339,8 @@ class Runner:
             "status": "running",
             "mode": "production",
             "started_at": now(),
+            "skill": self.skill_metadata["name"],
+            "skill_version": self.skill_metadata["version"],
             "client": args.client,
             "client_arg_provided": args.client_arg_provided,
             "client_confirmed": args.client_explicit,
@@ -333,7 +367,9 @@ class Runner:
 
     def sanitize_stage_manifest_template(self, data):
         """Reset runtime-only fields before creating a new run manifest."""
-        for spec in data.values():
+        for stage_id, spec in data.items():
+            if not str(stage_id).startswith("stage_"):
+                continue
             spec["ai_fallback_used"] = False
             spec["ai_fallback_dir"] = ""
             spec["ai_fallback_artifacts"] = []
@@ -390,6 +426,8 @@ class Runner:
     def first_pending_stage(self):
         data = self.read_stage_manifest()
         for stage_id, spec in data.items():
+            if not str(stage_id).startswith("stage_"):
+                continue
             status = spec.get("status", "")
             if status == ERROR:
                 raise RuntimeError(f"阶段已处于 ERROR，必须先处理失败原因：{stage_id}")
@@ -540,7 +578,9 @@ class Runner:
             "path": manifest_path,
             "schema_version": upstream_manifest.get("schema_version", ""),
             "producer": upstream_manifest.get("producer", ""),
-            "archive_name": upstream_manifest.get("archive_name", ""),
+            "archive_id": upstream_manifest.get("archive_id", ""),
+            "client_alias": upstream_manifest.get("client_alias", ""),
+            "archive_name_present": bool(str(upstream_manifest.get("archive_name") or "").strip()),
             "stage_1_standardize": self.declared_stage_1(upstream_manifest),
         }
         self.write_manifest()
@@ -554,20 +594,21 @@ class Runner:
     def apply_upstream_archive_metadata(self, upstream_manifest):
         if self.args.client_explicit:
             return
-        candidate = str(upstream_manifest.get("archive_name") or "").strip()
-        if candidate and is_archive_name_candidate(candidate) and not is_technical_archive_name(candidate):
+        alias = str(upstream_manifest.get("client_alias") or "").strip()
+        if alias and not is_technical_archive_name(alias):
             self.set_client_name(
-                candidate,
-                code="CLIENT_NAME_FROM_UPSTREAM_MANIFEST",
-                message=f"已从上游 Token Vault manifest 接收归档名：{candidate}",
+                alias,
+                code="CLIENT_ALIAS_FROM_UPSTREAM_MANIFEST",
+                message=f"已从上游 Token Vault manifest 接收非敏归档别名：{alias}",
             )
             return
         if is_technical_archive_name(self.args.client):
             self.emit(
                 "WARNING",
                 "CLIENT_NAME_UNCONFIRMED",
-                f"上游 manifest 未提供可靠归档名，当前仅保留技术目录名：{self.args.client}",
-                upstream_archive_name=candidate,
+                f"上游 manifest 未提供可用的非敏归档别名，当前仅保留技术目录名：{self.args.client}",
+                upstream_archive_name_present=bool(str(upstream_manifest.get("archive_name") or "").strip()),
+                upstream_archive_id=upstream_manifest.get("archive_id", ""),
             )
 
     def set_client_name(self, client, *, code, message, extra=None, warning=False):
@@ -888,6 +929,8 @@ class Runner:
                     for name in files:
                         path = os.path.join(root, name)
                         if os.path.abspath(path).startswith(os.path.abspath(self.run_dir) + os.sep):
+                            continue
+                        if is_token_vault_secret_artifact(path):
                             continue
                         zf.write(path, os.path.join("raw_inputs", os.path.relpath(path, self.args.folder)))
         return bundle
