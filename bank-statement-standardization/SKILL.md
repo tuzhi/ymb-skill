@@ -11,9 +11,7 @@ description: >-
 
 目标：用确定性脚本把原始银行/支付流水处理成统一、可追溯、可校验的中文标准流水；AI 只作为阶段失败后的有限兜底。
 
-## 正式入口
-
-## 工作空间
+## 正式入口与工作空间
 
 - 执行命令的当前目录必须是本次任务工作空间；不要从 skill 安装目录启动正式任务。
 - 临时文件、`runs/`、`artifacts/`、`receipts/`、错误包和交付物都以当前工作空间为基准目录。
@@ -31,15 +29,15 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 - `script`：优先执行的确定性脚本。
 - `validator`：阶段验收函数或脚本。
-- `ai_fallback_refs`：脚本或验收失败后，AI 才允许读取的兜底资料引用；orchestrator 只记录，不执行。
-- `ai_fallback_used`：默认 `false`；阶段失败并要求 AI 兜底时写为 `true`。
-- `ai_fallback_dir`：阶段兜底脚本、补丁、参数文件的保存目录。
-- `ai_fallback_artifacts`：AI 兜底实际产生的脚本、补丁、参数文件清单。
+- `ai_fallback_refs`：当前阶段失败后，AI 才允许读取的兜底资料引用；orchestrator 只记录，不执行。
+- `ai_fallback_used`：默认 `false`；当前阶段进入 AI 兜底时写为 `true`。
+- `ai_fallback_dir`：当前阶段兜底脚本、补丁、参数文件的保存目录。
+- `ai_fallback_artifacts`：当前阶段 AI 兜底实际产生的脚本、补丁、参数文件清单。
 - `started_at`：阶段开始时间，由 orchestrator 写入，使用北京时间 `+08:00`。
 - `duration_seconds`：阶段从 `started_at` 到验收通过的耗时秒数。
 - `status`：只允许空字符串、`DONE`、`ERROR`。
 
-执行循环：
+正常推进：
 
 1. 扫描运行时 `manifest.json`，第一个 `status != "DONE"` 的阶段就是当前阶段。
 2. 写入当前阶段 `started_at`，并记录 `STAGE_START` 到 `events.jsonl`。
@@ -50,18 +48,24 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 产物存在不代表阶段完成；只有 `validator` 通过才算完成。
 
-## AI 兜底
+失败兜底：
 
-阶段脚本失败或 `validator` 失败时，才进入 AI 兜底：
+1. 当前阶段 `script` 或 `validator` 失败时，才允许进入 AI 兜底。
+2. 只读取当前阶段 `ai_fallback_refs`，不回读整套 references，不跨阶段提前读取 prompt/reference。
+3. 兜底必须产生确定性修正，例如参数、映射、临时脚本或补丁；不能只给解释性结论。
+4. 兜底产物必须保存到当前阶段 `ai_fallback_dir`，并写入 `ai_fallback_artifacts`。
+5. 当前阶段必须记录 `ai_fallback_used = true`，兜底次数必须记录到 `events.jsonl`，最多 2 次。
+6. 兜底后只允许重跑当前阶段，并重新执行当前阶段 `validator`。
+7. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
 
-1. 只读取当前阶段 `ai_fallback_refs` 指向的 prompt/reference，不回读整套知识。
-2. 最多兜底 2 次，次数必须记录到 `events.jsonl`。
-3. 兜底必须产生确定性修正，例如参数、映射、临时脚本或补丁。
-4. 兜底后只允许重跑当前阶段，并重新执行该阶段 `validator`。
-5. 一旦进入兜底，运行时该阶段必须记录 `ai_fallback_used = true`，并把兜底产物保存到 `ai_fallback_dir`。
-6. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
+执行约束：
 
-AI 兜底修复后必须重新调用 orchestrator，且每次重跑都生成新的 `run_id`。重跑命令必须带上上一轮失败 run：
+- 以 `runs/<run-id>/manifest.json` 为唯一阶段事实源；不要在 `SKILL.md` 里维护或脑补阶段表。
+- 按当前阶段的 `script` 和 `validator` 判断本轮应执行、验收或兜底的对象。
+- 不自行替换 `script`、`validator` 或 `ai_fallback_refs`。
+- 字段、标签、附件口径以当前阶段 `validator` 和 `ai_fallback_refs` 为准，不在主文档重复维护。
+
+兜底修复后必须重新调用 orchestrator，且每次重跑都生成新的 `run_id`。重跑命令必须带上上一轮失败 run：
 
 ```powershell
 python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件夹>" --run-root ".\runs" --parent-run-id "<失败run_id>" --rerun-reason ai_fallback_after_stage_failure
@@ -87,39 +91,10 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - 未经用户明确确认，不得传 `--client-confirmed`、`--force-customer`、`--force-name`。
 - 不要把管线产物当原始文件重复处理；`<stem>__standardized.csv` 只作为已标准化输入接收。
 
-## 阶段索引
-
-主流程阶段以 `manifest.json` 为准：
-
-| 阶段 | 脚本 | 失败后读取 |
-|---|---|---|
-| `stage_1_standardize` | `scripts/standardize.py` | `references/prompt-1-字段映射.md`、`references/附件A-标准化字段说明.md` |
-| `stage_2_integrate` | `scripts/integrate.py` | `references/prompt-2-单客户整合.md`、`references/附件A-标准化字段说明.md` |
-| `stage_2b_portfolio_balance` | `scripts/portfolio_balance.py` | `references/prompt-2-单客户整合.md`、`references/附件A-标准化字段说明.md` |
-| `stage_3_tag` | `scripts/tag.py` | `references/prompt-3-交易打标.md`、`references/附件B-标签体系参考.md` |
-| `stage_4_package` | `scripts/package_deliverable.py` | `references/prompt-5-交付物组装.md`、`references/附件A-标准化字段说明.md`、`references/附件B-标签体系参考.md` |
-
-扩展批量阶段：`scripts/multi_customer.py`，需要时读取 `references/prompt-4-多客户整合.md`。
-
-## 最小字段口径
-
-标准化明细固定列：
-
-```text
-交易唯一编号 交易时间 本方名称 本方账户 开户行 账户类型 对手名称 对手账户
-收入金额 支出金额 交易金额 账户余额 银行备注 账户方附言 交易渠道 来源文件名 来源行号
-```
-
-打标追加列：
-
-```text
-收支方向 一级标签 二级标签 三级标签 标签来源 标签置信度 命中规则编号 命中关键词
-```
-
-字段定义、金额方向、标签体系和脱敏要求只在需要时读取 `references/附件A-标准化字段说明.md`、`references/附件B-标签体系参考.md`、`references/附件C-附件清单.md`。
-
 ## 依赖与分发
 
 - 正式任务直接使用宿主机 `python`，不创建私有 venv，不在每次任务中安装依赖。
-- 缺少依赖时，在部署阶段执行：`python -m pip install -r requirements-lock.txt`。
+- 源码仓库以根目录 `pyproject.toml` 的 `standardization` 可选依赖组作为依赖事实源。
+- Skill 分发包保留 `requirements.txt` 作为客户端部署兼容清单；内容应从 `pyproject.toml` 同步，不手工分叉维护。
+- 缺少依赖时，源码态优先执行：`python -m pip install -e ".[standardization]"`；仅安装 Skill 分发包时执行：`python -m pip install -r requirements.txt`。
 - 重新打包：`python scripts/package_skill.py --output dist/bank-statement-standardization_v<version>.zip`。

@@ -6,6 +6,12 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+standardization = [
+  "pandas>=2.2.3,<3",
+  "openpyxl>=3.1.5,<4",
+  "xlrd>=2.0.2,<3",
+  "pdfplumber>=0.11.5,<0.12",
+]
 test = [
   "pytest>=8.2",
 ]

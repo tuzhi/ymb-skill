@@ -775,7 +775,7 @@ class Runner:
             raise RuntimeError(
                 "缺少 Python 依赖："
                 + ", ".join(missing)
-                + "；请先执行 python -m pip install -r requirements-lock.txt 后重试。"
+                + "；请先执行 python -m pip install -r requirements.txt 后重试。"
                   "该文件使用兼容范围约束，适配 Python 3.11+ / 3.13。"
             )
         probe = os.path.join(self.run_dir, ".write-probe")
