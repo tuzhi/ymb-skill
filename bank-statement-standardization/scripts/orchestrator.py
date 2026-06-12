@@ -33,7 +33,8 @@ ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 MAX_JOINED_CLIENT_NAME_PART_LEN = 20
-SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests"}
+TECHNICAL_ARCHIVE_NAMES = {"tokenized_batch_bundle", "batch", "bundle"}
+SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests", "build"}
 SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
 
 
@@ -93,7 +94,10 @@ def collect_skill_source_snapshot(skill_dir):
     skill_dir = os.path.abspath(skill_dir)
     file_sha256 = {}
     for root, dirs, files in os.walk(skill_dir):
-        dirs[:] = [d for d in dirs if d not in SOURCE_SNAPSHOT_EXCLUDE_DIRS]
+        dirs[:] = [
+            d for d in dirs
+            if d not in SOURCE_SNAPSHOT_EXCLUDE_DIRS and not d.endswith(".egg-info")
+        ]
         for filename in files:
             ext = os.path.splitext(filename)[1].lower()
             if ext not in SOURCE_SNAPSHOT_EXTS:
@@ -181,6 +185,15 @@ def is_archive_name_candidate(name):
     if re.fullmatch(r"[A-Za-z0-9_\- ]+", text):
         return False
     return True
+
+
+def is_technical_archive_name(name):
+    text = str(name or "").strip().lower()
+    if not text:
+        return False
+    if text in TECHNICAL_ARCHIVE_NAMES:
+        return True
+    return text.startswith(("tokenized_", "batch_", "bundle_")) or text.endswith("_batch_bundle")
 
 
 def rank_client_name_candidates(work_roots):
@@ -418,11 +431,175 @@ class Runner:
             raise RuntimeError(f"缺少阶段输入产物：{pattern}")
         return hits[-1]
 
+    def upstream_manifest_path(self):
+        return os.path.join(self.args.folder, "summary", "manifest.json")
+
+    def declared_stage_1(self, manifest):
+        return manifest.get("stage_1_standardize") or {}
+
+    def declared_stage_1_outputs(self, manifest):
+        stage_1 = self.declared_stage_1(manifest)
+        if isinstance(stage_1, dict) and stage_1.get("outputs"):
+            return stage_1.get("outputs") or []
+        return manifest.get("standardized_outputs") or []
+
+    def load_declared_standardized_manifest(self):
+        # 上游 manifest 只作为阶段状态声明读取；orch 不根据文件名反推状态，
+        # 也不在这里生成上游 manifest。没有声明时继续走原始阶段一流程。
+        manifest_path = self.upstream_manifest_path()
+        if not os.path.isfile(manifest_path):
+            return None, manifest_path
+
+        data = read_json_if_exists(manifest_path, {})
+        is_current_manifest = data.get("schema_version") == "bank-statement-standardization.manifest/v1"
+        is_legacy_manifest = data.get("bundle_type") == "tokenized_standardized_batch"
+        if not (is_current_manifest or is_legacy_manifest):
+            return None, manifest_path
+
+        stage_1 = self.declared_stage_1(data)
+        legacy_state = data.get("pipeline_state") or {}
+        stage_1_status = stage_1.get("status") if isinstance(stage_1, dict) else None
+        if stage_1_status != DONE and legacy_state.get("stage_1_standardize") != DONE:
+            raise RuntimeError(f"Token Vault manifest 未声明阶段一完成：{manifest_path}")
+        outputs = self.declared_stage_1_outputs(data)
+        if not outputs:
+            raise RuntimeError(f"Token Vault manifest 缺少阶段一输出文件：{manifest_path}")
+        return data, manifest_path
+
+    def resolve_declared_standardized_outputs(self, manifest, manifest_path):
+        # outputs 是相对 summary/manifest.json 的路径，例如 ../001_xxx__standardized.csv。
+        # 这里只做路径越界、存在性和标准化命名校验，不改变上游 manifest。
+        base_dir = os.path.abspath(os.path.dirname(manifest_path))
+        bundle_dir = os.path.abspath(self.args.folder)
+        resolved = []
+        for relpath in self.declared_stage_1_outputs(manifest):
+            rel_text = str(relpath)
+            path = os.path.abspath(rel_text if os.path.isabs(rel_text) else os.path.join(base_dir, rel_text))
+            try:
+                common = os.path.commonpath([bundle_dir, path])
+            except ValueError as exc:
+                raise RuntimeError(f"Token Vault manifest 输出路径非法：{rel_text}") from exc
+            if common != bundle_dir:
+                raise RuntimeError(f"Token Vault manifest 输出路径越界：{rel_text}")
+            if not os.path.isfile(path):
+                raise RuntimeError(f"Token Vault manifest 指向的标准化文件不存在：{rel_text}")
+            if not os.path.basename(path).endswith("__standardized.csv"):
+                raise RuntimeError(f"Token Vault manifest 输出文件名不符合标准化命名：{rel_text}")
+            resolved.append((rel_text, path))
+        return resolved
+
+    def count_csv_rows(self, path):
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            return sum(1 for _ in csv.DictReader(f))
+
+    def write_manifest_mapping(self, mapping_path, source_relpath, row_count):
+        # 现有阶段一 validator 要求每个标准化 CSV 有对应 mapping JSON。
+        # Token Vault 已完成标准化时，这里只补最小运行产物，供本次 orch 工作区验收使用。
+        mapping = {
+            "file_image": {
+                "matched_template": "manifest_declared_standardized_input",
+                "source": "token_vault_service",
+            },
+            "standardization_stats": {
+                "transaction_count": row_count,
+                "amount_structure": "already_standardized",
+            },
+            "source_manifest_output": normalize_relpath(str(source_relpath)),
+            "note": "由 Token Vault manifest 声明为已完成阶段一标准化，orchestrator 仅复制并补充最小映射报告。",
+        }
+        with open(mapping_path, "w", encoding="utf-8") as f:
+            json.dump(mapping, f, ensure_ascii=False, indent=2)
+
+    def stage_1_from_declared_standardized_manifest(self, work):
+        # 快速完成阶段一：消费上游 manifest 声明的标准化产物，
+        # 然后让原状态机按 receipt/validator/DONE 的路径继续进入阶段二。
+        upstream_manifest, manifest_path = self.load_declared_standardized_manifest()
+        if not upstream_manifest:
+            return None
+
+        processed = []
+        for relpath, source_path in self.resolve_declared_standardized_outputs(upstream_manifest, manifest_path):
+            target_csv = os.path.join(work, os.path.basename(source_path))
+            shutil.copy2(source_path, target_csv)
+            stem = os.path.splitext(os.path.basename(target_csv))[0]
+            if stem.endswith("__standardized"):
+                stem = stem[:-len("__standardized")]
+            target_mapping = os.path.join(work, f"{stem}__mapping.json")
+            row_count = self.count_csv_rows(target_csv)
+            self.write_manifest_mapping(target_mapping, relpath, row_count)
+            processed.append({
+                "input": source_path,
+                "csv": target_csv,
+                "mapping": target_mapping,
+                "rows": row_count,
+            })
+
+        self.apply_upstream_archive_metadata(upstream_manifest)
+        self.manifest["skipped_inputs"] = []
+        self.manifest["upstream_manifest"] = {
+            "path": manifest_path,
+            "schema_version": upstream_manifest.get("schema_version", ""),
+            "producer": upstream_manifest.get("producer", ""),
+            "archive_name": upstream_manifest.get("archive_name", ""),
+            "stage_1_standardize": self.declared_stage_1(upstream_manifest),
+        }
+        self.write_manifest()
+        return {
+            "mode": "manifest_declared_standardized_input",
+            "upstream_manifest": self.manifest["upstream_manifest"],
+            "processed_files": len(processed),
+            "standardized": processed,
+        }
+
+    def apply_upstream_archive_metadata(self, upstream_manifest):
+        if self.args.client_explicit:
+            return
+        candidate = str(upstream_manifest.get("archive_name") or "").strip()
+        if candidate and is_archive_name_candidate(candidate) and not is_technical_archive_name(candidate):
+            self.set_client_name(
+                candidate,
+                code="CLIENT_NAME_FROM_UPSTREAM_MANIFEST",
+                message=f"已从上游 Token Vault manifest 接收归档名：{candidate}",
+            )
+            return
+        if is_technical_archive_name(self.args.client):
+            self.emit(
+                "WARNING",
+                "CLIENT_NAME_UNCONFIRMED",
+                f"上游 manifest 未提供可靠归档名，当前仅保留技术目录名：{self.args.client}",
+                upstream_archive_name=candidate,
+            )
+
+    def set_client_name(self, client, *, code, message, extra=None, warning=False):
+        old_client = self.args.client
+        if client == old_client:
+            return
+        old_work = os.path.join(self.out_dir, "_工作区", safe_name(old_client))
+        new_work = os.path.join(self.out_dir, "_工作区", safe_name(client))
+        old_xlsx = os.path.join(self.out_dir, f"{old_client}_已清洗_待分析.xlsx")
+        new_xlsx = os.path.join(self.out_dir, f"{client}_已清洗_待分析.xlsx")
+        if os.path.exists(old_xlsx):
+            os.replace(old_xlsx, new_xlsx)
+        if os.path.isdir(old_work) and os.path.abspath(old_work) != os.path.abspath(new_work):
+            os.replace(old_work, new_work)
+        self.args.client = client
+        self.manifest["client"] = client
+        self.write_manifest()
+        payload = extra or {}
+        if warning:
+            self.emit("WARNING", code, message, **payload)
+        else:
+            self.emit("INFO", code, message, **payload)
+
     def stage_1_standardize(self):
         work = self.work_dir()
         if os.path.isdir(work):
             shutil.rmtree(work)
         os.makedirs(work, exist_ok=True)
+
+        declared_result = self.stage_1_from_declared_standardized_manifest(work)
+        if declared_result:
+            return declared_result
 
         raw_files, skipped = S.screen_files(sorted(glob.glob(os.path.join(self.args.folder, "*"))))
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
@@ -667,17 +844,11 @@ class Runner:
             return
         if client == old_client:
             return
-        old_xlsx = os.path.join(self.out_dir, f"{old_client}_已清洗_待分析.xlsx")
-        new_xlsx = os.path.join(self.out_dir, f"{client}_已清洗_待分析.xlsx")
-        new_work = os.path.join(self.out_dir, "_工作区", safe_name(client))
-        if os.path.exists(old_xlsx):
-            os.replace(old_xlsx, new_xlsx)
-        if os.path.isdir(old_work) and os.path.abspath(old_work) != os.path.abspath(new_work):
-            os.replace(old_work, new_work)
-        self.args.client = client
-        self.manifest["client"] = client
-        self.write_manifest()
-        self.emit("INFO", "CLIENT_NAME_INFERRED", f"已从流水识别归档名：{client}")
+        self.set_client_name(
+            client,
+            code="CLIENT_NAME_INFERRED",
+            message=f"已从流水识别归档名：{client}",
+        )
 
     def validate(self):
         work = os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))

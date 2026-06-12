@@ -19,7 +19,9 @@ def _is_excluded(relative_path):
     parts = relative_path.parts
     if not parts:
         return True
-    if any(part in {"dist", "testdata", "runs", ".claude", "tests", "__pycache__"} for part in parts):
+    if any(part in {"dist", "testdata", "runs", ".claude", "tests", "__pycache__", "build"} for part in parts):
+        return True
+    if any(part.endswith(".egg-info") for part in parts):
         return True
     if relative_path == PACKAGER_RELATIVE:
         return True
@@ -55,7 +57,10 @@ def package_skill(skill_dir, output=None):
             for current, dirs, files in os.walk(core_package):
                 current_path = Path(current)
                 rel_dir = current_path.relative_to(core_package)
-                dirs[:] = sorted(d for d in dirs if d != "__pycache__")
+                dirs[:] = sorted(
+                    d for d in dirs
+                    if d not in {"__pycache__", "build"} and not d.endswith(".egg-info")
+                )
                 for filename in sorted(files):
                     if filename.endswith((".pyc", ".pyo")):
                         continue

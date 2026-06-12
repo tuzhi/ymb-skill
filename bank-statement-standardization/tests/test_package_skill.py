@@ -24,6 +24,8 @@ class PackageSkillTest(unittest.TestCase):
             (root / "runs").mkdir()
             (root / "tests").mkdir()
             (root / "testdata").mkdir()
+            (root / "build").mkdir()
+            (root / "demo.egg-info").mkdir()
             (root / "__pycache__").mkdir()
             (root / "SKILL.md").write_text("# Demo\n", encoding="utf-8")
             (root / "scripts" / "standardize.py").write_text("print('ok')\n", encoding="utf-8")
@@ -33,6 +35,8 @@ class PackageSkillTest(unittest.TestCase):
             (root / "runs" / "run.log").write_text("log\n", encoding="utf-8")
             (root / "tests" / "test_demo.py").write_text("pass\n", encoding="utf-8")
             (root / "testdata" / "sample.csv").write_text("a,b\n", encoding="utf-8")
+            (root / "build" / "generated.py").write_text("print('ignore')\n", encoding="utf-8")
+            (root / "demo.egg-info" / "SOURCES.txt").write_text("ignore\n", encoding="utf-8")
             (root / "__pycache__" / "demo.pyc").write_bytes(b"cache")
             (root / "scripts" / "__pycache__" / "standardize.pyc").write_bytes(b"cache")
 
@@ -50,6 +54,8 @@ class PackageSkillTest(unittest.TestCase):
             self.assertFalse(any(name.startswith("demo-skill/runs/") for name in names))
             self.assertFalse(any(name.startswith("demo-skill/tests/") for name in names))
             self.assertFalse(any(name.startswith("demo-skill/testdata/") for name in names))
+            self.assertFalse(any(name.startswith("demo-skill/build/") for name in names))
+            self.assertFalse(any(name.startswith("demo-skill/demo.egg-info/") for name in names))
             self.assertFalse(any(name.startswith("demo-skill/__pycache__/") for name in names))
             self.assertFalse(any("/__pycache__/" in name for name in names))
 
