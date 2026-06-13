@@ -1,29 +1,39 @@
 ---
-name: bank-statement-standardization-iterator
-description: Use when inspecting a range of WorkBuddy workspaces and conversation logs to find AI fallback cases, classify parser gaps, and version changes to the bank-statement-standardization skill.
+name: workbuddy-parser-iteration
+description: 当 Codex 需要审计 WorkBuddy 银行流水标准化相关内容时使用，包括：工作空间（Workspace）、运行记录（Run）、清单文件（Manifest）、执行回执（Receipt）、降级处理产物（Fallback Artifacts）、会话 JSONL 日志、系统日志、workspace_id 
+  AI fallback cases, parser gaps, 以及银行流水标准化（bank-statement-standardization）项目的版本化改进记录.
 ---
 
 # 流水标准化迭代器
+每个 WorkBuddy 会话包含一个 workspace 和一个业务交互日志，它们的路径有共同的 workspace_id。
+当用户提供一批或一个范围内的 WorkBuddy workspace、业务交互日志、session JSONL、系统日志或 workspace_id，并希望通过 workspace 下的多个 runs、manifest、receipt 和 fallback 产物来识别 AI 兜底、归类 parser 缺口，再迭代 `bank-statement-standardization` 标准化 Skill 时，使用本技能。
 
-当用户提供一批或一个范围内的 WorkBuddy workspace 与相关日志，并希望先识别 AI 兜底、归类 parser 缺口，再迭代 `bank-statement-standardization` 标准化 Skill 时，使用本技能。
-
-核心规则：**先巡检，后修复**。在完成 workspace 范围   巡检并得到用户确认前，不修改标准化 Skill。
+核心规则：**先巡检，后修复**。在完成 workspace 范围巡检并得到用户确认前，不修改标准化 Skill。
 
 ## 输入
 
 用户通常会提供以下一种或多种路径：
 
-- WorkBuddy workspace 目录：`C:\Users\<user>\WorkBuddy\<workspace_name>`
-- 用户导出的业务交互日志，例如 `workbuddy日志.txt`
+- WorkBuddy workspace 目录：`C:\Users\<user>\WorkBuddy\<workspace_name>` 或者 沙箱目录 `C:\ProgramData\WorkBuddy\chromium-env\<沙箱id>\WorkBuddy\<workspace_name>`
 - 会话结构化日志：`C:\Users\<user>\.workbuddy\projects\<workspace_slug>\<session_id>.jsonl`
 - 系统级日志：`C:\Users\<user>\.workbuddy\logs\<yyyy-MM-dd>\<workspace_name>__<hash>.log`
 - 包含 `bank-statement-standardization` 的目标代码库
 
 如果用户给的是 workspace 范围，先枚举范围内所有匹配的 workspace，并把这批 workspace 作为一次迭代版本候选。
 
+如果用户只给 workspace_id，先在常见位置反查：
+
+- `C:\Users\<user>\WorkBuddy\`
+- `C:\ProgramData\WorkBuddy\chromium-env\*\WorkBuddy\`
+- `C:\Users\<user>\.workbuddy\projects\`
+- `C:\Users\<user>\.workbuddy\logs\`
+
+如果无法从 workspace_id 定位 workspace 或日志，先报告已搜索的位置和缺失证据，不要猜测结论。
+
 ## 阶段一：范围巡检
 
 本阶段不修改代码。
+可以读取、枚举、复制必要证据摘要；不要清理、改写或移动原始 workspace 输入和 run 产物。
 
 对每个 workspace，从以下位置收集证据：
 
@@ -63,7 +73,7 @@ description: Use when inspecting a range of WorkBuddy workspaces and conversatio
 - 有没有可泛化的确定性规则？
 - 哪些输出可以作为回放测试依据？
 
-不要把弱 AI 临时脚本直接搬进正式代码。
+不要把 AI 临时脚本直接搬进正式代码。
 
 ## 阶段一输出
 
@@ -73,12 +83,13 @@ description: Use when inspecting a range of WorkBuddy workspaces and conversatio
 - 有 AI 兜底的 workspace
 - 无 AI 兜底的 workspace
 - 按类型归类的问题
+- 每个问题对应的证据路径或 run_id
 - 值得参考的临时产物
 - `bank-statement-standardization` 的候选修改点
 - 适合作为回放测试的 workspace
 - 被判定为一次性特例的问题及原因
 
-输出巡检报告后，等待用户确认，再进入修复。
+输出巡检报告后，等待用户确认，再进入修复。即使用户一开始要求“巡检并修复”，也必须先停在巡检报告，让用户确认阶段二范围。
 
 ## 阶段二：版本化修复
 
@@ -92,7 +103,7 @@ description: Use when inspecting a range of WorkBuddy workspaces and conversatio
 parser-iteration-YYYY-MM-DD-vN
 ```
 
-所有正式改动都必须落到 `bank-statement-standardization` 标准化 Skill，不新建无关流程。
+所有 parser 或标准化能力的正式改动都必须落到 `bank-statement-standardization` 标准化 Skill，不新建无关流程。测试、版本说明和回放辅助文件可以作为配套改动。
 
 按正确层级落地修改：
 
@@ -120,7 +131,7 @@ parser-iteration-YYYY-MM-DD-vN
 - 后续整合、打标、交付阶段仍能运行。
 - 不破坏已有样本。
 
-通过不要求和弱 AI 兜底输出完全一致。通过的含义是：正式标准化 Skill 已经能用稳定工程逻辑处理该输入。
+通过不要求和 AI 兜底输出完全一致。通过的含义是：正式标准化 Skill 已经能用稳定工程逻辑处理该输入。
 
 ## 版本说明
 
@@ -139,6 +150,7 @@ parser-iteration-YYYY-MM-DD-vN
 - 未采纳问题及原因
 
 版本说明保持精简，面向审计和回放。
+版本说明优先放在 `bank-statement-standardization` 相关的版本记录、迭代记录或审计记录位置；如果仓库没有既有约定，先沿用当前项目中最接近的记录方式，不为版本说明单独新建复杂流程。
 
 ## 决策规则
 
