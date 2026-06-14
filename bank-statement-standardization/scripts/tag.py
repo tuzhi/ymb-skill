@@ -23,7 +23,7 @@ tag.py — 交易标签梳理与规则沉淀（阶段三，对应 Prompt 3）
 用法：
   python tag.py <整合流水csv> [--rules assets/tag_rules.csv] [--out-dir DIR]
 """
-import argparse, json, os, sys
+import argparse, json, os, re, sys
 from collections import Counter
 
 try:
@@ -41,6 +41,46 @@ SCOPE = {
 }
 # 命中字段可信度（对手户名最可信；备注/附言为不可信输入，置信下调）
 FIELD_CONF = {"对手名称": 0.9, "银行备注": 0.78, "账户方附言": 0.72, "摘要或备注": 0.78}
+
+
+def _compile_keyword_pattern(rules):
+    """把同组关键词编译成字面量正则；只用于粗筛，最终仍按规则顺序确认。"""
+    keywords = sorted({r["关键词"] for r in rules if r["关键词"]}, key=len, reverse=True)
+    if not keywords:
+        return None
+    return re.compile("|".join(re.escape(k) for k in keywords))
+
+
+def _build_rule_groups(candidates):
+    groups = {}
+    for direction, rules in candidates.items():
+        group_list = []
+        current = None
+        current_key = None
+        for order, r in enumerate(rules):
+            key = (
+                r["方向"], r["依据字段"], tuple(r["排除"]), tuple(r["对手含"]),
+                r["L1"], r["L2"], r["L3"], r["优先级"],
+            )
+            if key != current_key:
+                current = {
+                    "方向": r["方向"],
+                    "依据字段": r["依据字段"],
+                    "排除": r["排除"],
+                    "对手含": r["对手含"],
+                    "L1": r["L1"], "L2": r["L2"], "L3": r["L3"],
+                    "优先级": r["优先级"],
+                    "order": order,
+                    "rules": [],
+                    "pattern": None,
+                }
+                group_list.append(current)
+                current_key = key
+            current["rules"].append(r)
+        for g in group_list:
+            g["pattern"] = _compile_keyword_pattern(g["rules"])
+        groups[direction] = group_list
+    return groups
 
 
 def load_rules(path):
@@ -63,6 +103,13 @@ def load_rules(path):
             "优先级": r["优先级"],
         }
         buckets.get(r["适用方向"], buckets["通用"]).append(rule)
+    candidates = {}
+    for direction in ("收入", "支出", "未知"):
+        direction_rules = buckets.get(direction, [])
+        merged = direction_rules + buckets["通用"]
+        candidates[direction] = sorted(merged, key=lambda r: -r["优先级"]) if buckets["通用"] else direction_rules
+    buckets["__candidates__"] = candidates
+    buckets["__groups__"] = _build_rule_groups(candidates)
     return buckets
 
 
@@ -78,6 +125,37 @@ def direction_of(row):
     return "未知"
 
 
+def direction_series(df):
+    inc = pd.to_numeric(df.get("收入金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
+    exp = pd.to_numeric(df.get("支出金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
+    out = pd.Series("未知", index=df.index, dtype=object)
+
+    income_only = inc.notna() & (exp.isna() | (exp == 0)) & (inc > 0)
+    expense_only = exp.notna() & (inc.isna() | (inc == 0)) & (exp > 0)
+    both = inc.notna() & exp.notna()
+
+    out.loc[income_only] = "收入"
+    out.loc[expense_only] = "支出"
+    out.loc[both] = (inc.loc[both].fillna(0) >= exp.loc[both].fillna(0)).map({True: "收入", False: "支出"})
+    return out
+
+
+def _match_rule_in_group(group, fields, text, opp):
+    pattern = group.get("pattern")
+    if pattern is not None and not pattern.search(text):
+        return None, None
+    if any(x in text for x in group["排除"]):
+        return None, None
+    if group["对手含"] and not any(x in opp for x in group["对手含"]):
+        return None, None
+    for r in group["rules"]:
+        if r["关键词"] not in text:
+            continue
+        hit_field = next((s for s in SCOPE.get(r["依据字段"], SCOPE["通用"]) if r["关键词"] in fields[s]), SCOPE.get(r["依据字段"], SCOPE["通用"])[0])
+        return r, hit_field
+    return None, None
+
+
 def match(row, direction, buckets):
     """单遍按优先级匹配（方向桶 + 通用桶已分别按优先级降序）。返回 (rule, 命中字段)。"""
     fields = {f: str(row.get(f, "") or "") for f in ("对手名称", "银行备注", "账户方附言")}
@@ -86,9 +164,23 @@ def match(row, direction, buckets):
             fields[f] = ""
     opp = fields["对手名称"]
 
-    cand = buckets.get(direction, []) + buckets["通用"]
-    # 两个桶各自有序，但合并后需保持全局优先级序
-    cand = sorted(cand, key=lambda r: -r["优先级"]) if buckets["通用"] else buckets.get(direction, [])
+    groups = buckets.get("__groups__", {}).get(direction)
+    if groups is not None:
+        for g in groups:
+            scope = SCOPE.get(g["依据字段"], SCOPE["通用"])
+            text = "".join(fields[s] for s in scope)
+            if not text:
+                continue
+            r, hit_field = _match_rule_in_group(g, fields, text, opp)
+            if r:
+                return r, hit_field
+        return None, None
+
+    cand = buckets.get("__candidates__", {}).get(direction)
+    if cand is None:
+        cand = buckets.get(direction, []) + buckets["通用"]
+        # 两个桶各自有序，但合并后需保持全局优先级序
+        cand = sorted(cand, key=lambda r: -r["优先级"]) if buckets["通用"] else buckets.get(direction, [])
 
     for r in cand:
         scope = SCOPE.get(r["依据字段"], SCOPE["通用"])
@@ -116,8 +208,9 @@ def tag(csv_path, rules_path, out_dir=None):
     rule_hits = 0
     field_stat = Counter()
     l1_stat = Counter()
+    directions = direction_series(df)
     for _, row in df.iterrows():
-        d = direction_of(row)
+        d = directions.loc[row.name]
         r, hit_field = match(row, d, buckets)
         if r:
             rule_hits += 1
