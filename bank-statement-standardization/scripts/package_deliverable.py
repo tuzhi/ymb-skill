@@ -100,8 +100,7 @@ def add_virtual_balance(df):
 def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path, skipped=None):
     """组装单文件 xlsx（多 sheet）。skipped 为被自动排除的非流水/无法解析文件清单。"""
     skipped = skipped or []
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
     period = irep["客户整合概览"]["交易期间"]
@@ -209,7 +208,39 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
             flow[c] = ""
     flow = flow[[c for c in STD_ORDER if c in flow.columns]]
 
+    def _apply_workbook_styles(wb):
+        """在 ExcelWriter 持有的 workbook 上直接设置样式，避免保存后再二次加载。"""
+        head_fill = PatternFill("solid", fgColor="1F4E78")
+        head_font = Font(color="FFFFFF", bold=True)
+        for ws in wb.worksheets:
+            ws.freeze_panes = "A2"
+            for cell in ws[1]:
+                cell.fill = head_fill
+                cell.font = head_font
+                cell.alignment = Alignment(vertical="center")
+            # 列宽自适应（粗略）
+            for col in ws.columns:
+                width = 12
+                letter = get_column_letter(col[0].column)
+                for cell in col[:200]:
+                    v = cell.value
+                    if v is not None:
+                        width = max(width, min(48, int(len(str(v)) * 1.6) + 2))
+                ws.column_dimensions[letter].width = width
+            ws.sheet_view.showGridLines = True
+
+        # 主流水：金额列数字格式
+        ws = wb["整合打标流水"]
+        money_cols = {"收入金额", "支出金额", "交易金额", "账户余额", "虚拟账户余额"}
+        header = {c.value: c.column for c in ws[1]}
+        for name, col in header.items():
+            if name in money_cols:
+                letter = get_column_letter(col)
+                for cell in ws[letter][1:]:
+                    cell.number_format = "#,##0.00"
+
     # ---- 写出 ----
+    # 样式必须在 writer 关闭前直接应用到 xw.book；否则需要重新打开 xlsx 再保存一遍，stage_4 会明显变慢。
     with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
         cover_df.to_excel(xw, sheet_name="封面与说明", index=False)
         flow.to_excel(xw, sheet_name="整合打标流水", index=False)
@@ -219,37 +250,7 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
         balchk.to_excel(xw, sheet_name="余额校验", index=False)
         tagsum.to_excel(xw, sheet_name="标签汇总", index=False)
         review_df.to_excel(xw, sheet_name="人工复核事项", index=False)
-
-    # ---- 简单美化 ----
-    wb = openpyxl.load_workbook(out_path)
-    head_fill = PatternFill("solid", fgColor="1F4E78")
-    head_font = Font(color="FFFFFF", bold=True)
-    for ws in wb.worksheets:
-        ws.freeze_panes = "A2"
-        for cell in ws[1]:
-            cell.fill = head_fill
-            cell.font = head_font
-            cell.alignment = Alignment(vertical="center")
-        # 列宽自适应（粗略）
-        for col in ws.columns:
-            width = 12
-            letter = get_column_letter(col[0].column)
-            for cell in col[:200]:
-                v = cell.value
-                if v is not None:
-                    width = max(width, min(48, int(len(str(v)) * 1.6) + 2))
-            ws.column_dimensions[letter].width = width
-        ws.sheet_view.showGridLines = True
-    # 主流水：金额列数字格式
-    ws = wb["整合打标流水"]
-    money_cols = {"收入金额", "支出金额", "交易金额", "账户余额", "虚拟账户余额"}
-    header = {c.value: c.column for c in ws[1]}
-    for name, col in header.items():
-        if name in money_cols:
-            letter = get_column_letter(col)
-            for cell in ws[letter][1:]:
-                cell.number_format = "#,##0.00"
-    wb.save(out_path)
+        _apply_workbook_styles(xw.book)
 
 
 def _safe(name):
