@@ -211,9 +211,17 @@ def is_archive_name_candidate(name):
         return False
     if re.search(r"\d{6,}", text):
         return False
-    if re.fullmatch(r"[A-Za-z0-9_\- ]+", text):
+    if re.fullmatch(r"[A-Za-z0-9_\- ]+", text) and not is_english_person_name(text):
         return False
     return True
+
+
+def is_english_person_name(text):
+    """允许有账户/余额证据支撑的英文个人姓名作为归档名。"""
+    parts = [part for part in re.split(r"\s+", str(text or "").strip()) if part]
+    if len(parts) < 2:
+        return False
+    return all(re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", part) for part in parts)
 
 
 def is_technical_archive_name(name):

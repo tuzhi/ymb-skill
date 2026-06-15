@@ -1,6 +1,6 @@
 [project]
 name = "ymb-standardization-core"
-version = "1.2.4"
+version = "1.2.5"
 description = "供 YMB 技能和脱敏流程复用的银行流水标准化核心包。"
 requires-python = ">=3.8"
 dependencies = [

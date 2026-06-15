@@ -510,14 +510,22 @@ def sniff_account_info(rows, header_idx, preamble=""):
     meta = preamble + " " + " ".join(
         str(c) for r in upper for c in r if c
     )
-    m = re.search(r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*([^\s,，:：\-]+)", meta)
+    # 英文 PDF 抬头常见空格姓名，如“户名：HUAHUA JIANG 账号：...”，需保留完整姓名。
+    m = re.search(
+        r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*"
+        r"([A-Za-z][A-Za-z .'\-]*[A-Za-z])"
+        r"(?=\s+(?:账\s*号|卡\s*号|Reference|Account Number)|\s*$)",
+        meta,
+    )
+    if not m:
+        m = re.search(r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*([^\s,，:：\-]+)", meta)
     if not m:
         m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
         info["本方名称"] = m.group(1)
     # 账号：优先带「账号/卡号/账户」标签的；支持掩码 6226****4806
     acct = None
-    m = re.search(r"(?:账\s*号|卡\s*号|账\s*户)[^0-9]{0,6}(\d[\d*]{5,}\d)", meta)
+    m = re.search(r"(?:账\s*号|卡\s*号|账\s*户)[^0-9]{0,6}(\d[\d*\-]{5,}\d)", meta)
     if m:
         acct = m.group(1)
     if not acct:

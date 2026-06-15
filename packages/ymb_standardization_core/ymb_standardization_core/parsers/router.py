@@ -2,6 +2,7 @@ import re
 
 from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
+from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
 
 
 def route_pdf(text, table_row_count, page_count):
@@ -33,6 +34,25 @@ def route_pdf(text, table_row_count, page_count):
             "route_confidence": 0.95,
             "route_evidence": {**evidence, "bank_marker": "江西·农商银行",
                                "matched_markers": jx_hits, "date_amount_lines": date_amount_lines},
+            "ocr_used": False,
+            "page_count": page_count,
+            "账户类型线索": "个人",
+        }
+
+    # 开泰银行英文文本版 PDF 无稳定表格边框，需要按文本行识别 DD-MM-YY HH:MM 交易行。
+    kbank_markers = ["K PLUS", "K BIZ", "AccountMR.", "Account Number"]
+    kbank_hits = [m for m in kbank_markers if m in text]
+    kbank_txn_lines = len(re.findall(
+        r"\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+"
+        r"(?:Transfer|Payment|Cash|Fee|Interest|Withholding|Annual)",
+        text,
+    ))
+    if len(kbank_hits) >= 4 and kbank_txn_lines >= 5:
+        return {
+            "parser": "kasikorn_pdf_text",
+            "route_confidence": 0.95,
+            "route_evidence": {**evidence, "bank_marker": "Kasikorn Bank",
+                               "matched_markers": kbank_hits, "txn_lines": kbank_txn_lines},
             "ocr_used": False,
             "page_count": page_count,
             "账户类型线索": "个人",
@@ -88,6 +108,9 @@ def read_pdf_rows(path):
             return preamble, rows, route_info
         if route_info["parser"] == "jiangxi_rural_commercial_pdf_text":
             preamble, rows = read_jxrcb_text_pdf(pdf)
+            return preamble, rows, route_info
+        if route_info["parser"] == "kasikorn_pdf_text":
+            preamble, rows = read_kasikorn_text_pdf(pdf)
             return preamble, rows, route_info
 
     return preamble or "", table_rows, route_info

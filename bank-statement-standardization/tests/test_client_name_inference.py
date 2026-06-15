@@ -46,6 +46,23 @@ class ClientNameInferenceTest(unittest.TestCase):
             self.assertEqual(client, "张运贞_江西省鹏达石业有限公司")
             self.assertEqual([row["name"] for row in ranked], ["张运贞", "江西省鹏达石业有限公司"])
 
+    def test_orchestrator_accepts_english_person_name_with_account_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            self.write_standardized(
+                work,
+                "kasikorn__standardized.csv",
+                [
+                    {"本方名称": "HUAHUA JIANG", "本方账户": "061-8-92723-7", "账户余额": "39307.29", "来源文件名": "111.pdf"},
+                    {"本方名称": "HUAHUA JIANG", "本方账户": "061-8-92723-7", "账户余额": "15747.29", "来源文件名": "111.pdf"},
+                ],
+            )
+
+            client, ranked = orchestrator.infer_unique_client_name([str(work)])
+
+            self.assertEqual(client, "HUAHUA JIANG")
+            self.assertEqual([row["name"] for row in ranked], ["HUAHUA JIANG"])
+
     def test_package_deliverable_joins_multiple_short_ambiguous_names(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -61,6 +78,22 @@ class ClientNameInferenceTest(unittest.TestCase):
             client = package_deliverable._infer_unique_client_name(str(work))
 
             self.assertEqual(client, "张运贞_江西省鹏达石业有限公司")
+
+    def test_package_deliverable_accepts_english_person_name_with_account_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            self.write_standardized(
+                work,
+                "kasikorn__standardized.csv",
+                [
+                    {"本方名称": "HUAHUA JIANG", "本方账户": "061-8-92723-7", "账户余额": "39307.29", "来源文件名": "111.pdf"},
+                    {"本方名称": "HUAHUA JIANG", "本方账户": "061-8-92723-7", "账户余额": "15747.29", "来源文件名": "111.pdf"},
+                ],
+            )
+
+            client = package_deliverable._infer_unique_client_name(str(work))
+
+            self.assertEqual(client, "HUAHUA JIANG")
 
 
 if __name__ == "__main__":
