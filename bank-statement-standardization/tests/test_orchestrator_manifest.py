@@ -94,6 +94,40 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertIn("summary/tokenized_batch_bundle_token_vault_ref.json", paths)
             self.assertIn("summary/manifest.json", paths)
 
+    def test_snapshot_input_folder_copies_inputs_under_run_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            nested = source / "nested"
+            summary = source / "summary"
+            nested.mkdir(parents=True)
+            summary.mkdir()
+            (source / "流水.xlsx").write_text("raw", encoding="utf-8")
+            (nested / "补充.csv").write_text("nested", encoding="utf-8")
+            (summary / "tokenized_batch_bundle_token_vault.json").write_text("secret", encoding="utf-8")
+            (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
+
+            target = orchestrator.snapshot_input_folder(str(source), str(root / "run"))
+
+            self.assertEqual(Path(target), root / "run" / "input")
+            self.assertEqual((root / "run" / "input" / "流水.xlsx").read_text(encoding="utf-8"), "raw")
+            self.assertEqual((root / "run" / "input" / "nested" / "补充.csv").read_text(encoding="utf-8"), "nested")
+            self.assertFalse((root / "run" / "input" / "summary" / "tokenized_batch_bundle_token_vault.json").exists())
+            self.assertTrue((root / "run" / "input" / "summary" / "tokenized_batch_bundle_token_vault_ref.json").exists())
+
+    def test_snapshot_input_folder_skips_run_dir_when_nested_in_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source"
+            run_dir = source / "runs" / "run-001"
+            run_dir.mkdir(parents=True)
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            (run_dir / "traceback.txt").write_text("diagnostic", encoding="utf-8")
+
+            target = Path(orchestrator.snapshot_input_folder(str(source), str(run_dir)))
+
+            self.assertTrue((target / "流水.csv").is_file())
+            self.assertFalse((target / "runs" / "run-001" / "traceback.txt").exists())
+
     def test_error_bundle_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

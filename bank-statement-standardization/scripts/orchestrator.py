@@ -315,6 +315,40 @@ def inventory(folder):
     return rows
 
 
+def snapshot_input_folder(source_folder, run_dir):
+    """复制本次输入到 run_dir/input，后续阶段只读取该快照目录。"""
+    source_root = os.path.abspath(source_folder)
+    run_root = os.path.abspath(run_dir)
+    target_root = os.path.abspath(os.path.join(run_dir, "input"))
+    if not os.path.isdir(source_root):
+        raise RuntimeError(f"输入目录不存在：{source_root}")
+    if os.path.abspath(source_root) == target_root:
+        return target_root
+
+    if os.path.isdir(target_root):
+        shutil.rmtree(target_root)
+    os.makedirs(target_root, exist_ok=True)
+    for root, dirs, files in os.walk(source_root):
+        dirs[:] = [d for d in dirs if d not in {".git", "__pycache__"}]
+        dirs[:] = [
+            d for d in dirs
+            if os.path.abspath(os.path.join(root, d)) != run_root
+            and not os.path.abspath(os.path.join(root, d)).startswith(run_root + os.sep)
+            and not os.path.abspath(os.path.join(root, d)).startswith(target_root + os.sep)
+        ]
+        rel_dir = os.path.relpath(root, source_root)
+        if rel_dir == ".":
+            rel_dir = ""
+        dest_dir = os.path.join(target_root, rel_dir)
+        os.makedirs(dest_dir, exist_ok=True)
+        for name in files:
+            source_path = os.path.join(root, name)
+            if is_token_vault_secret_artifact(source_path):
+                continue
+            shutil.copy2(source_path, os.path.join(dest_dir, name))
+    return target_root
+
+
 class Runner:
     def __init__(self, args):
         self.args = args
@@ -333,6 +367,9 @@ class Runner:
         self.manifest_path = os.path.join(self.run_dir, "run_manifest.json")
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
+        self.original_input_folder = os.path.abspath(args.folder)
+        self.input_dir = snapshot_input_folder(self.original_input_folder, self.run_dir)
+        self.args.folder = self.input_dir
         self.copy_stage_manifest()
         self.manifest = {
             "run_id": self.run_id,
@@ -344,7 +381,8 @@ class Runner:
             "client": args.client,
             "client_arg_provided": args.client_arg_provided,
             "client_confirmed": args.client_explicit,
-            "input_folder": os.path.abspath(args.folder),
+            "original_input_folder": self.original_input_folder,
+            "input_folder": self.input_dir,
             "error_bundle_mode": args.error_bundle_mode,
             "python": platform.python_version(),
             "model": os.environ.get("SKILL_ACTIVE_MODEL", ""),
@@ -354,7 +392,7 @@ class Runner:
             "skill_source": collect_skill_source_snapshot(self.skill_dir),
             "stages": [],
             "warnings": [],
-            "input_inventory": inventory(args.folder),
+            "input_inventory": inventory(self.input_dir),
         }
         self.write_manifest()
 
