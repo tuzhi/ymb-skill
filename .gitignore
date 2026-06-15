@@ -15,5 +15,6 @@ tokenized_batch_bundle/
 workbuddy_result/
 resources/
 .codegraph/
+testdata/
 *.csv
 
