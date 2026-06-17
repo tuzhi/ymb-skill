@@ -128,6 +128,69 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertTrue((target / "流水.csv").is_file())
             self.assertFalse((target / "runs" / "run-001" / "traceback.txt").exists())
 
+    def test_prepare_input_snapshot_extracts_zip_under_run_input_and_records_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "张运贞.zip"
+            mojibake_name = "张运贞/25年1-5月.xls".encode("gbk").decode("cp437")
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("张运贞/", "")
+                zf.writestr(mojibake_name, "raw-xls")
+                zf.writestr("张运贞/嵌套/补充.csv", "nested")
+
+            target, details = orchestrator.prepare_input_snapshot(str(zip_path), str(root / "run"))
+
+            self.assertEqual(Path(target), root / "run" / "input")
+            self.assertEqual((Path(target) / "25年1-5月.xls").read_text(encoding="utf-8"), "raw-xls")
+            self.assertEqual((Path(target) / "嵌套" / "补充.csv").read_text(encoding="utf-8"), "nested")
+            self.assertEqual(details["input_kind"], "zip")
+            self.assertEqual(details["common_root_stripped"], "张运贞")
+            output_paths = {row["output_path"].replace("\\", "/") for row in details["extracted_files"]}
+            self.assertEqual(output_paths, {"25年1-5月.xls", "嵌套/补充.csv"})
+            decoded_names = {row["decoded_name"].replace("\\", "/") for row in details["extracted_files"]}
+            self.assertIn("张运贞/25年1-5月.xls", decoded_names)
+
+    def test_prepare_input_snapshot_rejects_zip_path_traversal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "bad.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("../escape.csv", "bad")
+
+            with self.assertRaisesRegex(RuntimeError, "非法 zip 路径"):
+                orchestrator.prepare_input_snapshot(str(zip_path), str(root / "run"))
+
+            self.assertFalse((root / "escape.csv").exists())
+
+    def test_preflight_receipt_records_zip_snapshot_details(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            zip_path = root / "客户.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("客户/流水.csv", "raw")
+
+            args = SimpleNamespace(
+                run_root=str(root / "runs"),
+                folder=str(zip_path),
+                client="客户",
+                client_arg_provided=False,
+                client_explicit=False,
+                error_bundle_mode="full",
+                parent_run_id="",
+                rerun_reason="",
+                require_model="",
+            )
+            runner = orchestrator.Runner(args)
+
+            runner.preflight()
+
+            receipt_path = Path(runner.receipt_dir) / "01-preflight.json"
+            data = json.loads(receipt_path.read_text(encoding="utf-8"))
+            snapshot = data["details"]["input_snapshot"]
+            self.assertEqual(snapshot["input_kind"], "zip")
+            self.assertEqual(snapshot["common_root_stripped"], "客户")
+            self.assertEqual(snapshot["extracted_files"][0]["output_path"], "流水.csv")
+
     def test_error_bundle_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

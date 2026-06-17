@@ -55,6 +55,8 @@ python -m pip install -r requirements.txt
 
 # ★ 正式生产：只执行一次主入口。默认不传 --client，优先使用流水中识别出的唯一户名
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹"
+# 也可以直接传单个 zip；preflight 会解包到本次 runs/<run-id>/input 并记录解包清单
+python scripts/orchestrator.py run --folder "/path/to/客户流水.zip"
 
 # 只有用户明确确认归档名时，才传 --client-confirmed
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "已确认客户名" --client-confirmed

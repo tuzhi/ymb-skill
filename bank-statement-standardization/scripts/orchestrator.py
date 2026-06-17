@@ -323,6 +323,146 @@ def inventory(folder):
     return rows
 
 
+def decode_zip_member_name(name):
+    """按常见中文 zip 编码顺序解码成员名，并记录采用的策略。"""
+    for encoding in ("gbk", "gb18030"):
+        try:
+            return name.encode("cp437").decode(encoding), f"cp437->{encoding}"
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+    return name, "original"
+
+
+def safe_zip_relpath(name):
+    """把 zip 内路径规范化为安全相对路径，防止解包逃逸 run/input。"""
+    text = str(name or "").replace("\\", "/").strip().rstrip("/")
+    if not text:
+        return ""
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        raise RuntimeError(f"非法 zip 路径：{name}")
+    parts = [part for part in text.split("/") if part not in {"", "."}]
+    if any(part == ".." for part in parts):
+        raise RuntimeError(f"非法 zip 路径：{name}")
+    return "/".join(parts)
+
+
+def common_zip_root(paths):
+    """只有所有文件共享单一顶层目录时，才剥离该父目录。"""
+    file_paths = [path for path in paths if path and "/" in path]
+    if not file_paths:
+        return ""
+    roots = {path.split("/", 1)[0] for path in file_paths}
+    if len(roots) != 1:
+        return ""
+    root = next(iter(roots))
+    if any(path and path != root and not path.startswith(root + "/") for path in paths):
+        return ""
+    return root
+
+
+def strip_common_root(path, root):
+    if not root:
+        return path
+    if path == root:
+        return ""
+    if path.startswith(root + "/"):
+        return path[len(root) + 1:]
+    return path
+
+
+def extract_zip_to_input(zip_path, run_dir):
+    """将 zip 确定性解到本次 run/input，并返回可审计的解包清单。"""
+    source_zip = os.path.abspath(zip_path)
+    target_root = os.path.abspath(os.path.join(run_dir, "input"))
+    if not os.path.isfile(source_zip):
+        raise RuntimeError(f"输入 zip 不存在：{source_zip}")
+    if os.path.isdir(target_root):
+        shutil.rmtree(target_root)
+    os.makedirs(target_root, exist_ok=True)
+
+    details = {
+        "input_kind": "zip",
+        "original_zip": source_zip,
+        "zip_sha256": sha256(source_zip),
+        "extract_dir": target_root,
+        "encoding_strategy": "cp437->gbk, cp437->gb18030, original",
+        "common_root_stripped": "",
+        "directories": [],
+        "extracted_files": [],
+        "skipped": [],
+        "collisions": [],
+    }
+    entries = []
+    with zipfile.ZipFile(source_zip, "r") as zf:
+        for info in zf.infolist():
+            decoded, strategy = decode_zip_member_name(info.filename)
+            rel = safe_zip_relpath(decoded)
+            entries.append({
+                "info": info,
+                "raw_name": info.filename,
+                "decoded_name": decoded,
+                "encoding": strategy,
+                "safe_path": rel,
+                "is_dir": info.is_dir() or not rel,
+                "size": info.file_size,
+            })
+
+        root = common_zip_root([entry["safe_path"] for entry in entries])
+        details["common_root_stripped"] = root
+
+        seen_files = {}
+        for entry in entries:
+            output_rel = strip_common_root(entry["safe_path"], root)
+            entry["output_path"] = output_rel
+            if entry["is_dir"]:
+                if output_rel:
+                    details["directories"].append({
+                        "decoded_name": entry["decoded_name"],
+                        "output_path": output_rel,
+                    })
+                continue
+            if not output_rel:
+                details["skipped"].append({
+                    "decoded_name": entry["decoded_name"],
+                    "reason": "empty output path after common root strip",
+                })
+                continue
+            dest = os.path.abspath(os.path.join(target_root, *output_rel.split("/")))
+            if dest != target_root and not dest.startswith(target_root + os.sep):
+                raise RuntimeError(f"非法 zip 路径：{entry['decoded_name']}")
+            key = os.path.normcase(dest)
+            if key in seen_files:
+                details["collisions"].append({
+                    "output_path": output_rel,
+                    "first": seen_files[key],
+                    "second": entry["decoded_name"],
+                })
+                raise RuntimeError(f"zip 解包目标重名：{output_rel}")
+            seen_files[key] = entry["decoded_name"]
+
+        for entry in entries:
+            output_rel = entry.get("output_path", "")
+            if entry["is_dir"]:
+                if output_rel:
+                    os.makedirs(os.path.join(target_root, *output_rel.split("/")), exist_ok=True)
+                continue
+            if not output_rel:
+                continue
+            dest = os.path.abspath(os.path.join(target_root, *output_rel.split("/")))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with zf.open(entry["info"]) as src, open(dest, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            details["extracted_files"].append({
+                "zip_name": entry["raw_name"],
+                "decoded_name": entry["decoded_name"],
+                "encoding": entry["encoding"],
+                "output_path": output_rel,
+                "size": os.path.getsize(dest),
+                "sha256": sha256(dest),
+            })
+    return target_root, details
+
+
 def snapshot_input_folder(source_folder, run_dir):
     """复制本次输入到 run_dir/input，后续阶段只读取该快照目录。"""
     source_root = os.path.abspath(source_folder)
@@ -357,6 +497,20 @@ def snapshot_input_folder(source_folder, run_dir):
     return target_root
 
 
+def prepare_input_snapshot(source, run_dir):
+    """准备本次输入快照；目录复制、zip 解包都只落到 run/input。"""
+    source_path = os.path.abspath(source)
+    if os.path.isfile(source_path) and source_path.lower().endswith(".zip"):
+        return extract_zip_to_input(source_path, run_dir)
+    target = snapshot_input_folder(source_path, run_dir)
+    return target, {
+        "input_kind": "folder",
+        "original_folder": source_path,
+        "snapshot_dir": target,
+        "copied_files": inventory(target),
+    }
+
+
 class Runner:
     def __init__(self, args):
         self.args = args
@@ -376,7 +530,7 @@ class Runner:
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.original_input_folder = os.path.abspath(args.folder)
-        self.input_dir = snapshot_input_folder(self.original_input_folder, self.run_dir)
+        self.input_dir, self.input_snapshot_details = prepare_input_snapshot(self.original_input_folder, self.run_dir)
         self.args.folder = self.input_dir
         self.copy_stage_manifest()
         self.manifest = {
@@ -401,6 +555,7 @@ class Runner:
             "stages": [],
             "warnings": [],
             "input_inventory": inventory(self.input_dir),
+            "input_snapshot": self.input_snapshot_details,
         }
         self.write_manifest()
 
@@ -873,6 +1028,7 @@ class Runner:
             "python": platform.python_version(),
             "imports": list(IMPORTS),
             "script_execution_challenge": self.run_id,
+            "input_snapshot": self.input_snapshot_details,
         })
 
     def run_pipeline(self):
