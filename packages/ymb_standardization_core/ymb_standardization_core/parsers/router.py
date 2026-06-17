@@ -1,91 +1,69 @@
-import re
-
 from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
+from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
 from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
+
+
+def _pdf_candidate(parser, file_type, bank, version, identity_evidence, layout_evidence,
+                   route_evidence=None):
+    return {
+        "parser": parser,
+        "decision": "matched",
+        "file_type": file_type,
+        "bank": bank,
+        "version": version,
+        "identity_evidence": identity_evidence,
+        "layout_evidence": layout_evidence,
+    }
+
+
+def _pdf_fallback(evidence, table_row_count, page_count):
+    return {
+        "parser": "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched",
+        "decision": "unmatched",
+        "file_type": "pdf",
+    }
+
+
+def _decide_pdf_route(candidates, evidence, table_row_count, page_count):
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        return _pdf_fallback(evidence, table_row_count, page_count)
+    return {
+        "parser": "ambiguous_router_match",
+        "decision": "ambiguous",
+        "file_type": "pdf",
+        "candidates": candidates,
+    }
 
 
 def route_pdf(text, table_row_count, page_count):
     """识别 PDF 的解析路线。只判断模板和抽取模式，不在这里清洗交易数据。"""
+    text = text or ""
     evidence = {
         "ext": ".pdf",
         "page_count": page_count,
-        "text_length": len(text or ""),
+        "text_length": len(text),
         "table_row_count": table_row_count,
     }
-    # 农行文本版清单与江西农商是两个不同模板，必须先独立命中，避免银行口径串线。
-    if "中国农业银行账户活期交易明细清单" in text:
-        return {
-            "parser": "abc_text_pdf",
-            "route_confidence": 0.95,
-            "route_evidence": {**evidence, "bank_marker": "中国农业银行账户活期交易明细清单"},
-            "ocr_used": False,
-            "page_count": page_count,
-            "账户类型线索": "",
-        }
+    candidates = []
 
-    # 江西农商这类 PDF 有文本层，但没有结构化表格；需要文本行 parser，而不是 OCR。
-    jx_markers = ["江西·农商银行", "户 名", "账 号", "起止日期"]
-    jx_hits = [m for m in jx_markers if m in text]
-    date_amount_lines = len(re.findall(r"20\d{2}[-/]\d{1,2}[-/]\d{1,2}.*?[+-]?\d[\d,]*\.\d{1,2}", text))
-    if len(jx_hits) >= 3 and date_amount_lines >= 5:
-        return {
-            "parser": "jiangxi_rural_commercial_pdf_text",
-            "route_confidence": 0.95,
-            "route_evidence": {**evidence, "bank_marker": "江西·农商银行",
-                               "matched_markers": jx_hits, "date_amount_lines": date_amount_lines},
-            "ocr_used": False,
-            "page_count": page_count,
-            "账户类型线索": "个人",
-        }
+    for rule in load_pdf_route_rules():
+        match = rule.match(text)
+        if not match:
+            continue
+        candidates.append(_pdf_candidate(
+            parser=rule.parser,
+            file_type=rule.file_type,
+            bank=rule.bank,
+            version=rule.version,
+            identity_evidence=match["identity_evidence"],
+            layout_evidence=match["layout_evidence"],
+        ))
 
-    # 开泰银行英文文本版 PDF 无稳定表格边框，需要按文本行识别 DD-MM-YY HH:MM 交易行。
-    kbank_markers = ["K PLUS", "K BIZ", "AccountMR.", "Account Number"]
-    kbank_hits = [m for m in kbank_markers if m in text]
-    kbank_txn_lines = len(re.findall(
-        r"\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+"
-        r"(?:Transfer|Payment|Cash|Fee|Interest|Withholding|Annual)",
-        text,
-    ))
-    if len(kbank_hits) >= 4 and kbank_txn_lines >= 5:
-        return {
-            "parser": "kasikorn_pdf_text",
-            "route_confidence": 0.95,
-            "route_evidence": {**evidence, "bank_marker": "Kasikorn Bank",
-                               "matched_markers": kbank_hits, "txn_lines": kbank_txn_lines},
-            "ocr_used": False,
-            "page_count": page_count,
-            "账户类型线索": "个人",
-        }
-
-    # 浙江庆元农商“个人账户交易明细”是文本层 PDF，无结构化表格。
-    zhejiang_qyrcb_markers = ["个人账户交易明细", "户名:", "账号:", "开户行:", "账户种类:"]
-    zhejiang_qyrcb_hits = [m for m in zhejiang_qyrcb_markers if m in text]
-    zhejiang_qyrcb_txn_lines = len(re.findall(
-        r"20\d{2}-\d{2}-\d{2}\s+人民币\s+.+?\s+[+-]?\d[\d,]*\.\d{2}\s+[+-]?\d[\d,]*\.\d{2}",
-        text,
-    ))
-    if "农商" in text and len(zhejiang_qyrcb_hits) >= 4 and zhejiang_qyrcb_txn_lines >= 5:
-        return {
-            "parser": "zhejiang_qyrcb_pdf_text",
-            "route_confidence": 0.95,
-            "route_evidence": {**evidence, "bank_marker": "浙江庆元农商银行",
-                               "matched_markers": zhejiang_qyrcb_hits,
-                               "txn_lines": zhejiang_qyrcb_txn_lines},
-            "ocr_used": False,
-            "page_count": page_count,
-            "账户类型线索": "个人",
-        }
-
-    return {
-        "parser": "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched",
-        "route_confidence": 0.7 if table_row_count else 0.2,
-        "route_evidence": evidence,
-        "ocr_used": False,
-        "page_count": page_count,
-        "账户类型线索": "",
-    }
+    return _decide_pdf_route(candidates, evidence, table_row_count, page_count)
 
 
 def _extract_pdf_tables(pdf):

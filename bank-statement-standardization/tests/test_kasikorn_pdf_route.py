@@ -36,6 +36,7 @@ class KasikornPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertEqual(image["parser"], "kasikorn_pdf_text")
+        self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "HUAHUA JIANG")
         self.assertEqual(image["本方账户"], "061-8-92723-7")

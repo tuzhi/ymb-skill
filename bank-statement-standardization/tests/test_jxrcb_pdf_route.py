@@ -44,6 +44,17 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(abc["parser"], "abc_text_pdf")
         self.assertEqual(jxrcb["parser"], "jiangxi_rural_commercial_pdf_text")
 
+    def test_jxrcb_requires_bank_heading(self):
+        text = (
+            "户 名 张三 账 号 6226822011500474554 起止日期 "
+            "2025-01-01 1.00 2.00 2025-01-02 1.00 3.00 2025-01-03 1.00 4.00 "
+            "2025-01-04 1.00 5.00 2025-01-05 1.00 6.00"
+        )
+
+        result = router.route_pdf(text, 0, 1)
+
+        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+
     def test_watermarked_text_line_is_parsed(self):
         # 江西农商 PDF 文本层会把水印字插入数字 token，解析器必须先清理再定位日期/金额。
         line = "2025-行11-22 -11行5.00 65行2.50 微信行支付 扫二维行码付款 100行0107301 行 行"
@@ -73,6 +84,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertEqual(image["parser"], "jiangxi_rural_commercial_pdf_text")
+        self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "张华峰")
         self.assertEqual(image["本方账户"], "6226822011500474554")

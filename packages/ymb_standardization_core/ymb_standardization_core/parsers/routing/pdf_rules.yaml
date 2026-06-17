@@ -1,0 +1,57 @@
+- parser: abc_text_pdf
+  file_type: pdf
+  bank: 中国农业银行
+  version: "1.0"
+  identity:
+    any:
+      - 中国农业银行账户活期交易明细清单
+  layout:
+    all:
+      - 账户活期交易明细清单
+
+- parser: jiangxi_rural_commercial_pdf_text
+  file_type: pdf
+  bank: 江西农商银行
+  version: "1.0"
+  identity:
+    any:
+      - 江西·农商银行
+      - 江西农商银行
+  layout:
+    all:
+      - 户 名
+      - 账 号
+      - 起止日期
+
+- parser: kasikorn_pdf_text
+  file_type: pdf
+  bank: 开泰银行（Kasikorn Bank）
+  version: "1.0"
+  identity:
+    any:
+      - K PLUS
+      - K BIZ
+      - AccountMR.
+      - Account Number
+  layout:
+    all:
+      - K PLUS
+      - K BIZ
+      - AccountMR.
+      - Account Number
+
+- parser: zhejiang_qyrcb_pdf_text
+  file_type: pdf
+  bank: 浙江庆元农商银行
+  version: "1.0"
+  identity:
+    any:
+      - 浙江庆元农商银行
+      - 庆元农商银行
+  layout:
+    all:
+      - 个人账户交易明细
+      - "户名:"
+      - "账号:"
+      - "开户行:"
+      - "账户种类:"

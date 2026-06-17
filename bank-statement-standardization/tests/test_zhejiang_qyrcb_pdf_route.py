@@ -20,8 +20,29 @@ SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / 
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
 
+ROUTER_SPEC = importlib.util.spec_from_file_location(
+    "router",
+    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "router.py")
+router = importlib.util.module_from_spec(ROUTER_SPEC)
+ROUTER_SPEC.loader.exec_module(router)
+
 
 class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
+    def test_zhejiang_qyrcb_requires_qingyuan_heading(self):
+        text = (
+            "某地农商银行 个人账户交易明细 户名:张三 账号:6228580999004272748 "
+            "开户行:某地农商银行营业部 账户种类:卡/折 "
+            "2025-06-09 人民币 汇出 -60.00 20808.46 "
+            "2025-06-10 人民币 汇出 -61.00 20747.46 "
+            "2025-06-11 人民币 汇出 -62.00 20685.46 "
+            "2025-06-12 人民币 汇出 -63.00 20622.46 "
+            "2025-06-13 人民币 汇出 -64.00 20558.46"
+        )
+
+        result = router.route_pdf(text, 0, 1)
+
+        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+
     def test_local_grzd_pdf_uses_zhejiang_qyrcb_text_parser(self):
         pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
         if not pdf.exists():
@@ -36,6 +57,13 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertEqual(image["parser"], "zhejiang_qyrcb_pdf_text")
+        self.assertEqual(image["decision"], "matched")
+        self.assertEqual(image["file_type"], "pdf")
+        self.assertEqual(image["bank"], "浙江庆元农商银行")
+        self.assertEqual(image["version"], "1.0")
+        self.assertIn("庆元农商银行", image["identity_evidence"])
+        self.assertIn("个人账户交易明细", image["layout_evidence"])
+        self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "李先根")
         self.assertEqual(image["本方账户"], "6228580999004272748")

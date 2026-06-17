@@ -466,21 +466,11 @@ def read_rows_pdf(path):
 
 def read_rows(path):
     """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
-    ext = os.path.splitext(path)[1].lower()
-    if ext in (".xlsx", ".xlsm", ".xls"):
-        sheet, rows = read_rows_excel(path)
-        route_info = {"parser": "generic_excel", "route_confidence": 0.7,
-                      "route_evidence": {"ext": ext, "sheet": sheet}, "ocr_used": False}
-        return ("excel", "", rows, route_info)
-    if ext in (".csv", ".txt", ".tsv"):
-        pre, rows = read_rows_csv(path)
-        route_info = {"parser": "generic_csv", "route_confidence": 0.7,
-                      "route_evidence": {"ext": ext}, "ocr_used": False}
-        return ("csv", pre, rows, route_info)
-    if ext == ".pdf":
-        preamble, rows, route_info = read_rows_pdf(path)
-        return ("pdf", preamble, rows, route_info)
-    raise NotABankStatement(f"不支持的文件类型：{ext}")
+    from ymb_standardization_core.parsers import input_router
+
+    input_router.configure_readers(read_rows_excel, read_rows_csv, NotABankStatement)
+    result = input_router.read_rows(path)
+    return (result.kind, result.preamble, result.rows, result.route_info)
 
 
 # ---- 表头识别 ----------------------------------------------------------------
@@ -705,12 +695,24 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     if not account_type:
         account_type = route_info.get("账户类型线索") or acct["账户类型线索"] or "未知"
 
-    # 开户行：优先 --bank（仍做规范化），否则从文件名/抬头/表头文本推断
+    # 开户行：优先 --bank（仍做规范化），否则从内容证据推断；文件名仅作兼容兜底，并记录来源。
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
-    bank_text = f"{fname} {preamble} {upper_text}"
-    bank_name = (infer_bank(bank) or bank) if bank else infer_bank(bank_text)
+    bank_name = ""
+    bank_infer_source = "未知"
+    if bank:
+        bank_name = infer_bank(bank) or bank
+        bank_infer_source = "参数"
+    else:
+        bank_name = infer_bank(preamble, upper_text)
+        if bank_name:
+            bank_infer_source = "内容"
+        else:
+            bank_name = infer_bank(fname)
+            if bank_name:
+                bank_infer_source = "文件名"
     if not bank_name and route_info.get("parser") == "jiangxi_rural_commercial_pdf_text":
         bank_name = "农村商业银行"
+        bank_infer_source = "router"
 
     # ---- 列 -> 标准字段 映射 ----
     overrides = overrides or {}
@@ -992,6 +994,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         "文件画像": {
             "确认银行": bank_name or "未知",
             "开户行": bank_name,
+            "开户行识别来源": bank_infer_source,
             "账户类型": account_type,
             "文件类型": file_kind,
             "命中模板": "自动同义词映射",
@@ -999,10 +1002,14 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "本方名称": acct["本方名称"],
             "本方账户": acct["本方账户"],
             "parser": route_info.get("parser", ""),
-            "route_confidence": route_info.get("route_confidence", ""),
-            "route_evidence": route_info.get("route_evidence", {}),
-            "ocr_used": bool(route_info.get("ocr_used", False)),
-            "page_count": route_info.get("page_count", ""),
+            "decision": route_info.get("decision", ""),
+            "file_type": route_info.get("file_type", file_kind),
+            "bank": route_info.get("bank", ""),
+            "version": route_info.get("version", ""),
+            "identity_evidence": route_info.get("identity_evidence", []),
+            "layout_evidence": route_info.get("layout_evidence", []),
+            "ocr_supported": False,
+            "ocr_used": False,
         },
         "预处理方案": [
             {"步骤": "输入路由", "处理动作": f"使用 parser={route_info.get('parser', 'unknown')}",
