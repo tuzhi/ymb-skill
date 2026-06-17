@@ -3,6 +3,7 @@ import re
 from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
+from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 
 def route_pdf(text, table_row_count, page_count):
@@ -53,6 +54,25 @@ def route_pdf(text, table_row_count, page_count):
             "route_confidence": 0.95,
             "route_evidence": {**evidence, "bank_marker": "Kasikorn Bank",
                                "matched_markers": kbank_hits, "txn_lines": kbank_txn_lines},
+            "ocr_used": False,
+            "page_count": page_count,
+            "账户类型线索": "个人",
+        }
+
+    # 浙江庆元农商“个人账户交易明细”是文本层 PDF，无结构化表格。
+    zhejiang_qyrcb_markers = ["个人账户交易明细", "户名:", "账号:", "开户行:", "账户种类:"]
+    zhejiang_qyrcb_hits = [m for m in zhejiang_qyrcb_markers if m in text]
+    zhejiang_qyrcb_txn_lines = len(re.findall(
+        r"20\d{2}-\d{2}-\d{2}\s+人民币\s+.+?\s+[+-]?\d[\d,]*\.\d{2}\s+[+-]?\d[\d,]*\.\d{2}",
+        text,
+    ))
+    if "农商" in text and len(zhejiang_qyrcb_hits) >= 4 and zhejiang_qyrcb_txn_lines >= 5:
+        return {
+            "parser": "zhejiang_qyrcb_pdf_text",
+            "route_confidence": 0.95,
+            "route_evidence": {**evidence, "bank_marker": "浙江庆元农商银行",
+                               "matched_markers": zhejiang_qyrcb_hits,
+                               "txn_lines": zhejiang_qyrcb_txn_lines},
             "ocr_used": False,
             "page_count": page_count,
             "账户类型线索": "个人",
@@ -111,6 +131,9 @@ def read_pdf_rows(path):
             return preamble, rows, route_info
         if route_info["parser"] == "kasikorn_pdf_text":
             preamble, rows = read_kasikorn_text_pdf(pdf)
+            return preamble, rows, route_info
+        if route_info["parser"] == "zhejiang_qyrcb_pdf_text":
+            preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
             return preamble, rows, route_info
 
     return preamble or "", table_rows, route_info
