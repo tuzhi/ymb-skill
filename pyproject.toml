@@ -1,8 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ymb-skill-workspace"
 version = "1.2.9"
 description = "YMB 流水技能与共享标准化包工作区。"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.12"
 dependencies = []
 
 [project.optional-dependencies]
@@ -24,3 +28,6 @@ pythonpath = [
   "packages/ymb_standardization_core",
   "bank-statement-standardization/scripts",
 ]
+
+[tool.setuptools]
+py-modules = []

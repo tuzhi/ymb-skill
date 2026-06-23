@@ -7,9 +7,12 @@ import tomli
 from token_vault_service.config import STANDARDIZATION_MODULE, Settings
 
 
+def project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
 def test_service_uses_token_vault_package_name_and_does_not_depend_on_external_runtime() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    pyproject = tomli.loads((project_root / "pyproject.toml").read_text("utf-8"))
+    pyproject = tomli.loads((project_root() / "pyproject.toml").read_text("utf-8"))
 
     dependencies = pyproject["project"]["dependencies"]
 
@@ -21,17 +24,16 @@ def test_service_uses_token_vault_package_name_and_does_not_depend_on_external_r
     assert all("privacy_filter" not in dependency.lower() for dependency in dependencies)
     assert "python-multipart>=0.0.9" in dependencies
     assert "eval-type-backport>=0.2" in dependencies
-    assert "openpyxl>=3.1" in dependencies
+    assert "openpyxl>=3.1.5,<4" in dependencies
 
 
-def test_project_is_constrained_to_python_3_8_runtime() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    pyproject = tomli.loads((project_root / "pyproject.toml").read_text("utf-8"))
+def test_project_is_constrained_to_python_3_11_runtime() -> None:
+    pyproject = tomli.loads((project_root() / "pyproject.toml").read_text("utf-8"))
 
     dependencies = pyproject["project"]["dependencies"]
 
-    assert pyproject["project"]["requires-python"] == ">=3.8.6,<3.9"
-    assert "pandas>=2.0.3,<2.1" in dependencies
+    assert pyproject["project"]["requires-python"] == ">=3.11,<3.12"
+    assert "pandas>=2.2.3,<3" in dependencies
     assert "tomli>=2.0" in pyproject["project"]["optional-dependencies"]["test"]
 
 
@@ -41,8 +43,7 @@ def test_default_standardizer_uses_shared_core_package() -> None:
 
 
 def test_test_extra_includes_build_tool() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    pyproject = tomli.loads((project_root / "pyproject.toml").read_text("utf-8"))
+    pyproject = tomli.loads((project_root() / "pyproject.toml").read_text("utf-8"))
 
     test_dependencies = pyproject["project"]["optional-dependencies"]["test"]
 
@@ -50,8 +51,7 @@ def test_test_extra_includes_build_tool() -> None:
 
 
 def test_person_ner_extra_keeps_hanlp_optional() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    pyproject = tomli.loads((project_root / "pyproject.toml").read_text("utf-8"))
+    pyproject = tomli.loads((project_root() / "pyproject.toml").read_text("utf-8"))
 
     dependencies = pyproject["project"]["dependencies"]
     person_ner_dependencies = pyproject["project"]["optional-dependencies"]["person-ner"]

@@ -7,7 +7,7 @@ name = "token-vault-service"
 version = "0.1.0"
 description = "Local reversible token vault service for bank statement preprocessing."
 readme = "README.md"
-requires-python = ">=3.8.6,<3.9"
+requires-python = ">=3.11,<3.12"
 dependencies = [
   "ymb-standardization-core @ file:///D:/PYTHON_WORK/ymb-skill/packages/ymb_standardization_core",
   "fastapi>=0.115",
@@ -15,8 +15,8 @@ dependencies = [
   "pydantic>=2.7",
   "eval-type-backport>=0.2",
   "python-multipart>=0.0.9",
-  "openpyxl>=3.1",
-  "pandas>=2.0.3,<2.1",
+  "openpyxl>=3.1.5,<4",
+  "pandas>=2.2.3,<3",
   "xlrd>=2.0.2,<3",
   "pdfplumber>=0.11.5,<0.12",
 ]

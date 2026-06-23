@@ -1061,7 +1061,7 @@ def _sha256_file(path: Path) -> str:
 
 @contextmanager
 def _temporary_directory(prefix: str) -> Iterator[str]:
-    """创建临时目录，并兼容 Python 3.8 忽略清理失败。"""
+    """创建临时目录，并在清理失败时保持流程可继续。"""
 
     temp_name = tempfile.mkdtemp(prefix=prefix)
     try:
