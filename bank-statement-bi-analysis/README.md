@@ -9,7 +9,7 @@
 ## 用法
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -e .
 python scripts/build_bi_report.py --input "<标准化产物文件或文件夹>" --client "客户名" [--out-dir DIR]
 ```
 
@@ -31,4 +31,4 @@ python scripts/build_bi_report.py --input "<标准化产物文件或文件夹>" 
 - 只读不改；阈值仅供初筛，不构成授信结论。
 - 详见 [SKILL.md](SKILL.md) 与 [references/methodology.md](references/methodology.md)。
 
-`assets/sample_standardized.csv` 为合成测试样本，可直接跑通验证。
+本地 `testdata/` 可放合成或真实脱敏测试样本；该目录不进入版本库。

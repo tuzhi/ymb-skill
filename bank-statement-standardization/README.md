@@ -1,7 +1,7 @@
 # 银行流水标准化技能包 · bank-statement-standardization
 
 把各家银行、各种格式（Excel `.xlsx/.xls`、CSV、PDF）的原始银行流水，标准化成统一中文字段口径，
-并按 `manifest.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
+并按 `assets/manifest.template.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
@@ -19,7 +19,6 @@
 ```
 bank-statement-standardization/
 ├── SKILL.md                 # Agent Skill harness：入口、状态机、AI 兜底、写入边界
-├── manifest.json            # 阶段事实源模板：script / validator / ai_fallback_refs / fallback 产物 / started_at / duration_seconds / status
 ├── README.md                # 本文件
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
@@ -39,6 +38,7 @@ bank-statement-standardization/
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
+    ├── manifest.template.json # 阶段事实源模板：script / validator / ai_fallback_refs / fallback 产物 / started_at / duration_seconds / status
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 

@@ -34,8 +34,9 @@ class OrchestratorManifestTest(unittest.TestCase):
     def test_skill_metadata_reads_name_and_version_from_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             skill = Path(tmp) / "skill"
-            skill.mkdir()
-            (skill / "manifest.json").write_text(
+            template_dir = skill / "assets"
+            template_dir.mkdir(parents=True)
+            (template_dir / "manifest.template.json").write_text(
                 json.dumps(
                     {
                         "skill": {
@@ -427,12 +428,13 @@ class OrchestratorManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             skill = Path(tmp) / "skill"
             (skill / "scripts").mkdir(parents=True)
+            (skill / "assets").mkdir()
             (skill / "dist").mkdir()
             (skill / "testdata").mkdir()
             (skill / "build").mkdir()
             (skill / "demo.egg-info").mkdir()
             (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
-            (skill / "manifest.json").write_text("{}\n", encoding="utf-8")
+            (skill / "assets" / "manifest.template.json").write_text("{}\n", encoding="utf-8")
             (skill / "scripts" / "standardize.py").write_text("print('ok')\n", encoding="utf-8")
             (skill / "dist" / "bundle.zip").write_text("ignore\n", encoding="utf-8")
             (skill / "testdata" / "raw.csv").write_text("ignore\n", encoding="utf-8")
@@ -446,7 +448,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertIn("modified_files", snapshot)
             self.assertIn("file_sha256", snapshot)
             self.assertIn("SKILL.md", snapshot["file_sha256"])
-            self.assertIn("manifest.json", snapshot["file_sha256"])
+            self.assertIn("assets/manifest.template.json", snapshot["file_sha256"])
             self.assertIn("scripts/standardize.py", snapshot["file_sha256"])
             self.assertNotIn("dist/bundle.zip", snapshot["file_sha256"])
             self.assertNotIn("testdata/raw.csv", snapshot["file_sha256"])

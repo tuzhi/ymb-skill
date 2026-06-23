@@ -3,7 +3,7 @@ name: bank-statement-standardization
 description: >-
   用于银行/支付流水标准化、字段映射、多文件整合、余额校验、交易打标、尽调底表和单客户交付物生成。
   用户提到流水清洗、银行流水标准化、流水合并去重、流水余额校验、交易打标签、流水尽调底表，或直接提供
-  Excel/CSV/PDF 银行流水文件时使用。本技能是脚本优先的 harness：按 manifest.json 执行 script、validator、
+  Excel/CSV/PDF 银行流水文件时使用。本技能是脚本优先的 harness：按 assets/manifest.template.json 生成运行时 manifest.json，并执行 script、validator、
   ai_fallback_refs、status；AI 只在阶段失败后读取对应提示词有限兜底。
 ---
 
@@ -24,7 +24,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 ## 状态机
 
-`manifest.json` 是阶段事实源模板；真实任务必须复制到本次 `runs/<run-id>/manifest.json` 后更新状态。
+`assets/manifest.template.json` 是阶段事实源模板；真实任务必须复制到本次 `runs/<run-id>/manifest.json` 后更新状态。
 
 每个阶段只认这些键：
 
@@ -80,7 +80,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - 默认只写本次运行目录，例如 `runs/<run-id>/fallback/<stage-id>/`、`runs/<run-id>/artifacts/`、`receipts/`、`events.jsonl`。
 - 阶段失败时 orchestrator 会在 `ai_fallback_dir` 写入 `fallback_request.json`。
 - AI 兜底开发的临时脚本、补丁、参数文件必须留存在 `ai_fallback_dir`，并在运行时 manifest 的 `ai_fallback_artifacts` 记录相对路径。
-- 默认不得修改 skill 源码目录：`scripts/`、`assets/`、`references/`、`SKILL.md`、`manifest.json`。
+- 默认不得修改 skill 源码目录：`scripts/`、`assets/`、`references/`、`SKILL.md`。
 - 只有用户明确要求“修改技能代码”“沉淀为版本”或“发版”时，才允许写回 skill 源码目录；写回后必须重新测试并打包。
 
 ## 红线

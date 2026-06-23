@@ -79,6 +79,6 @@ python scripts/build_bi_report.py --input "<标准化产物文件或文件夹>" 
 
 ## 依赖
 
-- Python 3，`openpyxl`（生成 .xlsx 与原生图表）。详见 `requirements.txt`。
+- Python 3，`openpyxl`（生成 .xlsx 与原生图表）。依赖由 `pyproject.toml` 管理，首次使用在本目录执行 `python -m pip install -e .`。
 
 更多分析口径与方法论见 `references/methodology.md`。

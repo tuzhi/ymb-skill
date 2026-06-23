@@ -39,6 +39,7 @@ SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
 DEFAULT_SKILL_NAME = "bank-statement-standardization"
 DEFAULT_SKILL_VERSION = "0.0.0"
 TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
+MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
 
 
 def configure_console():
@@ -70,8 +71,12 @@ def read_json_if_exists(path, default=None):
         return json.load(f)
 
 
+def manifest_template_path(skill_dir):
+    return os.path.join(skill_dir, MANIFEST_TEMPLATE_RELATIVE_PATH)
+
+
 def load_skill_metadata(skill_dir):
-    data = read_json_if_exists(os.path.join(skill_dir, "manifest.json"), {})
+    data = read_json_if_exists(manifest_template_path(skill_dir), {})
     skill = data.get("skill") if isinstance(data, dict) else {}
     if not isinstance(skill, dict):
         skill = {}
@@ -515,7 +520,7 @@ class Runner:
     def __init__(self, args):
         self.args = args
         self.skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.template_manifest_path = os.path.join(self.skill_dir, "manifest.json")
+        self.template_manifest_path = manifest_template_path(self.skill_dir)
         self.skill_metadata = load_skill_metadata(self.skill_dir)
         stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
         self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
@@ -561,7 +566,7 @@ class Runner:
 
     def copy_stage_manifest(self):
         if not os.path.isfile(self.template_manifest_path):
-            raise RuntimeError(f"缺少 skill 根目录 manifest.json：{self.template_manifest_path}")
+            raise RuntimeError(f"缺少 skill 资源模板 {MANIFEST_TEMPLATE_RELATIVE_PATH}：{self.template_manifest_path}")
         with open(self.template_manifest_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         self.write_stage_manifest(self.sanitize_stage_manifest_template(data))

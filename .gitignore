@@ -27,6 +27,11 @@ htmlcov/
 .vscode/
 .DS_Store
 
+# R/RStudio local history and workspace
+.Rhistory
+.RData
+.Rproj.user/
+
 # Local agent/tool state
 .claude/
 .codegraph/
