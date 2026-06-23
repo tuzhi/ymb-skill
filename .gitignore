@@ -1,21 +1,53 @@
+# Python cache
 __pycache__/
 *.py[cod]
-.DS_Store
-.Rhistory
-.claude/
-dist/
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging
 build/
+dist/
 *.egg-info/
+.eggs/
+
+# Test, lint, and coverage cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE and OS files
 .idea/
-bank-statement-standardization/.runtime/
-bank-statement-standardization/bootstrap-logs/
+.vscode/
+.DS_Store
+
+# Local agent/tool state
+.claude/
+.codegraph/
+
+# Runtime outputs
 runs/
+logs/
+log/
+*.log
 *.zip
 tokenized_batch_bundle/
 workbuddy_result/
-resources/
-.codegraph/
-testdata/
-*.csv
-log/
+bank-statement-standardization/.runtime/
+bank-statement-standardization/bootstrap-logs/
 
+# Test data and generated fixtures are intentionally not versioned.
+testdata/
+**/testdata/
+**/fixtures/data/
+**/fixtures/raw/
+**/fixtures/generated/
+
+# Local scratch/resources
+resources/
