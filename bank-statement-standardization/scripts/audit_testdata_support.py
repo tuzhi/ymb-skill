@@ -11,16 +11,18 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +34,7 @@ if str(CORE_PACKAGE) not in sys.path:
 from ymb_standardization_core import core as standardize_core  # noqa: E402
 
 
-SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".csv", ".txt", ".tsv", ".pdf"}
+SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".pdf"}
 GENERATED_NAME_MARKERS = (
     "__standardized",
     "__整合流水",
@@ -47,12 +49,15 @@ MATRIX_COLUMNS = [
     "版本",
     "文件路径",
     "router类",
+    "YAML指纹",
     "测试类",
     "测试日期",
     "测试结果",
     "期望行数",
     "本方户名",
     "本方账号",
+    "创建时间≈修改时间",
+    "创建人=修改人",
     "备注",
 ]
 
@@ -88,6 +93,98 @@ def file_sha256(path):
     return h.hexdigest()
 
 
+def _format_delta(seconds):
+    seconds = int(abs(seconds))
+    if seconds < 60:
+        return f"{seconds}秒"
+    minutes, sec = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}分{sec}秒"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}小时{minutes}分"
+
+
+def _metadata_time_check(created, modified, tolerance_seconds=300):
+    if not created or not modified:
+        return "不适用（缺少创建/修改时间）"
+    if created.tzinfo is not None:
+        created = created.astimezone(timezone.utc).replace(tzinfo=None)
+    if modified.tzinfo is not None:
+        modified = modified.astimezone(timezone.utc).replace(tzinfo=None)
+    delta = abs((modified - created).total_seconds())
+    result = "是" if delta <= tolerance_seconds else "否"
+    return f"{result}（差{_format_delta(delta)}）"
+
+
+def _metadata_author_check(creator, modified_by):
+    creator = str(creator or "").strip()
+    modified_by = str(modified_by or "").strip()
+    if not creator or not modified_by:
+        return "是（缺少创建人/修改人，按一致处理）"
+    result = "是" if creator == modified_by else "否"
+    return f"{result}（创建人:{creator}；修改人:{modified_by}）"
+
+
+def _parse_pdf_datetime(value):
+    text = str(value or "").strip()
+    if text.startswith("D:"):
+        text = text[2:]
+    match = re.match(r"(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?", text)
+    if not match:
+        return None
+    parts = [int(part) if part else default for part, default in zip(match.groups(), [1, 1, 1, 0, 0, 0])]
+    try:
+        return datetime(*parts)
+    except ValueError:
+        return None
+
+
+def metadata_checks(path):
+    """读取文档元数据，输出支持矩阵用的两项一致性核验。"""
+    path = Path(path)
+    ext = path.suffix.lower()
+    try:
+        if ext in {".xlsx", ".xlsm"}:
+            import openpyxl
+
+            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            props = wb.properties
+            return {
+                "创建时间≈修改时间": _metadata_time_check(props.created, props.modified),
+                "创建人=修改人": _metadata_author_check(props.creator, props.lastModifiedBy),
+            }
+        if ext == ".xls":
+            import xlrd
+
+            book = xlrd.open_workbook(path, on_demand=True)
+            creator = getattr(book, "user_name", "") or ""
+            return {
+                "创建时间≈修改时间": "是（XLS 未提供创建/修改时间，按一致处理）",
+                "创建人=修改人": "是（XLS 仅提供创建人:%s，按一致处理）" % creator if creator else "是（XLS 未提供创建人/修改人，按一致处理）",
+            }
+        if ext == ".pdf":
+            import pdfplumber
+
+            with pdfplumber.open(path) as pdf:
+                metadata = pdf.metadata or {}
+            created = _parse_pdf_datetime(metadata.get("CreationDate"))
+            modified = _parse_pdf_datetime(metadata.get("ModDate"))
+            return {
+                "创建时间≈修改时间": _metadata_time_check(created, modified),
+                "创建人=修改人": "是（PDF 未提供创建人/修改人，按一致处理）",
+            }
+    except Exception as exc:
+        msg = exc.__class__.__name__
+        return {
+            "创建时间≈修改时间": f"核验失败（{msg}）",
+            "创建人=修改人": f"核验失败（{msg}）",
+        }
+    return {
+        "创建时间≈修改时间": "不适用（不支持的格式）",
+        "创建人=修改人": "不适用（不支持的格式）",
+    }
+
+
 def git_sha():
     try:
         return subprocess.check_output(
@@ -107,6 +204,59 @@ def test_class_for_parser(parser):
         "zhejiang_qyrcb_pdf_text": "test_zhejiang_qyrcb_pdf_route.py",
     }
     return mapping.get(parser or "", "")
+
+
+def _load_route_rule_index():
+    rules = {}
+    for name in ("excel_rules.yaml", "pdf_rules.yaml"):
+        path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / name
+        try:
+            items = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+        except Exception:
+            items = []
+        for item in items:
+            parser = item.get("parser")
+            if parser:
+                rules[parser] = item
+    return rules
+
+
+ROUTE_RULE_INDEX = _load_route_rule_index()
+
+
+def yaml_fingerprint_summary(parser):
+    """返回支持矩阵中可读的 YAML 指纹配置摘要。"""
+    if not parser:
+        return ""
+    if parser.startswith("generic_") or parser == "ambiguous_router_match":
+        return "无 YAML 指纹"
+    rule = ROUTE_RULE_INDEX.get(parser)
+    if not rule:
+        return "未找到 YAML 规则"
+
+    parts = []
+    identity_any = rule.get("identity", {}).get("any") or []
+    layout_all = rule.get("layout", {}).get("all") or []
+    fingerprint = rule.get("fingerprint") or {}
+    metadata_all = fingerprint.get("metadata", {}).get("all") or {}
+    style_all = fingerprint.get("style", {}).get("all") or []
+    data_all = fingerprint.get("data", {}).get("all") or []
+    date_any = fingerprint.get("date_format", {}).get("any") or []
+
+    if identity_any:
+        parts.append(f"身份:{len(identity_any)}")
+    if layout_all:
+        parts.append(f"结构:{len(layout_all)}")
+    if metadata_all:
+        parts.append("元数据:" + ",".join(metadata_all.keys()))
+    if style_all:
+        style_labels = [str(item.get("text", "")).strip() for item in style_all if isinstance(item, dict)]
+        parts.append("样式:" + ",".join([label for label in style_labels if label][:3]))
+    if data_all:
+        parts.append(f"数据:{len(data_all)}")
+    if date_any:
+        parts.append("日期:" + ",".join(date_any))
+    return "；".join(parts) if parts else "YAML 规则未配置指纹"
 
 
 def template_from_mapping(image):
@@ -177,18 +327,22 @@ def read_csv_summary(csv_path):
 
 def audit_one_file(path, root, output_work_dir, today):
     relative_path = path.relative_to(root).as_posix()
+    metadata_check = metadata_checks(path)
     record = {
         "银行": "",
         "格式": path.suffix.lower().lstrip("."),
         "版本": "",
         "文件路径": relative_path,
         "router类": "",
+        "YAML指纹": "",
         "测试类": "",
         "测试日期": today,
         "测试结果": "FAIL",
         "期望行数": "",
         "本方户名": "",
         "本方账号": "",
+        "创建时间≈修改时间": metadata_check["创建时间≈修改时间"],
+        "创建人=修改人": metadata_check["创建人=修改人"],
         "备注": "",
     }
     baseline = {
@@ -218,6 +372,7 @@ def audit_one_file(path, root, output_work_dir, today):
             "银行": bank_name,
             "版本": template,
             "router类": parser,
+            "YAML指纹": yaml_fingerprint_summary(parser),
             "测试类": test_class_for_parser(parser),
             "测试结果": "PASS",
             "期望行数": str(summary["row_count"]),
@@ -231,6 +386,9 @@ def audit_one_file(path, root, output_work_dir, today):
                 "bank": record["银行"],
                 "parser": parser,
                 "template": record["版本"],
+                "yaml_fingerprint": record["YAML指纹"],
+                "created_modified_check": record["创建时间≈修改时间"],
+                "creator_modifier_check": record["创建人=修改人"],
                 "account_name": record["本方户名"],
                 "account_no": record["本方账号"],
             },
@@ -266,12 +424,15 @@ def write_xlsx(path, rows):
         "版本": 28,
         "文件路径": 72,
         "router类": 32,
+        "YAML指纹": 48,
         "测试类": 34,
         "测试日期": 14,
         "测试结果": 12,
         "期望行数": 12,
         "本方户名": 26,
         "本方账号": 26,
+        "创建时间≈修改时间": 28,
+        "创建人=修改人": 40,
         "备注": 60,
     }
     for idx, col in enumerate(MATRIX_COLUMNS, 1):

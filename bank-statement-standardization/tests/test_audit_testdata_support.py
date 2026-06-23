@@ -54,9 +54,12 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
             "router类": "zhejiang_qyrcb_pdf_text",
+            "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
             "测试日期": "2026-06-17",
             "测试结果": "PASS",
+            "创建时间≈修改时间": "是（差0秒）",
+            "创建人=修改人": "是（创建人:test；修改人:test）",
         }]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,12 +67,18 @@ class AuditTestdataSupportTests(unittest.TestCase):
             module.write_xlsx(xlsx_path, rows)
             workbook = load_workbook(xlsx_path)
             sheet = workbook.active
-            header = [cell.value for cell in sheet[1][:8]]
-            first_row = [cell.value for cell in sheet[2][:8]]
+            header = [cell.value for cell in sheet[1][:len(module.MATRIX_COLUMNS)]]
+            first_row = [cell.value for cell in sheet[2][:len(module.MATRIX_COLUMNS)]]
 
-        self.assertEqual(header, ["银行", "格式", "版本", "文件路径", "router类", "测试类", "测试日期", "测试结果"])
+        self.assertEqual(header, module.MATRIX_COLUMNS)
+        self.assertIn("YAML指纹", header)
         self.assertEqual(first_row[0], "浙江庆元农商银行")
         self.assertEqual(first_row[4], "zhejiang_qyrcb_pdf_text")
+        self.assertEqual(first_row[5], "身份:2；结构:15")
+        self.assertIn("创建时间≈修改时间", header)
+        self.assertIn("创建人=修改人", header)
+        self.assertEqual(first_row[header.index("创建时间≈修改时间")], "是（差0秒）")
+        self.assertEqual(first_row[header.index("创建人=修改人")], "是（创建人:test；修改人:test）")
 
     def test_bank_name_is_expanded_from_parser_and_template(self):
         module = load_module()

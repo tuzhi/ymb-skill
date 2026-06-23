@@ -3,7 +3,7 @@
 """
 ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流水（阶段一：识别与字段映射）
 
-读取一个原始流水文件（.xlsx/.xls/.csv/.pdf），自动：
+读取一个原始流水文件（.xlsx/.xls/.pdf），自动：
   1. 识别表头所在行、账户类型线索、本方户名/账号；
   2. 用同义词词典把原始列映射到标准中文字段；
   3. 处理三种金额结构（收入/支出分列、单列带符号金额、方向列+金额）；
@@ -25,17 +25,18 @@ ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流
   <stem>__standardized.csv      标准化流水
   <stem>__mapping.json          字段映射报告（Prompt 1 结构）
 """
-import argparse, json, os, re, sys, hashlib, shutil
+import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
 try:
     import pandas as pd
+    import yaml
 except ImportError:
-    sys.exit("需要 pandas：pip install pandas openpyxl xlrd pdfplumber")
+    sys.exit("需要 pandas/PyYAML：pip install pandas openpyxl xlrd pdfplumber pyyaml")
 
 # ---- 支持的格式 / 非流水文件识别（用户常把图片、发票、名册等杂糅进来，需自动排除） --------
-SUPPORTED_EXT = (".xlsx", ".xlsm", ".xls", ".csv", ".txt", ".tsv", ".pdf")
+SUPPORTED_EXT = (".xlsx", ".xlsm", ".xls", ".pdf")
 # 已知的非流水格式（图片/扫描件、Word/PPT、压缩包等）：报告给用户「已跳过」，不静默吞掉
 KNOWN_NONSTATEMENT_EXT = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif",
@@ -64,6 +65,8 @@ def classify_ext(path):
     """按扩展名初筛：返回 ('候选'|'跳过'|'忽略', 原因)。
     候选=可尝试解析；跳过=已知非流水格式(报告给用户)；忽略=无关文件(.DS_Store 等，静默)。"""
     ext = os.path.splitext(path)[1].lower()
+    if os.path.basename(path).lower().endswith("__standardized.csv"):
+        return "候选", ""
     if ext in SUPPORTED_EXT:
         return "候选", ""
     if ext in KNOWN_NONSTATEMENT_EXT:
@@ -395,17 +398,17 @@ def parse_datetime(date_part, time_part):
 # ---- 原始文件读取（统一成 list[list]） ----------------------------------------
 def read_rows_excel(path):
     """返回 (sheet名, rows:list[list])。取第一个有数据的 sheet。"""
-    xl = pd.ExcelFile(path)
-    for sheet in xl.sheet_names:
+    with pd.ExcelFile(path) as xl:
+        for sheet in xl.sheet_names:
+            df = xl.parse(sheet, header=None, dtype=str)
+            if df.dropna(how="all").shape[0] >= 2:
+                rows = df.where(pd.notnull(df), None).values.tolist()
+                rows = _sanitize_nan_strings(rows)
+                return sheet, rows
+        sheet = xl.sheet_names[0]
         df = xl.parse(sheet, header=None, dtype=str)
-        if df.dropna(how="all").shape[0] >= 2:
-            rows = df.where(pd.notnull(df), None).values.tolist()
-            rows = _sanitize_nan_strings(rows)
-            return sheet, rows
-    sheet = xl.sheet_names[0]
-    df = xl.parse(sheet, header=None, dtype=str)
-    rows = df.where(pd.notnull(df), None).values.tolist()
-    return sheet, _sanitize_nan_strings(rows)
+        rows = df.where(pd.notnull(df), None).values.tolist()
+        return sheet, _sanitize_nan_strings(rows)
 
 
 def _sanitize_nan_strings(rows):
@@ -537,6 +540,110 @@ def sniff_account_info(rows, header_idx, preamble=""):
     return info
 
 
+_CARD_BIN_RULES = None
+
+
+def load_card_bin_rules():
+    """读取银行卡 BIN 配置。命中只证明“这是卡号段”，不用于反推对公。"""
+    global _CARD_BIN_RULES
+    if _CARD_BIN_RULES is not None:
+        return _CARD_BIN_RULES
+    routing_dir = os.path.join(os.path.dirname(__file__), "parsers", "routing")
+    csv_path = os.path.join(routing_dir, "card_bins.csv")
+    yaml_path = os.path.join(routing_dir, "card_bins.yaml")
+    rules = []
+    if os.path.exists(csv_path):
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                prefix = str(row.get("bin", "")).strip()
+                if not prefix:
+                    continue
+                rules.append({
+                    "prefix": prefix,
+                    "bank": str(row.get("bank", "")).strip(),
+                    "card_type": str(row.get("type", "")).strip(),
+                    "card_length": str(row.get("length", "")).strip(),
+                })
+    elif os.path.exists(yaml_path):
+        with open(yaml_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        rules = data.get("card_bins", []) if isinstance(data, dict) else []
+    _CARD_BIN_RULES = sorted(
+        [r for r in rules if str(r.get("prefix", "")).isdigit()],
+        key=lambda r: len(str(r.get("prefix", ""))),
+        reverse=True,
+    )
+    return _CARD_BIN_RULES
+
+
+def match_card_bin(account):
+    """按配置匹配本方账号的银行卡 BIN。掩码账号只使用星号前的可见前缀。"""
+    raw = str(account or "").strip()
+    if not raw or raw.startswith("未识别账户#"):
+        return None
+    visible_prefix = raw.split("*", 1)[0]
+    digits = re.sub(r"\D", "", visible_prefix)
+    if len(digits) < 6:
+        return None
+    for rule in load_card_bin_rules():
+        prefix = str(rule.get("prefix", ""))
+        if digits.startswith(prefix):
+            return rule
+    return None
+
+
+KNOWN_ACCOUNT_TYPES = {"个人", "对公"}
+INFERRED_ACCOUNT_TYPES = {"拟对公"}
+
+ENTERPRISE_COUNTERPARTY_KEYWORDS = [
+    "有限公司", "有限责任公司", "股份有限公司", "集团", "公司",
+    "合作社", "个体工商户", "商行", "经营部", "门市部", "中心",
+    "工厂", "厂", "银行", "支付", "财付通", "银联", "税务", "国库",
+]
+
+
+def is_enterprise_counterparty(name):
+    """按对手户名结构识别企业/机构名称；不使用摘要、附言等不可信字段。"""
+    text = _norm(name)
+    if not text:
+        return False
+    return any(keyword in text for keyword in ENTERPRISE_COUNTERPARTY_KEYWORDS)
+
+
+def infer_account_type_from_counterparties(records, min_rows=20, min_ratio=0.3):
+    """企业对手方达到一定比例时，只给出“拟对公”线索，不直接等同硬证据。"""
+    valid_names = [str(row.get("对手名称") or "").strip() for row in records if str(row.get("对手名称") or "").strip()]
+    total = len(valid_names)
+    enterprise_count = sum(1 for name in valid_names if is_enterprise_counterparty(name))
+    ratio = round(enterprise_count / total, 4) if total else 0
+    stats = {
+        "valid_counterparty_count": total,
+        "enterprise_counterparty_count": enterprise_count,
+        "enterprise_counterparty_ratio": ratio,
+        "min_rows": min_rows,
+        "min_ratio": min_ratio,
+    }
+    if total >= min_rows and ratio >= min_ratio:
+        return "拟对公", stats
+    return "", stats
+
+
+def resolve_account_type(manual_type, account, metadata_hint, route_type, counterparty_hint=""):
+    """账户类型统一口径：人工参数优先；卡 BIN 命中判个人；交易画像只给“拟对公”。"""
+    if manual_type:
+        return manual_type, "manual", None
+    card_bin = match_card_bin(account)
+    if card_bin:
+        return "个人", "card_bin", card_bin
+    if metadata_hint in KNOWN_ACCOUNT_TYPES:
+        return metadata_hint, "metadata", None
+    if route_type in KNOWN_ACCOUNT_TYPES:
+        return route_type, "route", None
+    if counterparty_hint in INFERRED_ACCOUNT_TYPES:
+        return counterparty_hint, "counterparty_profile", None
+    return "未知", "unknown", None
+
+
 # ---- 主流程 ------------------------------------------------------------------
 def _fmt_amt(x):
     """金额归一化为定点字符串，让 PDF「1,026.00」与 Excel「1026」在指纹里一致。"""
@@ -663,19 +770,20 @@ def standardize(path, out_dir=None, customer=None, bank=None,
                 force_customer=False):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
+    manual_account_type = account_type
+    if is_standardized_input_name(path):
+        return adopt_standardized_input(path, out_dir=out_dir)
+
     file_kind, preamble, rows, route_info = read_rows(path)
     route_info = dict(route_info or {})
 
     # 空文件 / PDF 无可解析记录：区分“完全无文本”和“有文本但没有命中结构化/专属解析器”。
     if not rows or not any(any(c not in (None, "", "nan") for c in (r or [])) for r in rows):
-        if file_kind == "pdf" and route_info.get("route_evidence", {}).get("text_length", 0):
+        if file_kind == "pdf" and preamble:
             raise NotABankStatement("PDF 可抽取文本，但未识别到结构化流水表格或已支持的专属文本模板")
         raise NotABankStatement(
             "图片型/扫描件 PDF，未抽取到文本（需先 OCR 转文本）" if file_kind == "pdf"
             else "空文件或无可解析内容")
-
-    if is_standardized_input_name(path):
-        return adopt_standardized_input(path, out_dir=out_dir)
 
     if header_row is None:
         header_idx, hits = find_header_row(rows)
@@ -692,8 +800,12 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     acct = sniff_account_info(rows, header_idx, preamble)
     if customer and (force_customer or not acct["本方名称"]):
         acct["本方名称"] = customer
-    if not account_type:
-        account_type = route_info.get("账户类型线索") or acct["账户类型线索"] or "未知"
+    account_type, account_type_source, account_type_card_bin = resolve_account_type(
+        manual_account_type,
+        acct["本方账户"],
+        acct["账户类型线索"],
+        route_info.get("account_type", ""),
+    )
 
     # 开户行：优先 --bank（仍做规范化），否则从内容证据推断；文件名仅作兼容兜底，并记录来源。
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
@@ -942,6 +1054,16 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         acct["本方账户"] = record_account["本方账户"]
     if record_account.get("本方名称") and not (force_customer and customer):
         acct["本方名称"] = record_account["本方名称"]
+    counterparty_account_type, counterparty_account_type_stats = infer_account_type_from_counterparties(std_records)
+    account_type, account_type_source, account_type_card_bin = resolve_account_type(
+        manual_account_type,
+        acct["本方账户"],
+        acct["账户类型线索"],
+        route_info.get("account_type", ""),
+        counterparty_account_type,
+    )
+    for record in std_records:
+        record["账户类型"] = account_type
 
     # ---- 映射报告 ----
     for field in STD_FIELDS:
@@ -996,6 +1118,9 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "开户行": bank_name,
             "开户行识别来源": bank_infer_source,
             "账户类型": account_type,
+            "account_type_source": account_type_source,
+            "card_bin_match": account_type_card_bin or {},
+            "counterparty_profile": counterparty_account_type_stats,
             "文件类型": file_kind,
             "命中模板": "自动同义词映射",
             "整体置信度": overall_conf,
@@ -1006,6 +1131,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "file_type": route_info.get("file_type", file_kind),
             "bank": route_info.get("bank", ""),
             "version": route_info.get("version", ""),
+            "account_type": route_info.get("account_type", ""),
             "identity_evidence": route_info.get("identity_evidence", []),
             "layout_evidence": route_info.get("layout_evidence", []),
             "ocr_supported": False,

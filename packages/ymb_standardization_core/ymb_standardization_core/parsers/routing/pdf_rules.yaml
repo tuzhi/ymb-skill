@@ -2,17 +2,28 @@
   file_type: pdf
   bank: 中国农业银行
   version: "1.0"
+  account_type: 个人
   identity:
     any:
       - 中国农业银行账户活期交易明细清单
   layout:
     all:
       - 账户活期交易明细清单
+      - 交易日期
+      - 交易时间
+      - 交易摘要
+      - 交易金额
+      - 本次余额
+      - 对手信息
+      - 日志号
+      - 交易渠道
+      - 交易附言
 
 - parser: jiangxi_rural_commercial_pdf_text
   file_type: pdf
   bank: 江西农商银行
   version: "1.0"
+  account_type: 个人
   identity:
     any:
       - 江西·农商银行
@@ -27,6 +38,7 @@
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
   version: "1.0"
+  account_type: 个人
   identity:
     any:
       - K PLUS
@@ -39,11 +51,20 @@
       - K BIZ
       - AccountMR.
       - Account Number
+      - Time/
+      - Date
+      - Descriptions
+      - Withdrawal / Deposit
+      - Outstanding Balance
+      - Channel
+      - Details
+      - Eff.Date
 
 - parser: zhejiang_qyrcb_pdf_text
   file_type: pdf
   bank: 浙江庆元农商银行
   version: "1.0"
+  account_type: 个人
   identity:
     any:
       - 浙江庆元农商银行
@@ -55,3 +76,432 @@
       - "账号:"
       - "开户行:"
       - "账户种类:"
+      - 交易日期
+      - 币种
+      - 交易摘要
+      - 交易金额
+      - 账户余额
+      - 对方账号
+      - 对方户名
+      - 对方行
+      - 交易渠道
+      - 备注
+
+# 来源说明：企网明细/回单查询方法。对公账户明细清单，金额以借/贷、借方发生额、贷方发生额表达。
+- parser: icbc_account_detail_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  version: "1.0"
+  account_type: 对公
+  identity:
+    any:
+      - 中国工商银行账户明细清单
+  layout:
+    all:
+      - 交易时间
+      - 本方账号
+      - 对方户名
+      - 对方账号
+      - 对方账户开户行
+      - 凭证号
+      - 借/贷
+      - 借方发生额
+      - 贷方发生额
+      - 摘要
+      - 用途
+      - 余额
+
+# 来源说明：工行对公电子回单。对公账户明细清单，金额以转入金额、转出金额表达，含回单个性化信息。
+- parser: icbc_account_detail_table_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  version: "1.0"
+  account_type: 对公
+  identity:
+    any:
+      - 中国工商银行账户明细清单
+  layout:
+    all:
+      - 入账日期
+      - 转入金额
+      - 转出金额
+      - 余额
+      - 对方单位
+      - 对方行号
+      - 对方账号
+      - 用途
+      - 本方账号
+      - 对方行名
+      - 摘要
+      - 回单个性化信息
+
+- parser: icbc_corporate_account_statement_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  version: "1.0"
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
+    date_format:
+      any:
+        - yyyy-mm-dd hh:mm:ss
+  identity:
+    any:
+      - 中国工商银行账户明细清单
+  layout:
+    all:
+      - 账号：
+      - 本方账号户名
+      - 本方账号开户行
+      - 时间范围
+      - 对方账号
+      - 交易时间
+      - 借贷标志
+      - 对方单位
+      - 用途
+      - 摘要
+      - 附言
+      - 回单个性化信息
+      - 转出金额
+      - 转入金额
+      - 余额
+
+- parser: icbc_debit_history_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  version: "1.0"
+  account_type: 个人
+  fingerprint:
+    data:
+      all:
+        - same_row_all:
+            - 中国工商银行借记账户历史明细
+          same_row_none:
+            - 电子版
+  identity:
+    any:
+      - 中国工商银行借记账户历史明细
+  layout:
+    all:
+      - 卡号
+      - 户名
+      - 交易日期
+      - 账号
+      - 储种
+      - 序号
+      - 币种
+      - 钞汇
+      - 摘要
+      - 地区
+      - 收入/支出
+
+- parser: icbc_debit_history_electronic_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  version: "1.0"
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Creator: PDFium
+        Producer: PDFium
+    date_format:
+      any:
+        - yyyy-mm-dd
+  identity:
+    any:
+      - 中国工商银行借记账户历史明细
+  layout:
+    all:
+      - 电子版
+      - 卡号
+      - 户名
+      - 交易日期
+      - 账号
+      - 储种
+      - 序号
+      - 币种
+      - 钞汇
+      - 地区
+      - 收入/支出金额
+      - 余额
+      - 渠道
+
+- parser: ccb_personal_detail_pdf
+  file_type: pdf
+  bank: 中国建设银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 中国建设银行个人活期账户全部交易明细
+  layout:
+    all:
+      - 卡号/账号
+      - 客户名称
+      - 交易金额
+      - 账户余额
+      - 对方账号与户名
+
+- parser: ccb_corporate_detail_pdf
+  file_type: pdf
+  bank: 中国建设银行
+  version: "1.0"
+  account_type: 对公
+  identity:
+    any:
+      - 中国建设银行账户明细信息
+  layout:
+    all:
+      - 本方户名
+      - 账号
+      - 交易时
+      - 借方发
+      - 贷方发
+      - 对方户
+      - 对方账
+      - 账户明
+
+- parser: boc_transaction_detail_pdf
+  file_type: pdf
+  bank: 中国银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 中国银行交易流水明细清单
+  layout:
+    all:
+      - 借记卡号
+      - 记账日期
+      - 记账时间
+      - 币别
+      - 金额
+      - 余额
+      - 对方账户名
+      - 对方卡号/账号
+
+- parser: psbc_history_detail_pdf
+  file_type: pdf
+  bank: 中国邮政储蓄银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 邮储银行历史明细
+      - 中国邮政储蓄银行借记账户历史明细
+  layout:
+    all:
+      - 交易时间
+      - 子账号
+      - 储种
+      - 币种
+      - 钞汇
+      - 交易金额
+      - 交易余额
+      - 对方户名
+      - 对方账号
+      - 摘要
+      - 交易渠道
+
+- parser: abc_account_detail_pdf
+  file_type: pdf
+  bank: 中国农业银行
+  version: "1.0"
+  account_type: 对公
+  identity:
+    any:
+      - 账户明细
+  layout:
+    all:
+      - 账号
+      - 户名
+      - 交易时间
+      - 收入金额
+      - 支出金额
+      - 账户余额
+      - 对方账号
+      - 对方户名
+      - 对方开户行
+      - 摘要
+
+- parser: abc_corporate_account_detail_pdf
+  file_type: pdf
+  bank: 中国农业银行
+  version: "1.0"
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.32
+  identity:
+    any:
+      - 账户明细
+  layout:
+    all:
+      - 账号：
+      - 户名：
+      - 币种：
+      - 起止日期
+      - 交易时间
+      - 收入金额
+      - 支出金额
+      - 账户余额
+      - 交易行名
+      - 对方城市
+      - 对方账号
+      - 对方户名
+      - 交易用途
+      - 会计日期
+
+- parser: srbank_transaction_detail_pdf
+  file_type: pdf
+  bank: 上饶银行
+  version: "1.0"
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Creator: JasperReports (testReport)
+        Producer: iText 2.1.7 by 1T3XT
+    style:
+      all:
+        - text: 交易明细
+          font: STSong-Light
+          size_min: 23
+          size_max: 25
+          top_max: 60
+          centered: true
+    data:
+      all:
+        - same_row_all:
+            - 上饶银行
+          same_row_none:
+            - 超网
+            - 小额
+            - 大额
+            - 城银清
+            - 网银
+            - 银联
+            - 支付通道
+    date_format:
+      any:
+        - yyyy-mm-dd hh:mm:ss
+  identity:
+    any:
+      - 交易明细
+  layout:
+    all:
+      - 交易流水号
+      - 交易时间
+      - 对方户名
+      - 对方账户开户网点
+      - 支出
+      - 收入
+      - 账户余额
+
+- parser: cmb_transaction_pdf
+  file_type: pdf
+  bank: 招商银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 招商银行交易流水
+      - Transaction Statement of China Merchants Bank
+  layout:
+    all:
+      - 户 名
+      - 账号
+      - 记账日期
+      - 货币
+      - 交易金额
+      - 联机余额
+      - 交易摘要
+      - 对手信息
+
+- parser: cmbc_personal_statement_pdf
+  file_type: pdf
+  bank: 中国民生银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 个人账户对账单
+  layout:
+    all:
+      - 中国民生银行
+      - 客户姓名
+      - 客户账号
+      - 交易时间
+      - 交易金额
+      - 账户余额
+      - 对方户名/账号
+
+- parser: fengcheng_shunyin_village_bank_pdf
+  file_type: pdf
+  bank: 丰城顺银村镇银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 丰城顺银村镇银行股份有限公司
+  layout:
+    all:
+      - 账户/卡明细信息
+      - 账号/卡号
+      - 户名
+      - 交易时间
+      - 存入/支取
+      - 交易后余额
+
+- parser: jiangxi_yumin_bank_pdf
+  file_type: pdf
+  bank: 江西裕民银行
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 江西裕民银行交易流水
+      - 江西裕民银行交易流水
+  layout:
+    all:
+      - 客户姓名
+      - 账号
+      - 交易日期
+      - 交易金额(元)
+      - 账户余额(元)
+      - 对方户名
+
+- parser: wechat_pay_proof_pdf
+  file_type: pdf
+  bank: 微信支付
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 微信支付交易明细证明
+  layout:
+    all:
+      - 兹证明
+      - 交易明细对应时间段
+      - 具体交易明细
+      - 交易单号
+      - 交易时间
+
+- parser: alipay_proof_pdf
+  file_type: pdf
+  bank: 支付宝
+  version: "1.0"
+  account_type: 个人
+  identity:
+    any:
+      - 支付宝支付科技有限公司
+      - 交易流水证明
+  layout:
+    all:
+      - 兹证明
+      - 交易时间段
+      - 币种

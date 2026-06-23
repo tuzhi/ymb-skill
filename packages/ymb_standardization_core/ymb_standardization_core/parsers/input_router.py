@@ -6,8 +6,12 @@
 
 from dataclasses import dataclass
 import os
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.parsers.router import read_pdf_rows
+from ymb_standardization_core.parsers.routing.rule_loader import load_excel_route_rules
 
 
 @dataclass
@@ -19,15 +23,13 @@ class ReadResult:
 
 
 _excel_reader = None
-_csv_reader = None
 _unsupported_error = RuntimeError
 
 
-def configure_readers(excel_reader, csv_reader, unsupported_error=RuntimeError):
-    """注册 core 中已有的 Excel/CSV reader，避免 router 反向依赖标准化主流程。"""
-    global _excel_reader, _csv_reader, _unsupported_error
+def configure_readers(excel_reader, csv_reader=None, unsupported_error=RuntimeError):
+    """注册 core 中已有的 reader，避免 router 反向依赖标准化主流程。"""
+    global _excel_reader, _unsupported_error
     _excel_reader = excel_reader
-    _csv_reader = csv_reader
     _unsupported_error = unsupported_error
 
 
@@ -37,34 +39,186 @@ def _require_reader(reader, name):
     return reader
 
 
+def _excel_candidate(rule, match):
+    return {
+        "parser": rule.parser,
+        "decision": "matched",
+        "file_type": rule.file_type,
+        "bank": rule.bank,
+        "version": rule.version,
+        "account_type": rule.account_type,
+        "identity_evidence": match["identity_evidence"],
+        "layout_evidence": match["layout_evidence"],
+        "metadata_evidence": match.get("metadata_evidence", {}),
+        "style_evidence": match.get("style_evidence", []),
+        "data_evidence": match.get("data_evidence", []),
+        "date_format_evidence": match.get("date_format_evidence", []),
+    }
+
+
+def _excel_fallback(sheet):
+    return {
+        "parser": "generic_excel",
+        "decision": "unmatched",
+        "file_type": "excel",
+        "bank": "",
+        "version": "",
+        "account_type": "",
+        "identity_evidence": [],
+        "layout_evidence": [sheet],
+    }
+
+
+def route_excel(rows, sheet, context=None):
+    candidates = []
+    for rule in load_excel_route_rules():
+        match = rule.match(rows, context=context)
+        if match:
+            candidates.append(_excel_candidate(rule, match))
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        return _excel_fallback(sheet)
+    return {
+        "parser": "ambiguous_router_match",
+        "decision": "ambiguous",
+        "file_type": "excel",
+        "candidates": candidates,
+    }
+
+
+def _rows_lines(rows):
+    return [" ".join(str(c or "") for c in row) for row in rows[:500]]
+
+
+def _date_patterns_from_text(text):
+    patterns = set()
+    if re.search(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", text):
+        patterns.add("yyyy-mm-dd hh:mm:ss")
+    if re.search(r"\d{4}-\d{2}-\d{2}(?!\s+\d{2}:\d{2}:\d{2})", text):
+        patterns.add("yyyy-mm-dd")
+    if re.search(r"\d{8}", text):
+        patterns.add("yyyymmdd")
+    return sorted(patterns)
+
+
+def _xlsx_application(path):
+    try:
+        with zipfile.ZipFile(path) as z:
+            data = z.read("docProps/app.xml")
+    except Exception:
+        return ""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return ""
+    for child in root:
+        if child.tag.rsplit("}", 1)[-1] == "Application":
+            return child.text or ""
+    return ""
+
+
+def _excel_context(path, rows, sheet):
+    text = "\n".join(_rows_lines(rows))
+    context = {
+        "metadata": {"sheet": sheet},
+        "styles": [],
+        "lines": _rows_lines(rows),
+        "date_patterns": _date_patterns_from_text(text),
+    }
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".xlsx", ".xlsm"):
+        _add_xlsx_context(path, context)
+    elif ext == ".xls":
+        _add_xls_context(path, context)
+    return context
+
+
+def _add_xlsx_context(path, context):
+    try:
+        import openpyxl
+
+        wb = openpyxl.load_workbook(path, read_only=False, data_only=True)
+    except Exception:
+        return
+
+    props = wb.properties
+    context["metadata"].update({
+        "creator": props.creator or "",
+        "last_modified_by": props.lastModifiedBy or "",
+        "application": _xlsx_application(path),
+    })
+    ws = wb[wb.sheetnames[0]]
+    for row in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 60), max_col=min(ws.max_column, 60)):
+        for cell in row:
+            if cell.value in (None, ""):
+                continue
+            context["styles"].append({
+                "text": str(cell.value).strip(),
+                "font": cell.font.name or "",
+                "size": cell.font.sz,
+                "bold": bool(cell.font.bold),
+                "row": cell.row,
+                "col": cell.column,
+                "number_format": cell.number_format,
+            })
+
+
+def _add_xls_context(path, context):
+    try:
+        import xlrd
+
+        book = xlrd.open_workbook(path, formatting_info=True)
+    except Exception:
+        return
+
+    context["metadata"].update({
+        "creator": getattr(book, "user_name", "") or "",
+        "application": "BIFF/XLS",
+    })
+    sheet = book.sheet_by_index(0)
+    for r in range(min(sheet.nrows, 60)):
+        for c in range(min(sheet.ncols, 60)):
+            value = sheet.cell_value(r, c)
+            if value in (None, ""):
+                continue
+            try:
+                xf = book.xf_list[sheet.cell_xf_index(r, c)]
+                font = book.font_list[xf.font_index]
+                fmt = book.format_map.get(xf.format_key)
+                font_name = font.name
+                font_size = font.height / 20
+                bold = bool(font.bold)
+                number_format = fmt.format_str if fmt else str(xf.format_key)
+            except Exception:
+                font_name = ""
+                font_size = None
+                bold = False
+                number_format = ""
+            context["styles"].append({
+                "text": str(value).strip(),
+                "font": font_name,
+                "size": font_size,
+                "bold": bold,
+                "row": r + 1,
+                "col": c + 1,
+                "number_format": number_format,
+            })
+
+
 def read_rows(path):
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm", ".xls"):
         sheet, rows = _require_reader(_excel_reader, "excel")(path)
+        context = _excel_context(path, rows, sheet)
         return ReadResult(
             kind="excel",
             preamble="",
             rows=rows,
-            route_info={
-                "parser": "generic_excel",
-                "route_confidence": 0.7,
-                "route_evidence": {"ext": ext, "sheet": sheet},
-                "ocr_used": False,
-            },
+            route_info=route_excel(rows, sheet, context=context),
         )
     if ext in (".csv", ".txt", ".tsv"):
-        preamble, rows = _require_reader(_csv_reader, "csv")(path)
-        return ReadResult(
-            kind="csv",
-            preamble=preamble,
-            rows=rows,
-            route_info={
-                "parser": "generic_csv",
-                "route_confidence": 0.7,
-                "route_evidence": {"ext": ext},
-                "ocr_used": False,
-            },
-        )
+        raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
         preamble, rows, route_info = read_pdf_rows(path)
         return ReadResult(kind="pdf", preamble=preamble, rows=rows, route_info=route_info)
