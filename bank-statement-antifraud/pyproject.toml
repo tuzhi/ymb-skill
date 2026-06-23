@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bank-statement-antifraud"
+version = "0.1.0"
+description = "Bank statement antifraud review report generator."
+readme = "README.md"
+requires-python = ">=3.8.6"
+dependencies = [
+  "openpyxl>=3.1",
+  "pypdf>=4.0",
+]
+
+[tool.setuptools]
+py-modules = []

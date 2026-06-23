@@ -114,8 +114,8 @@ F5-03 偿债流量缺口为正且显著时，直接作为**授信额度扣减项
 
 ## 依赖
 
-Python 3 + `openpyxl`（必需）；`pypdf`（可选，仅 `--raw-folder` 读 PDF 元数据时用，缺失自动降级并注明）。
-详见 `requirements.txt`。
+Python 3 + `openpyxl`（必需）；`pypdf`（仅 `--raw-folder` 读 PDF 元数据时使用）。
+依赖由 `pyproject.toml` 管理，首次使用在本目录执行 `python -m pip install -e .`。
 
 ## 数据安全
 

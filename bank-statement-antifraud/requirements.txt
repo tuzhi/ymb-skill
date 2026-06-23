@@ -1,4 +1,0 @@
-# 必需：读写 .xlsx
-openpyxl>=3.1
-# 可选：--raw-folder 启用 L1 文件取证时读取 PDF 元数据；缺失时自动降级并在报告中注明
-pypdf>=4.0

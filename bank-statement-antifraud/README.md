@@ -15,7 +15,7 @@
 ## 快速开始
 
 ```bash
-python -m pip install -r requirements.txt   # 仅首次
+python -m pip install -e .   # 仅首次
 
 python scripts/build_antifraud_report.py \
     --input "<客户名>_已清洗_待分析.xlsx" --client 客户名 \
@@ -47,7 +47,7 @@ scripts/build_antifraud_report.py     主脚本（28 特征 + 规则引擎 + 工
 assets/financing_keywords.csv         附录 A 筹资/融资关键词字典（按月由人审案例反向补充）
 references/feature-spec.md            L1–L6 特征完整口径 + 附录 C 公式 + 实施路线图
 references/manual-review.md           规则引擎/计分/工单/动作字典/解除标准/校准机制
-requirements.txt                      openpyxl（必需）+ pypdf（L1 可选）
+pyproject.toml                         项目元数据与依赖声明
 ```
 
 ## 回归验证（2026-06-12，广源多主体关联案例，7,890 笔）
