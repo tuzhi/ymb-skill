@@ -1,7 +1,7 @@
 {
   "skill": {
     "name": "bank-statement-standardization",
-    "version": "1.2.9"
+    "version": "1.2.10"
   },
   "stage_1_standardize": {
     "name": "单文件标准化与字段映射",
