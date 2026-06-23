@@ -1,4 +1,4 @@
-"""从已完成的 _support_matrix_work 目录重建支持矩阵。
+﻿"""从已完成的 _support_matrix_work 目录重建支持矩阵。
 
 用于全量审计已经完成但最终写 support_matrix.xlsx 失败的场景，例如 Excel
 正在占用目标文件。
@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-CORE_PACKAGE = REPO_ROOT / "packages" / "ymb_standardization_core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 

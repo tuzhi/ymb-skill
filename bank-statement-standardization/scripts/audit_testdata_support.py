@@ -1,4 +1,4 @@
-"""生成 testdata 支持矩阵和当前标准化基准。
+﻿"""生成 testdata 支持矩阵和当前标准化基准。
 
 输出文件默认写入 testdata 目录：
 - support_matrix.xlsx：唯一维护的支持矩阵事实源
@@ -27,7 +27,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-CORE_PACKAGE = REPO_ROOT / "packages" / "ymb_standardization_core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 

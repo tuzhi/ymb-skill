@@ -9,7 +9,7 @@ description = "Local reversible token vault service for bank statement preproces
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-  "ymb-standardization-core @ file:///D:/PYTHON_WORK/ymb-skill/packages/ymb_standardization_core",
+  "ymb-standardization-core==1.2.5",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
   "pydantic>=2.7",
@@ -42,7 +42,7 @@ token_vault_service = ["static/*.html"]
 testpaths = ["tests"]
 pythonpath = [
   "src",
-  "../packages/ymb_standardization_core",
+  "../ymb-standardization-core",
 ]
 
 

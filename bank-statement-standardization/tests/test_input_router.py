@@ -1,4 +1,4 @@
-import importlib.util
+﻿import importlib.util
 import sys
 import tempfile
 import unittest
@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-CORE_PACKAGE = REPO_ROOT / "packages" / "ymb_standardization_core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 

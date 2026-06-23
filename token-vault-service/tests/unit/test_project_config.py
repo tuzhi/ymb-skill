@@ -17,10 +17,8 @@ def test_service_uses_token_vault_package_name_and_does_not_depend_on_external_r
     dependencies = pyproject["project"]["dependencies"]
 
     assert pyproject["project"]["name"] == "token-vault-service"
-    assert any(
-        dependency.startswith("ymb-standardization-core @ file:///D:/PYTHON_WORK/ymb-skill/packages/ymb_standardization_core")
-        for dependency in dependencies
-    )
+    assert "ymb-standardization-core==1.2.5" in dependencies
+    assert all("file:///" not in dependency.lower() for dependency in dependencies)
     assert all("privacy_filter" not in dependency.lower() for dependency in dependencies)
     assert "python-multipart>=0.0.9" in dependencies
     assert "eval-type-backport>=0.2" in dependencies

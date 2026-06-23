@@ -1,4 +1,4 @@
-# 银行流水标准化技能包 · bank-statement-standardization
+﻿# 银行流水标准化技能包 · bank-statement-standardization
 
 把各家银行、各种格式（Excel `.xlsx/.xls`、CSV、PDF）的原始银行流水，标准化成统一中文字段口径，
 并按 `assets/manifest.template.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
@@ -42,7 +42,7 @@ bank-statement-standardization/
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
-源码仓库中，共享标准化内核位于仓库根目录的 `packages/ymb_standardization_core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `scripts/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
+源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `scripts/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
 
 ## 快速开始（方式 A · 脚本）
 

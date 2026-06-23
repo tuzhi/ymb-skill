@@ -15,16 +15,16 @@
 ## 安装
 
 ```powershell
-cd D:\PYTHON_WORK\token_vault_service
+cd D:\PYTHON_WORK\ymb-skill
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -U pip
-.\.venv\Scripts\python.exe -m pip install -e .[test]
+.\.venv\Scripts\python.exe -m pip install -e ymb-standardization-core -e token-vault-service[test]
 ```
 
 ## 启动
 
 ```powershell
-cd D:\PYTHON_WORK\token_vault_service
+cd D:\PYTHON_WORK\ymb-skill
 .\.venv\Scripts\python.exe -m uvicorn token_vault_service.app:app --host 127.0.0.1 --port 8010
 ```
 

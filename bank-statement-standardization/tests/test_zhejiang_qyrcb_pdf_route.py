@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import importlib.util
 import json
 import sys
@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
-CORE_PACKAGE = REPO_ROOT / "packages" / "ymb_standardization_core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 if str(CORE_PACKAGE) not in sys.path:

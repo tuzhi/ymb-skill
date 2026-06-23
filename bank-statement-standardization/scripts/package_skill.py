@@ -12,7 +12,8 @@ from pathlib import Path
 
 
 PACKAGER_RELATIVE = Path("scripts") / "package_skill.py"
-CORE_PACKAGE_RELATIVE = Path("packages") / "ymb_standardization_core"
+CORE_PACKAGE_SOURCE_RELATIVE = Path("ymb-standardization-core")
+CORE_PACKAGE_ARCHIVE_RELATIVE = Path("packages") / "ymb_standardization_core"
 
 
 def _is_excluded(relative_path):
@@ -52,20 +53,20 @@ def package_skill(skill_dir, output=None):
                     continue
                 zf.write(current_path / filename, Path(top) / rel_file)
         repo_root = root.parent
-        core_package = repo_root / CORE_PACKAGE_RELATIVE
+        core_package = repo_root / CORE_PACKAGE_SOURCE_RELATIVE
         if core_package.is_dir():
             for current, dirs, files in os.walk(core_package):
                 current_path = Path(current)
                 rel_dir = current_path.relative_to(core_package)
                 dirs[:] = sorted(
                     d for d in dirs
-                    if d not in {"__pycache__", "build"} and not d.endswith(".egg-info")
+                    if d not in {"__pycache__", "build", "dist"} and not d.endswith(".egg-info")
                 )
                 for filename in sorted(files):
                     if filename.endswith((".pyc", ".pyo")):
                         continue
                     rel_file = rel_dir / filename
-                    archive_path = Path(top) / CORE_PACKAGE_RELATIVE / rel_file
+                    archive_path = Path(top) / CORE_PACKAGE_ARCHIVE_RELATIVE / rel_file
                     zf.write(current_path / filename, archive_path)
 
     return archive
