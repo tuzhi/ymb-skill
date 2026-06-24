@@ -32,6 +32,7 @@ if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
 from ymb_standardization_core import core as standardize_core  # noqa: E402
+from ymb_standardization_core.file_hints import load_file_hints, load_file_hints_for_path  # noqa: E402
 
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".pdf"}
@@ -139,15 +140,28 @@ def _parse_pdf_datetime(value):
         return None
 
 
-def metadata_checks(path):
+def _hints_for_metadata(path, hints_root=None):
+    if hints_root is not None:
+        file_hints = load_file_hints(hints_root)
+    else:
+        file_hints = load_file_hints_for_path(path)
+    return file_hints.for_file(path), file_hints.audit_for_file(path)
+
+
+def metadata_checks(path, hints_root=None):
     """读取文档元数据，输出支持矩阵用的两项一致性核验。"""
     path = Path(path)
     ext = path.suffix.lower()
+    hints, _hints_audit = _hints_for_metadata(path, hints_root=hints_root)
+    open_password = hints.get("open_password") or None
     try:
         if ext in {".xlsx", ".xlsm"}:
             import openpyxl
 
-            wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+            from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+
+            with _maybe_decrypted_office_file(str(path), open_password=open_password) as source:
+                wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
             props = wb.properties
             return {
                 "创建时间≈修改时间": _metadata_time_check(props.created, props.modified),
@@ -156,16 +170,19 @@ def metadata_checks(path):
         if ext == ".xls":
             import xlrd
 
-            book = xlrd.open_workbook(path, on_demand=True)
+            from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+
+            with _maybe_decrypted_office_file(str(path), open_password=open_password) as source:
+                book = xlrd.open_workbook(source, on_demand=True)
             creator = getattr(book, "user_name", "") or ""
             return {
                 "创建时间≈修改时间": "是（XLS 未提供创建/修改时间，按一致处理）",
                 "创建人=修改人": "是（XLS 仅提供创建人:%s，按一致处理）" % creator if creator else "是（XLS 未提供创建人/修改人，按一致处理）",
             }
         if ext == ".pdf":
-            import pdfplumber
+            from ymb_standardization_core.parsers.router import _open_pdf
 
-            with pdfplumber.open(path) as pdf:
+            with _open_pdf(path, open_password=open_password) as pdf:
                 metadata = pdf.metadata or {}
             created = _parse_pdf_datetime(metadata.get("CreationDate"))
             modified = _parse_pdf_datetime(metadata.get("ModDate"))
@@ -328,6 +345,7 @@ def read_csv_summary(csv_path):
 def audit_one_file(path, root, output_work_dir, today):
     relative_path = path.relative_to(root).as_posix()
     metadata_check = metadata_checks(path)
+    _hints, hints_audit = _hints_for_metadata(path)
     record = {
         "银行": "",
         "格式": path.suffix.lower().lstrip("."),
@@ -352,6 +370,7 @@ def audit_one_file(path, root, output_work_dir, today):
         "error": "",
         "mapping": {},
         "csv_summary": {},
+        "file_hints": hints_audit,
     }
     work = output_work_dir / hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16]
     if work.exists():

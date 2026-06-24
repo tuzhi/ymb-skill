@@ -396,19 +396,22 @@ def parse_datetime(date_part, time_part):
 
 
 # ---- 原始文件读取（统一成 list[list]） ----------------------------------------
-def read_rows_excel(path):
+def read_rows_excel(path, open_password=None):
     """返回 (sheet名, rows:list[list])。取第一个有数据的 sheet。"""
-    with pd.ExcelFile(path) as xl:
-        for sheet in xl.sheet_names:
+    from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+
+    with _maybe_decrypted_office_file(path, open_password=open_password) as source:
+        with pd.ExcelFile(source) as xl:
+            for sheet in xl.sheet_names:
+                df = xl.parse(sheet, header=None, dtype=str)
+                if df.dropna(how="all").shape[0] >= 2:
+                    rows = df.where(pd.notnull(df), None).values.tolist()
+                    rows = _sanitize_nan_strings(rows)
+                    return sheet, rows
+            sheet = xl.sheet_names[0]
             df = xl.parse(sheet, header=None, dtype=str)
-            if df.dropna(how="all").shape[0] >= 2:
-                rows = df.where(pd.notnull(df), None).values.tolist()
-                rows = _sanitize_nan_strings(rows)
-                return sheet, rows
-        sheet = xl.sheet_names[0]
-        df = xl.parse(sheet, header=None, dtype=str)
-        rows = df.where(pd.notnull(df), None).values.tolist()
-        return sheet, _sanitize_nan_strings(rows)
+            rows = df.where(pd.notnull(df), None).values.tolist()
+            return sheet, _sanitize_nan_strings(rows)
 
 
 def _sanitize_nan_strings(rows):
@@ -469,10 +472,19 @@ def read_rows_pdf(path):
 
 def read_rows(path):
     """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
+    from ymb_standardization_core.file_hints import load_file_hints_for_path
     from ymb_standardization_core.parsers import input_router
 
+    file_hints = load_file_hints_for_path(path)
+    hints = file_hints.for_file(path)
     input_router.configure_readers(read_rows_excel, read_rows_csv, NotABankStatement)
-    result = input_router.read_rows(path)
+    result = input_router.read_rows(path, hints=hints)
+    route_info = dict(result.route_info or {})
+    hints_audit = file_hints.audit_for_file(path)
+    if hints_audit:
+        route_info["file_hints"] = hints_audit
+    result.route_info.clear()
+    result.route_info.update(route_info)
     return (result.kind, result.preamble, result.rows, result.route_info)
 
 

@@ -5,8 +5,10 @@
 """
 
 from dataclasses import dataclass
+import inspect
 import os
 import re
+import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -118,7 +120,7 @@ def _xlsx_application(path):
     return ""
 
 
-def _excel_context(path, rows, sheet):
+def _excel_context(path, rows, sheet, open_password=None):
     text = "\n".join(_rows_lines(rows))
     context = {
         "metadata": {"sheet": sheet},
@@ -128,17 +130,18 @@ def _excel_context(path, rows, sheet):
     }
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm"):
-        _add_xlsx_context(path, context)
+        _add_xlsx_context(path, context, open_password=open_password)
     elif ext == ".xls":
-        _add_xls_context(path, context)
+        _add_xls_context(path, context, open_password=open_password)
     return context
 
 
-def _add_xlsx_context(path, context):
+def _add_xlsx_context(path, context, open_password=None):
     try:
         import openpyxl
 
-        wb = openpyxl.load_workbook(path, read_only=False, data_only=True)
+        with _maybe_decrypted_office_file(path, open_password) as source:
+            wb = openpyxl.load_workbook(source, read_only=False, data_only=True)
     except Exception:
         return
 
@@ -164,11 +167,12 @@ def _add_xlsx_context(path, context):
             })
 
 
-def _add_xls_context(path, context):
+def _add_xls_context(path, context, open_password=None):
     try:
         import xlrd
 
-        book = xlrd.open_workbook(path, formatting_info=True)
+        with _maybe_decrypted_office_file(path, open_password) as source:
+            book = xlrd.open_workbook(source, formatting_info=True)
     except Exception:
         return
 
@@ -206,11 +210,58 @@ def _add_xls_context(path, context):
             })
 
 
-def read_rows(path):
+class _OfficeSource:
+    def __init__(self, path, open_password=None):
+        self.path = path
+        self.open_password = open_password
+        self.tmp = None
+
+    def __enter__(self):
+        if not self.open_password:
+            return self.path
+        try:
+            import msoffcrypto
+        except ImportError as exc:
+            raise RuntimeError("加密 Excel 需要安装 msoffcrypto-tool 才能使用 open_password") from exc
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(self.path)[1])
+        self.tmp.close()
+        with open(self.path, "rb") as src, open(self.tmp.name, "wb") as dst:
+            office_file = msoffcrypto.OfficeFile(src)
+            office_file.load_key(password=self.open_password)
+            office_file.decrypt(dst)
+        return self.tmp.name
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.tmp:
+            try:
+                os.unlink(self.tmp.name)
+            except OSError:
+                pass
+        return False
+
+
+def _maybe_decrypted_office_file(path, open_password=None):
+    return _OfficeSource(path, open_password=open_password)
+
+
+def _call_excel_reader(path, open_password=None):
+    reader = _require_reader(_excel_reader, "excel")
+    try:
+        params = inspect.signature(reader).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "open_password" in params:
+        return reader(path, open_password=open_password)
+    return reader(path)
+
+
+def read_rows(path, hints=None):
+    hints = hints or {}
+    open_password = hints.get("open_password") or None
     ext = os.path.splitext(path)[1].lower()
     if ext in (".xlsx", ".xlsm", ".xls"):
-        sheet, rows = _require_reader(_excel_reader, "excel")(path)
-        context = _excel_context(path, rows, sheet)
+        sheet, rows = _call_excel_reader(path, open_password=open_password)
+        context = _excel_context(path, rows, sheet, open_password=open_password)
         return ReadResult(
             kind="excel",
             preamble="",
@@ -220,6 +271,6 @@ def read_rows(path):
     if ext in (".csv", ".txt", ".tsv"):
         raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
-        preamble, rows, route_info = read_pdf_rows(path)
+        preamble, rows, route_info = read_pdf_rows(path, open_password=open_password)
         return ReadResult(kind="pdf", preamble=preamble, rows=rows, route_info=route_info)
     raise _unsupported_error(f"不支持的文件类型：{ext}")

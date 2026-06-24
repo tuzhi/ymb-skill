@@ -15,6 +15,7 @@ standardization = [
   "openpyxl>=3.1.5,<4",
   "xlrd>=2.0.2,<3",
   "pdfplumber>=0.11.5,<0.12",
+  "msoffcrypto-tool>=5.4,<6",
 ]
 test = [
   "pytest>=8.2",

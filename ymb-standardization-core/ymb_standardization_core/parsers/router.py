@@ -140,14 +140,43 @@ def _pdf_context(pdf, text):
     return context
 
 
-def read_pdf_rows(path):
+def _pdf_password_candidates(open_password):
+    if not open_password:
+        return [None]
+    candidates = [open_password]
+    for encoding in ("utf-8", "gbk", "gb18030"):
+        try:
+            proxy = str(open_password).encode(encoding).decode("latin1")
+        except UnicodeError:
+            continue
+        if proxy not in candidates:
+            candidates.append(proxy)
+    return candidates
+
+
+def _open_pdf(path, open_password=None):
+    import pdfplumber
+    from pdfminer.pdfdocument import PDFPasswordIncorrect
+
+    last_error = None
+    for password in _pdf_password_candidates(open_password):
+        try:
+            open_kwargs = {"password": password} if password else {}
+            return pdfplumber.open(path, **open_kwargs)
+        except (UnicodeEncodeError, PDFPasswordIncorrect) as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    return pdfplumber.open(path)
+
+
+def read_pdf_rows(path, open_password=None):
     """读取 PDF 并按路由选择专属 parser 或通用表格 parser。
 
     返回 (preamble, rows, route_info)。preamble 供标准化层继续嗅探户名/账号。
     """
-    import pdfplumber
-
-    with pdfplumber.open(path) as pdf:
+    with _open_pdf(path, open_password=open_password) as pdf:
         preamble = pdf.pages[0].extract_text() if pdf.pages else ""
         table_rows = _extract_pdf_tables(pdf)
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
