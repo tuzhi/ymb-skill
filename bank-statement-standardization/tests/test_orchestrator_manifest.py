@@ -344,6 +344,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                             "name": "stage 1",
                             "script": "scripts/standardize.py",
                             "ai_fallback_refs": [],
+                            "ai_fallback_info": "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。",
                             "validator": "scripts/validate_stage.py::validate_standardize",
                             "ai_fallback_used": True,
                             "ai_fallback_dir": "C:/Users/28307/WorkBuddy/runs/old-run/fallback/stage_1_standardize",
@@ -372,6 +373,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(stage["started_at"], "")
             self.assertIsNone(stage["duration_seconds"])
             self.assertEqual(stage["status"], "")
+            self.assertEqual(stage["ai_fallback_info"], "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。")
 
     def test_load_parent_run_context_collects_fallbacks(self):
         with tempfile.TemporaryDirectory() as tmp:

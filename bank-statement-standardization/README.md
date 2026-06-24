@@ -34,7 +34,7 @@ bank-statement-standardization/
 │   ├── run_pipeline.py      # 一键跑单客户（stage_1_standardize → stage_3_tag + 组合余额）
 │   └── build_rules_from_xlsx.py  # 从规则文档生成 tag_rules.csv
 ├── references/              # 可移植提示词包（任意大模型可用）
-│   ├── prompt-1-字段映射.md ~ prompt-5-交付物组装.md
+│   ├── prompt-1a-输入读取与文件识别.md、prompt-1-字段映射.md ~ prompt-5-交付物组装.md
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
@@ -80,7 +80,7 @@ python scripts/multi_customer.py --batch "批次名" \
 
 ## 快速开始（方式 B · 任意大模型）
 
-1. 打开 `references/prompt-1-字段映射.md`，把其中代码块的提示词整段复制给你的大模型。
+1. 阶段一遇到加密 PDF/Excel 无法打开时，先打开 `references/prompt-1a-输入读取与文件识别.md`，向用户确认密码并写入 `_file_hints.yaml` 后重跑；文件已成功读取后，再打开 `references/prompt-1-字段映射.md` 做字段映射判断。
 2. 按提示词里的 `{{占位符}}` 附上：原始文件脱敏样本行、文件名/类型/疑似银行、`附件A`。
 3. 模型按要求输出 JSON。再依次按对应阶段使用 prompt-2 / 3 / 4；`prompt-5-交付物组装.md` 对应 `stage_4_package` 兜底，不代表新增状态机阶段。
 4. 交给外部模型前请按 `附件C` 做脱敏。

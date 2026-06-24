@@ -31,12 +31,22 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - `script`：优先执行的确定性脚本。
 - `validator`：阶段验收函数或脚本。
 - `ai_fallback_refs`：当前阶段失败后，AI 才允许读取的兜底资料引用；orchestrator 只记录，不执行。
+- `ai_fallback_info`：当前阶段 AI 兜底关注点的简要说明。
 - `ai_fallback_used`：默认 `false`；当前阶段进入 AI 兜底时写为 `true`。
 - `ai_fallback_dir`：当前阶段兜底脚本、补丁、参数文件的保存目录。
 - `ai_fallback_artifacts`：当前阶段 AI 兜底实际产生的脚本、补丁、参数文件清单。
 - `started_at`：阶段开始时间，由 orchestrator 写入，使用北京时间 `+08:00`。
 - `duration_seconds`：阶段从 `started_at` 到验收通过的耗时秒数。
 - `status`：只允许空字符串、`DONE`、`ERROR`。
+
+核心输出契约：
+
+- `runs/<run-id>/manifest.json` 是阶段状态索引，只记录阶段推进、兜底引用和兜底产物清单，不承载字段映射结论、输入诊断正文或业务分析结果。
+- `ai_fallback_info` 只说明当前阶段兜底关注点；具体判断不直接展开进 manifest 阶段状态。
+- `runs/<run-id>/run_manifest.json` 是本次运行审计索引，记录运行级状态、父 run、输入快照、阶段摘要和最终结果。
+- `runs/<run-id>/receipts/*.json` 是每个确定性步骤的可复核回执，记录脚本、参数、校验和产物摘要。
+- `runs/<run-id>/fallback/<stage-id>/` 保存 AI 兜底的实际补丁、参数或临时脚本；只有产生可复用文件时，才把相对文件名追加到当前阶段 `ai_fallback_artifacts`。
+- 不为单个 Prompt 的输出随意扩展 `manifest.json` 顶层或阶段字段；确需新增状态机字段时，先同步更新 `assets/manifest.template.json`、orchestrator 写入逻辑、validator/测试和本节契约。
 
 正常推进：
 
@@ -53,8 +63,8 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 1. 当前阶段 `script` 或 `validator` 失败时，才允许进入 AI 兜底。
 2. 只读取当前阶段 `ai_fallback_refs`，不回读整套 references，不跨阶段提前读取 prompt/reference。
-3. 兜底必须产生确定性修正，例如参数、映射、临时脚本或补丁；不能只给解释性结论。
-4. 兜底产物必须保存到当前阶段 `ai_fallback_dir`，并写入 `ai_fallback_artifacts`。
+3. 兜底必须导向确定性修正，例如补充 `_file_hints.yaml`、参数、映射、临时脚本或补丁；不能只给解释性结论。
+4. 兜底若产生可复用文件，应保存到当前阶段 `ai_fallback_dir`，并写入 `ai_fallback_artifacts`；客户目录 `_file_hints.yaml` 作为输入提示文件由阶段一入口读取。
 5. 当前阶段必须记录 `ai_fallback_used = true`，兜底次数必须记录到 `events.jsonl`，最多 2 次。
 6. 兜底后只允许重跑当前阶段，并重新执行当前阶段 `validator`。
 7. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
