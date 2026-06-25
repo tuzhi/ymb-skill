@@ -38,7 +38,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         by_parser = {rule.parser: rule for rule in rules}
         self.assertEqual(by_parser["abc_text_pdf"].account_type, "个人")
-        for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日志号", "交易渠道", "交易附言"]:
+        for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日 志 号", "交易渠道", "交易附言"]:
             self.assertIn(marker, by_parser["abc_text_pdf"].layout_all)
         self.assertEqual(by_parser["icbc_account_detail_pdf"].account_type, "对公")
         self.assertEqual(by_parser["icbc_account_detail_table_pdf"].account_type, "对公")
@@ -46,7 +46,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
     def test_identity_only_kasikorn_markers_do_not_create_ambiguous_route(self):
         text = (
             "中国农业银行账户活期交易明细清单 "
-            "交易日期 交易时间 交易摘要 交易金额 本次余额 对手信息 日志号 交易渠道 交易附言 "
+            "交易日期 交易时间 交易摘要 交易金额 本次余额 对手信息 日 志 号 交易渠道 交易附言 "
             "K PLUS K BIZ AccountMR. Account Number "
             "01-01-26 10:00 Transfer 100.00 "
             "02-01-26 10:00 Transfer 100.00 "

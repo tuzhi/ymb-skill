@@ -1,4 +1,5 @@
 from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
+from ymb_standardization_core.parsers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
@@ -188,6 +189,9 @@ def read_pdf_rows(path, open_password=None):
             return preamble, rows, route_info
         if route_info["parser"] == "jiangxi_rural_commercial_pdf_text":
             preamble, rows = read_jxrcb_text_pdf(pdf)
+            return preamble, rows, route_info
+        if route_info["parser"] == "jiangxi_yumin_bank_pdf":
+            preamble, rows = read_jiangxi_yumin_bank_pdf(pdf)
             return preamble, rows, route_info
         if route_info["parser"] == "kasikorn_pdf_text":
             preamble, rows = read_kasikorn_text_pdf(pdf)

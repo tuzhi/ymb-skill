@@ -36,7 +36,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
     def test_abc_and_jxrcb_routes_are_separate(self):
         abc = router.route_pdf(
             "中国农业银行账户活期交易明细清单 "
-            "交易日期 交易时间 交易摘要 交易金额 本次余额 对手信息 日志号 交易渠道 交易附言",
+            "交易日期 交易时间 交易摘要 交易金额 本次余额 对手信息 日 志 号 交易渠道 交易附言",
             0, 1)
         jxrcb = router.route_pdf(
             "江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "

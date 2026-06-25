@@ -517,13 +517,13 @@ def sniff_account_info(rows, header_idx, preamble=""):
     )
     # 英文 PDF 抬头常见空格姓名，如“户名：HUAHUA JIANG 账号：...”，需保留完整姓名。
     m = re.search(
-        r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*"
+        r"(?:户名|账户名称|账户名|客户名称|客户姓名)[:：]?\s*"
         r"([A-Za-z][A-Za-z .'\-]*[A-Za-z])"
         r"(?=\s+(?:账\s*号|卡\s*号|Reference|Account Number)|\s*$)",
         meta,
     )
     if not m:
-        m = re.search(r"(?:户名|账户名称|账户名|客户名称)[:：]?\s*([^\s,，:：\-]+)", meta)
+        m = re.search(r"(?:户名|账户名称|账户名|客户名称|客户姓名)[:：]?\s*([^\s,，:：\-]+)", meta)
     if not m:
         m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
