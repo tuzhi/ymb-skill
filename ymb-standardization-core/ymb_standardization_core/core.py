@@ -123,7 +123,7 @@ SYNONYMS = {
     "交易金额":   ["交易金额", "发生额", "金额"],
     "账户余额":   ["账户余额", "余额", "本次余额", "当前余额", "交易后余额"],
     "收支方向":   ["收支方向", "收支", "收/支/其他", "借贷标志", "借贷", "方向", "借贷方向"],
-    "银行备注":   ["交易摘要", "摘要", "用途", "交易类型", "交易备注", "相关信息",
+    "银行备注":   ["交易摘要", "摘要", "用途", "交易类型", "交易名称", "交易备注", "相关信息",
                   "备注", "交易种类", "业务摘要", "附言摘要"],
     "账户方附言": ["交易附言", "附言", "留言", "客户附言"],
     "交易渠道":   ["交易渠道", "渠道", "交易方式", "记账渠道"],
@@ -952,6 +952,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         else:
             t = ""
 
+        bank_memo = cell(field_to_cols.get("银行备注", []))
         income = expense = txn = None
         if amount_mode == "分列":
             raw_inc = parse_amount(cell(field_to_cols.get("收入金额", [])))
@@ -970,6 +971,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         elif amount_mode == "单列带符号":
             txn = parse_amount(cell(field_to_cols.get("交易金额", [])))
             if txn is not None:
+                if "冲正" in bank_memo and txn < 0:
+                    txn = abs(txn)
                 if txn >= 0:
                     income = txn
                 else:
@@ -995,7 +998,6 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
         opp_name = cell(field_to_cols.get("对手名称", []))
         opp_acct = cell(field_to_cols.get("对手账户", []))
-        bank_memo = cell(field_to_cols.get("银行备注", []))
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
 

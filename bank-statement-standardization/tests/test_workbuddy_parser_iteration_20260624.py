@@ -31,6 +31,25 @@ class WorkBuddyParserIteration20260624Tests(unittest.TestCase):
                 mapping = json.load(f)
         return rows, mapping
 
+    def _balance_breaks(self, rows):
+        previous = None
+        breaks = []
+        for row in rows:
+            balance = self._number(row["账户余额"])
+            income = self._number(row["收入金额"]) or 0
+            expense = self._number(row["支出金额"]) or 0
+            if previous is not None and balance is not None:
+                expected = round(previous + income - expense, 2)
+                if abs(expected - balance) > 0.01:
+                    breaks.append(row)
+            if balance is not None:
+                previous = balance
+        return breaks
+
+    def _number(self, value):
+        value = str(value or "").replace(",", "").strip()
+        return float(value) if value else None
+
     def test_abc_text_statement_with_spaced_journal_header_is_not_skipped(self):
         rows, mapping = self._standardize("26060214275857136186.pdf")
 
@@ -63,6 +82,24 @@ class WorkBuddyParserIteration20260624Tests(unittest.TestCase):
             self.assertTrue(hits, memo)
             self.assertFalse([row for row in hits if not row[amount_field].strip()], memo)
             self.assertFalse([row for row in hits if not row["交易金额"].strip()], memo)
+
+    def test_boc_reversal_rows_do_not_create_balance_breaks(self):
+        rows, mapping = self._standardize("KA0200035ec56a887520001.pdf")
+
+        self.assertEqual(mapping["文件画像"]["parser"], "boc_transaction_detail_pdf")
+        reversal_rows = [row for row in rows if row["银行备注"] == "冲正"]
+        self.assertEqual(len(reversal_rows), 8)
+        self.assertFalse([row for row in reversal_rows if not row["收入金额"].strip()])
+        self.assertEqual(self._balance_breaks(rows), [])
+
+    def test_abc_reversal_rows_do_not_create_balance_breaks(self):
+        rows, mapping = self._standardize("26060214275857136186.pdf")
+
+        self.assertEqual(mapping["文件画像"]["parser"], "abc_text_pdf")
+        reversal_rows = [row for row in rows if row["银行备注"] == "冲正"]
+        self.assertEqual(len(reversal_rows), 8)
+        self.assertFalse([row for row in reversal_rows if not row["收入金额"].strip()])
+        self.assertEqual(self._balance_breaks(rows), [])
 
 
 if __name__ == "__main__":
