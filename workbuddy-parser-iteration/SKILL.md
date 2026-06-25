@@ -1,7 +1,6 @@
 ---
 name: workbuddy-parser-iteration
-description: 当 Codex 需要审计 WorkBuddy 银行流水标准化相关内容时使用，包括：工作空间（Workspace）、运行记录（Run）、清单文件（Manifest）、执行回执（Receipt）、降级处理产物（Fallback Artifacts）、会话 JSONL 日志、系统日志、workspace_id 
-  AI fallback cases, parser gaps, 以及银行流水标准化（bank-statement-standardization）项目的版本化改进记录.
+description: Use when Codex needs to audit WorkBuddy bank-statement standardization workspaces, runs, manifests, receipts, fallback artifacts, session JSONL logs, system logs, workspace_id values, AI fallback cases, parser gaps, or versioned improvements to bank-statement-standardization.
 ---
 
 # 流水标准化迭代器
@@ -14,9 +13,15 @@ description: 当 Codex 需要审计 WorkBuddy 银行流水标准化相关内容�
 
 用户通常会提供以下一种或多种路径：
 
-- WorkBuddy workspace 目录：`C:\Users\<user>\WorkBuddy\<workspace_name>` 或者 沙箱目录 `C:\ProgramData\WorkBuddy\chromium-env\<沙箱id>\WorkBuddy\<workspace_name>`
-- 会话结构化日志：`C:\Users\<user>\.workbuddy\projects\<workspace_slug>\<session_id>.jsonl`
-- 系统级日志：`C:\Users\<user>\.workbuddy\logs\<yyyy-MM-dd>\<workspace_name>__<hash>.log`
+- WorkBuddy workspace 目录：
+  - Windows：`C:\Users\<user>\WorkBuddy\<workspace_name>` 或沙箱目录 `C:\ProgramData\WorkBuddy\chromium-env\<沙箱id>\WorkBuddy\<workspace_name>`
+  - macOS：`/Users/<user>/Workbuddy/<workspace_name>` 或 `/Users/<user>/WorkBuddy/<workspace_name>`
+- 会话结构化日志：
+  - Windows：`C:\Users\<user>\.workbuddy\projects\<workspace_slug>\<session_id>.jsonl`
+  - macOS：`/Users/<user>/.workbuddy/projects/<workspace_slug>/<session_id>.jsonl`
+- 系统级日志：
+  - Windows：`C:\Users\<user>\.workbuddy\logs\<yyyy-MM-dd>\<workspace_name>__<hash>.log`
+  - macOS：`/Users/<user>/.workbuddy/logs/<yyyy-MM-dd>/<workspace_name>__<hash>.log`
 - 包含 `bank-statement-standardization` 的目标代码库
 
 如果用户给的是 workspace 范围，先枚举范围内所有匹配的 workspace，并把这批 workspace 作为一次迭代版本候选。
@@ -27,6 +32,10 @@ description: 当 Codex 需要审计 WorkBuddy 银行流水标准化相关内容�
 - `C:\ProgramData\WorkBuddy\chromium-env\*\WorkBuddy\`
 - `C:\Users\<user>\.workbuddy\projects\`
 - `C:\Users\<user>\.workbuddy\logs\`
+- `/Users/<user>/Workbuddy/`
+- `/Users/<user>/WorkBuddy/`
+- `/Users/<user>/.workbuddy/projects/`
+- `/Users/<user>/.workbuddy/logs/`
 
 如果无法从 workspace_id 定位 workspace 或日志，先报告已搜索的位置和缺失证据，不要猜测结论。
 
