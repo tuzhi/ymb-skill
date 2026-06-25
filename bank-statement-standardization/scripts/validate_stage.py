@@ -63,7 +63,14 @@ def _traceability(df, path):
             raise ValidationError(f"来源追溯字段存在空值：{path}：{col} 空值 {int(empty.sum())} 行")
 
 
-def validate_standardize(work_dir):
+def validate_standardize(work_dir, skipped_inputs=None):
+    skipped_inputs = skipped_inputs or []
+    if skipped_inputs:
+        detail = "；".join(
+            f"{row.get('name', '')}（{row.get('reason', '')}）"
+            for row in skipped_inputs
+        )
+        raise ValidationError(f"阶段一存在未处理输入文件：{detail}")
     csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
     reports = sorted(glob.glob(os.path.join(work_dir, "*__mapping.json")))
     if not csvs:

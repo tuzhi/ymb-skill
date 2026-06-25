@@ -991,7 +991,7 @@ class Runner:
     def validate_stage(self, stage_id):
         work = self.work_dir()
         if stage_id == "stage_1_standardize":
-            return V.validate_standardize(work)
+            return V.validate_standardize(work, skipped_inputs=self.manifest.get("skipped_inputs", []))
         if stage_id == "stage_2_integrate":
             return V.validate_integrate(work)
         if stage_id == "stage_2b_portfolio_balance":
@@ -1101,7 +1101,8 @@ class Runner:
     def validate(self):
         work = os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
         checks = [
-            ("validate_stage_1", lambda: V.validate_standardize(work)),
+            ("validate_stage_1", lambda: V.validate_standardize(
+                work, skipped_inputs=self.manifest.get("skipped_inputs", []))),
             ("validate_stage_2", lambda: V.validate_integrate(work)),
             ("validate_stage_2b", lambda: V.validate_portfolio(work)),
         ]
