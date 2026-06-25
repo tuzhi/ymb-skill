@@ -30,6 +30,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "kasikorn_pdf_text",
             "zhejiang_qyrcb_pdf_text",
             "icbc_account_detail_pdf",
+            "wechat_pay_proof_pdf",
         ]:
             self.assertIn(parser, parser_names)
         self.assertEqual(rules[0].bank, "中国农业银行")
@@ -42,6 +43,19 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertIn(marker, by_parser["abc_text_pdf"].layout_all)
         self.assertEqual(by_parser["icbc_account_detail_pdf"].account_type, "对公")
         self.assertEqual(by_parser["icbc_account_detail_table_pdf"].account_type, "对公")
+        for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
+            self.assertIn(marker, by_parser["wechat_pay_proof_pdf"].layout_all)
+
+    def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
+        text = (
+            "微信支付交易明细证明 兹证明 交易明细对应时间段 具体交易明细 "
+            "交易单号 交易时间 交易类型 收/支/其他 交易方式 金额(元) 交易对方 商户单号"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
+        self.assertEqual(result["decision"], "matched")
 
     def test_identity_only_kasikorn_markers_do_not_create_ambiguous_route(self):
         text = (

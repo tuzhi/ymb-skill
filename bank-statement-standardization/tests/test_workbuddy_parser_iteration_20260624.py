@@ -47,6 +47,23 @@ class WorkBuddyParserIteration20260624Tests(unittest.TestCase):
         self.assertEqual(rows[0]["本方名称"], "陈俊")
         self.assertEqual(rows[0]["本方账户"], "6236433910000367400")
 
+    def test_wechat_pay_proof_other_direction_has_amount_direction(self):
+        rows, mapping = self._standardize("微信支付交易明细证明(20250515-20260515)_20260602143541.pdf")
+
+        self.assertEqual(mapping["文件画像"]["parser"], "wechat_pay_proof_pdf")
+        expected = {
+            "零钱提现": "支出金额",
+            "经营账户提现": "支出金额",
+            "零钱充值": "收入金额",
+            "转入零钱通-来自零钱": "支出金额",
+            "零钱通转出-到零钱": "收入金额",
+        }
+        for memo, amount_field in expected.items():
+            hits = [row for row in rows if row["银行备注"] == memo]
+            self.assertTrue(hits, memo)
+            self.assertFalse([row for row in hits if not row[amount_field].strip()], memo)
+            self.assertFalse([row for row in hits if not row["交易金额"].strip()], memo)
+
 
 if __name__ == "__main__":
     unittest.main()

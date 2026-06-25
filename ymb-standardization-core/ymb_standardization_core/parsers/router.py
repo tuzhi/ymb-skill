@@ -3,6 +3,7 @@ from ymb_standardization_core.parsers.jiangxi_yumin_bank_pdf import read_jiangxi
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
+from ymb_standardization_core.parsers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
 from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 
@@ -198,6 +199,9 @@ def read_pdf_rows(path, open_password=None):
             return preamble, rows, route_info
         if route_info["parser"] == "zhejiang_qyrcb_pdf_text":
             preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
+            return preamble, rows, route_info
+        if route_info["parser"] == "wechat_pay_proof_pdf":
+            preamble, rows = read_wechat_pay_proof_pdf(pdf)
             return preamble, rows, route_info
 
     return preamble or "", table_rows, route_info
