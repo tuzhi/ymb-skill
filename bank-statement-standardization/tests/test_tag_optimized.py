@@ -7,6 +7,9 @@ import pandas as pd
 from tag import direction_of, direction_series, load_rules, match
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 class TagOptimizedTest(unittest.TestCase):
     def test_direction_series_matches_row_direction_logic(self):
         df = pd.DataFrame(
@@ -130,6 +133,25 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(rule["编号"], "R002")
         self.assertEqual(rule["关键词"], "款")
         self.assertEqual(hit_field, "银行备注")
+
+    def test_baby_balance_product_rules_tag_as_internal_transfer(self):
+        buckets = load_rules(ROOT / "assets" / "tag_rules.csv")
+
+        for direction, amount_col in [("收入", "收入金额"), ("支出", "支出金额")]:
+            row = pd.Series({
+                "对手名称": "",
+                "银行备注": "零钱通转出-到零钱" if direction == "收入" else "转入零钱通-来自零钱",
+                "账户方附言": "",
+                "收入金额": "100" if amount_col == "收入金额" else "",
+                "支出金额": "100" if amount_col == "支出金额" else "",
+            })
+            rule, hit_field = match(row, direction, buckets)
+
+            self.assertIsNotNone(rule)
+            self.assertEqual(rule["L1"], "内部调拨类")
+            self.assertEqual(rule["L2"], "自有资金调拨")
+            self.assertEqual(rule["L3"], "类现金余额产品调拨")
+            self.assertEqual(hit_field, "银行备注")
 
 
 if __name__ == "__main__":
