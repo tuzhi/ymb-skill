@@ -18,8 +18,9 @@ class RouteRule:
     style_all: list
     data_all: list
     date_format_any: list
+    has_fingerprint: bool = False
 
-    def match_text(self, text, context=None):
+    def base_match_text(self, text, context=None):
         context = context or {}
         identity_hits = [marker for marker in self.identity_any if marker in text]
         if not identity_hits:
@@ -27,6 +28,17 @@ class RouteRule:
 
         layout_hits = [marker for marker in self.layout_all if marker in text]
         if len(layout_hits) != len(self.layout_all):
+            return None
+
+        return {
+            "identity_evidence": identity_hits,
+            "layout_evidence": layout_hits,
+        }
+
+    def match_text(self, text, context=None):
+        context = context or {}
+        base_hits = self.base_match_text(text, context=context)
+        if not base_hits or not self.has_fingerprint:
             return None
 
         metadata_hits = _match_metadata(self.metadata_all, context)
@@ -46,12 +58,31 @@ class RouteRule:
             return None
 
         return {
-            "identity_evidence": identity_hits,
-            "layout_evidence": layout_hits,
+            **base_hits,
             "metadata_evidence": metadata_hits,
             "style_evidence": style_hits,
             "data_evidence": data_hits,
             "date_format_evidence": date_hits,
+        }
+
+    def fingerprint_candidate_text(self, text, context=None):
+        base_hits = self.base_match_text(text or "", context=context)
+        if not base_hits:
+            return None
+        match = self.match_text(text or "", context=context)
+        if match:
+            reason = "matched"
+        elif not self.has_fingerprint:
+            reason = "missing_yaml_fingerprint"
+        else:
+            reason = "fingerprint_mismatch"
+        return {
+            "parser": self.parser,
+            "bank": self.bank,
+            "file_type": self.file_type,
+            "reason": reason,
+            **base_hits,
+            "suggested_fingerprint": suggest_fingerprint(context or {}, text or ""),
         }
 
 
@@ -60,12 +91,19 @@ class PdfRouteRule(RouteRule):
     def match(self, text, context=None):
         return self.match_text(text or "", context=context)
 
+    def fingerprint_candidate(self, text, context=None):
+        return self.fingerprint_candidate_text(text or "", context=context)
+
 
 @dataclass(frozen=True)
 class ExcelRouteRule(RouteRule):
     def match(self, rows, context=None):
         text = _rows_text(rows)
         return self.match_text(text, context=context)
+
+    def fingerprint_candidate(self, rows, context=None):
+        text = _rows_text(rows)
+        return self.fingerprint_candidate_text(text, context=context)
 
 
 def _rows_text(rows):
@@ -184,6 +222,31 @@ def _float_or_none(value):
         return None
 
 
+def suggest_fingerprint(context, text):
+    """为未识别/冲突样本输出可沉淀到 YAML 的候选指纹线索。"""
+    metadata = {k: v for k, v in (context.get("metadata") or {}).items() if v not in (None, "")}
+    styles = []
+    for style in (context.get("styles") or [])[:30]:
+        text_value = str(style.get("text") or "").strip()
+        if not text_value:
+            continue
+        item = {"text": text_value}
+        for key in ("font", "size", "bold", "row", "col", "top", "number_format"):
+            value = style.get(key)
+            if value not in (None, ""):
+                item[key] = value
+        styles.append(item)
+        if len(styles) >= 5:
+            break
+    lines = [str(line).strip()[:200] for line in (context.get("lines") or str(text or "").splitlines()) if str(line).strip()]
+    return {
+        "metadata": metadata,
+        "styles": styles,
+        "date_patterns": list(context.get("date_patterns") or []),
+        "sample_lines": lines[:5],
+    }
+
+
 def _load_yaml(name):
     with (Path(__file__).resolve().parent / name).open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or []
@@ -199,12 +262,13 @@ def load_pdf_route_rules():
             bank=item["bank"],
             version=str(item["version"]),
             account_type=item.get("account_type", "未知"),
-            identity_any=item.get("identity", {}).get("any", []),
-            layout_all=item.get("layout", {}).get("all", []),
+            identity_any=fingerprint.get("identity", {}).get("any", []),
+            layout_all=fingerprint.get("layout", {}).get("all", []),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             data_all=fingerprint.get("data", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            has_fingerprint=bool(fingerprint),
         ))
     return rules
 
@@ -219,11 +283,12 @@ def load_excel_route_rules():
             bank=item["bank"],
             version=str(item["version"]),
             account_type=item.get("account_type", "未知"),
-            identity_any=item.get("identity", {}).get("any", []),
-            layout_all=item.get("layout", {}).get("all", []),
+            identity_any=fingerprint.get("identity", {}).get("any", []),
+            layout_all=fingerprint.get("layout", {}).get("all", []),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             data_all=fingerprint.get("data", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            has_fingerprint=bool(fingerprint),
         ))
     return rules

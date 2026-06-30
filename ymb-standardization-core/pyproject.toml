@@ -20,4 +20,4 @@ where = ["."]
 include = ["ymb_standardization_core*"]
 
 [tool.setuptools.package-data]
-ymb_standardization_core = ["parsers/routing/*.yaml"]
+ymb_standardization_core = ["parsers/routing/*.yaml", "parsers/routing/*.csv"]

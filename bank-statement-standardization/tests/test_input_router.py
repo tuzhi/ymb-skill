@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
@@ -12,6 +14,7 @@ if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
 from ymb_standardization_core import core  # noqa: E402
+from ymb_standardization_core.parsers.routing.rule_loader import ExcelRouteRule  # noqa: E402
 
 
 def load_input_router():
@@ -65,6 +68,71 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["bank"], "中国农业银行")
         self.assertTrue(result.route_info["style_evidence"])
 
+    def test_historydetail_debit_credit_excel_route_does_not_infer_bank(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "万建平" / "historydetail375.xlsx"
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["parser"], "historydetail_debit_credit_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
+    def test_historydetail_transfer_amount_excel_route_does_not_infer_bank(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "共青极兔" / "2025年10月.xlsx"
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["parser"], "historydetail_transfer_amount_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
+    def test_boc_hisxls_bilingual_corporate_excel_route(self):
+        module = load_input_router()
+        excel = (
+            ROOT
+            / "testdata"
+            / "吉安超创电子PCB"
+            / "HISXLS-20250101-20250630-0842744197688651565.xls"
+        )
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["parser"], "boc_hisxls_bilingual_corporate_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "中国银行")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
+    def test_account_transaction_detail_export_excel_does_not_infer_bank(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "奥特联盈" / "2022.08.01-2023.08.01.xls"
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["parser"], "account_transaction_detail_export_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
+    def test_account_header_debit_credit_excel_does_not_infer_bank_from_filename(self):
+        module = load_input_router()
+        excel = (
+            ROOT
+            / "testdata"
+            / "广州沛瑾家具"
+            / "广州沛瑾家具有限公司_中国工商银行_TF_1.xlsx"
+        )
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["parser"], "account_header_debit_credit_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
     def test_ccb_flat_xls_has_single_specialized_route(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "张运贞" / "25年1-5月.xls"
@@ -91,6 +159,47 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["parser"], "generic_excel")
         self.assertEqual(result.route_info["decision"], "unmatched")
         self.assertEqual(result.route_info["file_type"], "excel")
+
+    def test_excel_route_config_uses_fingerprint_for_identity_and_layout(self):
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "excel_rules.yaml"
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+
+        for item in items:
+            self.assertNotIn("identity", item)
+            self.assertNotIn("layout", item)
+            fingerprint = item.get("fingerprint") or {}
+            self.assertIn("identity", fingerprint)
+            self.assertIn("layout", fingerprint)
+
+    def test_excel_route_without_yaml_fingerprint_falls_back_to_generic(self):
+        module = load_input_router()
+        original = module.load_excel_route_rules
+        try:
+            module.load_excel_route_rules = lambda: [
+                ExcelRouteRule(
+                    parser="unfingerprinted_excel",
+                    file_type="excel",
+                    bank="测试银行",
+                    version="1.0",
+                    account_type="未知",
+                    identity_any=["测试银行"],
+                    layout_all=["交易时间", "账户余额"],
+                    metadata_all={},
+                    style_all=[],
+                    data_all=[],
+                    date_format_any=[],
+                )
+            ]
+
+            route = module.route_excel([["测试银行", "交易时间", "账户余额"]], "Sheet1", context={})
+
+            self.assertEqual(route["parser"], "generic_excel")
+            self.assertEqual(route["decision"], "unmatched")
+            self.assertIn("candidate_fingerprints", route)
+            self.assertEqual(route["candidate_fingerprints"][0]["parser"], "unfingerprinted_excel")
+            self.assertEqual(route["candidate_fingerprints"][0]["reason"], "missing_yaml_fingerprint")
+        finally:
+            module.load_excel_route_rules = original
 
     def test_headerless_excel_transfer_detail_route(self):
         module = load_input_router()
@@ -146,6 +255,78 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.kind, "pdf")
         self.assertEqual(result.route_info["parser"], "zhejiang_qyrcb_pdf_text")
         self.assertGreater(len(result.rows), 200)
+
+    def test_cmb_transaction_pdf_route_matches_local_sample(self):
+        module = load_input_router()
+        pdf = (
+            ROOT
+            / "testdata"
+            / "宁聚&付亮亮&徐美琴"
+            / "付亮亮招商银行交易流水(申请时间2026年03月10日17时56分58秒).pdf"
+        )
+
+        result = module.read_rows(str(pdf))
+
+        self.assertEqual(result.kind, "pdf")
+        self.assertEqual(result.route_info["parser"], "cmb_transaction_pdf")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "招商银行")
+        self.assertEqual(result.route_info["account_type"], "个人")
+        self.assertEqual(len(result.rows), 0)
+
+    def test_corporate_account_statement_pdf_route_does_not_infer_bank(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
+
+        result = module.read_rows(str(pdf))
+
+        self.assertEqual(result.kind, "pdf")
+        self.assertEqual(result.route_info["parser"], "corporate_account_statement_pdf_text")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "对公")
+        self.assertEqual(len(result.rows), 0)
+
+    def test_corporate_account_statement_excel_route_matches_openpyxl_sample(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.xlsx"
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.kind, "excel")
+        self.assertEqual(result.route_info["parser"], "corporate_account_statement_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "招商银行")
+        self.assertEqual(result.route_info["account_type"], "对公")
+
+    def test_card_detail_download_excel_route_does_not_infer_bank(self):
+        module = load_input_router()
+        excel = (
+            ROOT
+            / "testdata"
+            / "广州沛瑾家具"
+            / "广州沛瑾家具有限公司@李果红_中国工商银行_TF_1.xlsx"
+        )
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.kind, "excel")
+        self.assertEqual(result.route_info["parser"], "card_detail_download_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["account_type"], "个人")
+
+    def test_jiujiang_bank_transaction_detail_excel_route(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "广源流水" / "九江银行交易明细1.xlsx"
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.kind, "excel")
+        self.assertEqual(result.route_info["parser"], "jiujiang_bank_transaction_detail_excel")
+        self.assertEqual(result.route_info["decision"], "matched")
+        self.assertEqual(result.route_info["bank"], "九江银行")
+        self.assertEqual(result.route_info["account_type"], "对公")
 
 
 if __name__ == "__main__":

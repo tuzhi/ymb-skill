@@ -58,7 +58,7 @@ def _excel_candidate(rule, match):
     }
 
 
-def _excel_fallback(sheet):
+def _excel_fallback(sheet, candidate_fingerprints=None):
     return {
         "parser": "generic_excel",
         "decision": "unmatched",
@@ -68,24 +68,30 @@ def _excel_fallback(sheet):
         "account_type": "",
         "identity_evidence": [],
         "layout_evidence": [sheet],
+        "candidate_fingerprints": candidate_fingerprints or [],
     }
 
 
 def route_excel(rows, sheet, context=None):
     candidates = []
+    candidate_fingerprints = []
     for rule in load_excel_route_rules():
+        candidate = rule.fingerprint_candidate(rows, context=context)
+        if candidate:
+            candidate_fingerprints.append(candidate)
         match = rule.match(rows, context=context)
         if match:
             candidates.append(_excel_candidate(rule, match))
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        return _excel_fallback(sheet)
+        return _excel_fallback(sheet, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
         "decision": "ambiguous",
         "file_type": "excel",
         "candidates": candidates,
+        "candidate_fingerprints": candidate_fingerprints,
     }
 
 

@@ -38,6 +38,7 @@ def _record_from_artifacts(path, root, mapping_path, csv_path, today):
     bank_name = audit.support_matrix_bank_name(image, parser, template)
     record = {
         "银行": bank_name,
+        "账户类型(YAML)": audit.yaml_account_type(parser),
         "格式": path.suffix.lower().lstrip("."),
         "版本": template,
         "文件路径": rel,
@@ -60,6 +61,7 @@ def _record_from_artifacts(path, root, mapping_path, csv_path, today):
         "error": "",
         "mapping": {
             "bank": record["银行"],
+            "yaml_account_type": record["账户类型(YAML)"],
             "parser": parser,
             "template": record["版本"],
             "yaml_fingerprint": record["YAML指纹"],

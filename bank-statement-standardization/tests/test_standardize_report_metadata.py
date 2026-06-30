@@ -78,7 +78,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 "余额", "币种", "对方户名", "对方账号", "对方开户机构", "记账日期", "摘要",
             ]
             row = [
-                "6226822011500474554", "张三", "2026-01-02 09:00:00", "", "100.00",
+                "6212263602003903457", "张三", "2026-01-02 09:00:00", "", "100.00",
                 "1100.00", "人民币", "付款方", "10001", "开户行", "2026-01-02", "收款",
             ]
             wb = Workbook()
@@ -94,6 +94,15 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             self.assertEqual(out_rows[0]["账户类型"], "个人")
             self.assertEqual(report["文件画像"]["账户类型"], "个人")
             self.assertEqual(report["文件画像"]["account_type_source"], "card_bin")
+            self.assertEqual(report["文件画像"]["开户行"], "中国工商银行")
+            self.assertEqual(report["文件画像"]["开户行识别来源"], "card_bin")
+            self.assertEqual(out_rows[0]["开户行"], "中国工商银行")
+
+    def test_card_bin_bank_name_uses_external_mapping_config(self):
+        self.assertEqual(
+            standardize.bank_name_from_card_bin({"bank": "CEB"}),
+            "中国光大银行",
+        )
 
     def test_enterprise_counterparty_ratio_marks_probable_corporate(self):
         with tempfile.TemporaryDirectory() as tmp:

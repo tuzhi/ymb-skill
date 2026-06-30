@@ -25,25 +25,27 @@ def _pdf_candidate(parser, file_type, bank, version, account_type, identity_evid
     }
 
 
-def _pdf_fallback(evidence, table_row_count, page_count):
+def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=None):
     return {
         "parser": "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched",
         "decision": "unmatched",
         "file_type": "pdf",
         "account_type": "",
+        "candidate_fingerprints": candidate_fingerprints or [],
     }
 
 
-def _decide_pdf_route(candidates, evidence, table_row_count, page_count):
+def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candidate_fingerprints=None):
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        return _pdf_fallback(evidence, table_row_count, page_count)
+        return _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
         "decision": "ambiguous",
         "file_type": "pdf",
         "candidates": candidates,
+        "candidate_fingerprints": candidate_fingerprints or [],
     }
 
 
@@ -57,8 +59,12 @@ def route_pdf(text, table_row_count, page_count, context=None):
         "table_row_count": table_row_count,
     }
     candidates = []
+    candidate_fingerprints = []
 
     for rule in load_pdf_route_rules():
+        candidate = rule.fingerprint_candidate(text, context=context)
+        if candidate:
+            candidate_fingerprints.append(candidate)
         match = rule.match(text, context=context)
         if not match:
             continue
@@ -78,7 +84,13 @@ def route_pdf(text, table_row_count, page_count, context=None):
             },
         ))
 
-    return _decide_pdf_route(candidates, evidence, table_row_count, page_count)
+    return _decide_pdf_route(
+        candidates,
+        evidence,
+        table_row_count,
+        page_count,
+        candidate_fingerprints=candidate_fingerprints,
+    )
 
 
 def _extract_pdf_tables(pdf):

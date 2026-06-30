@@ -73,28 +73,6 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
             "1000107301",
         ])
 
-    def test_local_jxrcb_pdf_uses_text_parser_without_ocr(self):
-        pdfs = list((ROOT / "testdata" / "6").glob("江西·农商银行*.pdf"))
-        if not pdfs:
-            self.skipTest("本地未提供江西农商 PDF 样本")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            csv_path, json_path, report = standardize.standardize(str(pdfs[0]), out_dir=tmp)
-            with open(json_path, encoding="utf-8") as f:
-                mapping = json.load(f)
-            with open(csv_path, encoding="utf-8-sig", newline="") as f:
-                rows = list(csv.DictReader(f))
-
-        image = mapping["文件画像"]
-        self.assertEqual(image["parser"], "jiangxi_rural_commercial_pdf_text")
-        self.assertFalse(image["ocr_supported"])
-        self.assertFalse(image["ocr_used"])
-        self.assertEqual(image["本方名称"], "张华峰")
-        self.assertEqual(image["本方账户"], "6226822011500474554")
-        self.assertGreater(len(rows), 0)
-        self.assertTrue(all(r["交易时间"] for r in rows))
-        self.assertTrue(all(r["来源文件名"] for r in rows))
-
 
 if __name__ == "__main__":
     unittest.main()

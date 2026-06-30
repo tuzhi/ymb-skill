@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import Workbook
+from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 import yaml
@@ -46,6 +47,7 @@ GENERATED_NAME_MARKERS = (
 )
 MATRIX_COLUMNS = [
     "银行",
+    "账户类型(YAML)",
     "格式",
     "版本",
     "文件路径",
@@ -252,9 +254,9 @@ def yaml_fingerprint_summary(parser):
         return "未找到 YAML 规则"
 
     parts = []
-    identity_any = rule.get("identity", {}).get("any") or []
-    layout_all = rule.get("layout", {}).get("all") or []
     fingerprint = rule.get("fingerprint") or {}
+    identity_any = fingerprint.get("identity", {}).get("any") or []
+    layout_all = fingerprint.get("layout", {}).get("all") or []
     metadata_all = fingerprint.get("metadata", {}).get("all") or {}
     style_all = fingerprint.get("style", {}).get("all") or []
     data_all = fingerprint.get("data", {}).get("all") or []
@@ -296,8 +298,10 @@ def normalize_bank_name(bank, parser="", template=""):
         ("江西农商", "江西农商银行"),
         ("kasikorn_pdf_text", "开泰银行（Kasikorn Bank）"),
         ("Kasikorn", "开泰银行（Kasikorn Bank）"),
+        ("icbc_", "中国工商银行"),
         ("农业银行", "中国农业银行"),
         ("农行", "中国农业银行"),
+        ("abc_", "中国农业银行"),
         ("工商银行", "中国工商银行"),
         ("工行", "中国工商银行"),
         ("建设银行", "中国建设银行"),
@@ -309,6 +313,7 @@ def normalize_bank_name(bank, parser="", template=""):
         ("长沙银行", "长沙银行"),
         ("三湘银行", "湖南三湘银行"),
         ("上饶银行", "上饶银行"),
+        ("wechat_", "微信支付"),
         ("微信支付", "微信支付"),
         ("支付宝", "支付宝"),
     ]
@@ -319,10 +324,54 @@ def normalize_bank_name(bank, parser="", template=""):
 
 
 def support_matrix_bank_name(image, parser="", template=""):
+    route_bank = (ROUTE_RULE_INDEX.get(parser) or {}).get("bank") if parser else ""
+    if route_bank and route_bank not in {"未识别", "未知"}:
+        return normalize_bank_name(route_bank, parser, template)
     source = image.get("开户行识别来源") or ""
     if source == "文件名":
-        return "未识别"
+        return normalize_bank_name("", parser, template)
     return normalize_bank_name(image.get("确认银行") or image.get("开户行") or "", parser, template)
+
+
+def yaml_account_type(parser):
+    return (ROUTE_RULE_INDEX.get(parser) or {}).get("account_type", "") if parser else ""
+
+
+def load_support_matrix_rows(matrix_path):
+    """读取 support_matrix.xlsx，作为已支持样本与指纹归属的事实源。"""
+    wb = load_workbook(matrix_path, read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    header = [str(value or "").strip() for value in rows[0]]
+    records = []
+    for values in rows[1:]:
+        record = {}
+        for idx, col in enumerate(header):
+            if not col:
+                continue
+            record[col] = "" if idx >= len(values) or values[idx] is None else str(values[idx]).strip()
+        if any(record.values()):
+            records.append(record)
+    return records
+
+
+def support_matrix_files_for_parser(matrix_path, parser):
+    rows = load_support_matrix_rows(matrix_path)
+    files = []
+    for row in rows:
+        row_parser = row.get("router类", "")
+        if row_parser != parser:
+            continue
+        if row.get("测试结果") != "PASS":
+            continue
+        if row_parser.startswith("generic_") or row_parser == "ambiguous_router_match":
+            continue
+        if not row.get("YAML指纹") or row.get("YAML指纹") == "无 YAML 指纹":
+            continue
+        files.append(row.get("文件路径", ""))
+    return [path for path in files if path]
 
 
 def read_csv_summary(csv_path):
@@ -348,6 +397,7 @@ def audit_one_file(path, root, output_work_dir, today):
     _hints, hints_audit = _hints_for_metadata(path)
     record = {
         "银行": "",
+        "账户类型(YAML)": "",
         "格式": path.suffix.lower().lstrip("."),
         "版本": "",
         "文件路径": relative_path,
@@ -389,6 +439,7 @@ def audit_one_file(path, root, output_work_dir, today):
         bank_name = support_matrix_bank_name(image, parser, template)
         record.update({
             "银行": bank_name,
+            "账户类型(YAML)": yaml_account_type(parser),
             "版本": template,
             "router类": parser,
             "YAML指纹": yaml_fingerprint_summary(parser),
@@ -403,6 +454,7 @@ def audit_one_file(path, root, output_work_dir, today):
             "status": "PASS",
             "mapping": {
                 "bank": record["银行"],
+                "yaml_account_type": record["账户类型(YAML)"],
                 "parser": parser,
                 "template": record["版本"],
                 "yaml_fingerprint": record["YAML指纹"],
@@ -439,6 +491,7 @@ def write_xlsx(path, rows):
 
     widths = {
         "银行": 22,
+        "账户类型(YAML)": 16,
         "格式": 10,
         "版本": 28,
         "文件路径": 72,

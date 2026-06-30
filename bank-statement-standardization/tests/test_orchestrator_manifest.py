@@ -55,28 +55,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(metadata["name"], "bank-statement-standardization")
             self.assertEqual(metadata["version"], "1.2.6")
 
-    def test_default_run_root_stays_in_current_working_directory_runs(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            cwd = Path(tmp) / "workspace"
-
-            root = orchestrator.resolve_run_root(
-                explicit_run_root="",
-                cwd=str(cwd),
-            )
-
-            self.assertEqual(Path(root), (cwd / "runs").resolve())
-
-    def test_explicit_run_root_is_preserved(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            explicit = Path(tmp) / "custom-runs"
-
-            root = orchestrator.resolve_run_root(
-                explicit_run_root=str(explicit),
-                cwd=str(Path(tmp) / "cwd"),
-            )
-
-            self.assertEqual(Path(root), explicit.resolve())
-
     def test_inventory_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -1,14 +1,23 @@
 - parser: abc_account_detail_excel
   file_type: excel
   bank: 中国农业银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
-  identity:
-    any:
+  fingerprint:
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 收入金额
+        - 支出金额
+        - 账户余额
+        - 对方账号
+    identity:
+      any:
       - 账户明细
       - 中国农业银行账户活期交易明细清单
-  layout:
-    all:
+    layout:
+      all:
       - 序号
       - 交易时间
       - 收入金额
@@ -18,11 +27,10 @@
       - 对方户名
       - 对方开户行
       - 摘要
-
 - parser: abc_legacy_account_detail_excel
   file_type: excel
   bank: 中国农业银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
   fingerprint:
     metadata:
@@ -30,37 +38,37 @@
         application: BIFF/XLS
     style:
       all:
-        - text: 账户明细
-          font: 黑体
-          size_min: 19
-          size_max: 21
-          row_max: 1
-        - text: 交易时间
-          font: 黑体
-          size_min: 11
-          size_max: 13
-          row_max: 3
+      - text: 账户明细
+        font: 黑体
+        size_min: 19
+        size_max: 21
+        row_max: 1
+      - text: 交易时间
+        font: 黑体
+        size_min: 11
+        size_max: 13
+        row_max: 3
     data:
       all:
-        - same_row_all:
-            - 交易时间
-            - 收入金额
-            - 支出金额
-            - 账户余额
-          same_row_none:
-            - 序号
+      - same_row_all:
+        - 交易时间
+        - 收入金额
+        - 支出金额
+        - 账户余额
+        same_row_none:
+        - 序号
     date_format:
       any:
-        - yyyy-mm-dd hh:mm:ss
-  identity:
-    any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
       - 账户明细
-  layout:
-    all:
-      - "账号:"
-      - "户名:"
-      - "币种:"
-      - "起止日期:"
+    layout:
+      all:
+      - '账号:'
+      - '户名:'
+      - '币种:'
+      - '起止日期:'
       - 交易时间
       - 收入金额
       - 支出金额
@@ -69,18 +77,18 @@
       - 对方户名
       - 对方开户行
       - 摘要
-
 - parser: abc_current_transaction_excel
   file_type: excel
   bank: 中国农业银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 中国农业银行账户活期交易明细清单
       - 账户活期交易明细清单
-  layout:
-    all:
+    layout:
+      all:
       - 交易日期
       - 交易时间
       - 交易摘要
@@ -90,17 +98,17 @@
       - 日 志  号
       - 交易渠道
       - 交易附言
-
 - parser: abc_account_query_excel
   file_type: excel
   bank: 中国农业银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 账户明细查询
-  layout:
-    all:
+    layout:
+      all:
       - 交易日期
       - 交易时间
       - 交易金额
@@ -112,17 +120,165 @@
       - 交易类型
       - 交易用途
       - 交易摘要
-
+- parser: boc_hisxls_bilingual_corporate_excel
+  file_type: excel
+  bank: 中国银行
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 查询账号[ Inquirer account number ]
+    layout:
+      all:
+      - 总笔数[ Total number ]
+      - 借方发生总笔数[ Total Numbers of Debited Payments ]
+      - 贷方发生总笔数[ Total Numbers of Credited Payments ]
+      - 查询时间范围[ Time Range ]
+      - 交易类型[ Transaction Type ]
+      - 业务类型[ Business type ]
+      - 付款人开户行号[ Account holding bank number of payer ]
+      - 付款人开户行名[ Payer account bank ]
+      - 付款人账号[ Debit Account No. ]
+      - 付款人名称[ Payer's Name ]
+      - 收款人开户行行号[ Account holding bank number of beneficiary ]
+      - 收款人开户行名[ Beneficiary account bank ]
+      - 收款人账号[ Payee's Account Number ]
+      - 收款人名称[ Payee's Name ]
+      - 交易日期[ Transaction Date ]
+      - 交易时间[ Transaction time ]
+      - 交易货币[ Trade Currency ]
+      - 交易金额[ Trade Amount ]
+      - 交易后余额[ After-transaction balance ]
+      - 交易流水号[ Transaction reference number ]
+      - 名义付款人开户行行号[ Opening bank number of nominal payer ]
+      - 名义收款人名称[ Name of nominal payee ]
+    style:
+      all:
+      - text: 查询账号[ Inquirer account number ]
+        font: Arial
+        row_max: 2
+        col_max: 1
+      - text: 交易类型[ Transaction Type ]
+        font: Arial
+        row_max: 9
+        col_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 交易类型[ Transaction Type ]
+        - 业务类型[ Business type ]
+        - 交易日期[ Transaction Date ]
+        - 交易时间[ Transaction time ]
+        - 交易金额[ Trade Amount ]
+- parser: account_transaction_detail_export_excel
+  file_type: excel
+  bank: 未识别
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 账户交易明细
+    layout:
+      all:
+      - 账户
+      - 交易流水号
+      - 交易日期
+      - 借方发生额
+      - 贷方发生额
+      - 余额
+      - 对方账号
+      - 对方户名
+      - 交易渠道
+      - 摘要
+      - 备注
+    metadata:
+      all:
+        sheet: 数据导出
+    style:
+      all:
+      - text: 账户交易明细
+        font: 宋体
+        row_max: 1
+        col_max: 3
+      - text: 交易流水号
+        font: 微软雅黑 Light
+        row_max: 4
+        col_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 交易流水号
+        - 交易日期
+        - 借方发生额
+        - 贷方发生额
+        - 余额
+        - 对方账号
+        - 对方户名
+        - 交易渠道
+        - 摘要
+- parser: account_header_debit_credit_excel
+  file_type: excel
+  bank: 未识别
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - '网点号:'
+    layout:
+      all:
+      - '账号:'
+      - '户名:'
+      - '币种:'
+      - 日期
+      - 交易类型
+      - 凭证种类
+      - 凭证号
+      - 对方户名
+      - 对方账号
+      - 摘要
+      - 借方发生额
+      - 贷方发生额
+      - 余额
+    style:
+      all:
+      - text: '账号:'
+        font: 等线
+        row_max: 1
+        col_max: 1
+      - text: 日期
+        font: 等线
+        row_max: 5
+        col_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 日期
+        - 交易类型
+        - 凭证种类
+        - 凭证号
+        - 对方户名
+        - 对方账号
+        - 摘要
+        - 借方发生额
+        - 贷方发生额
+        - 余额
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
 - parser: icbc_historydetail_excel
   file_type: excel
   bank: 中国工商银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
-  identity:
-    any:
-      - "[HISTORYDETAIL]"
-  layout:
-    all:
+  fingerprint:
+    identity:
+      any:
+      - '[HISTORYDETAIL]'
+    layout:
+      all:
       - 入账日期
       - 入账时间
       - 对方账号
@@ -132,17 +288,96 @@
       - 转出金额
       - 余额
       - 本方账号
-
+- parser: historydetail_debit_credit_excel
+  file_type: excel
+  bank: 未识别
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - '[HISTORYDETAIL]'
+    layout:
+      all:
+      - 凭证号
+      - 本方账号
+      - 对方账号
+      - 交易时间
+      - 借/贷
+      - 借方发生额
+      - 贷方发生额
+      - 对方行号
+      - 摘要
+      - 用途
+      - 对方单位名称
+      - 余额
+      - 个性化信息
+    metadata:
+      all:
+        creator: Apache POI
+    style:
+      all:
+      - text: '[HISTORYDETAIL]'
+        font: Calibri
+        size_min: 10
+        size_max: 12
+        row_max: 1
+      - text: 凭证号
+        font: Calibri
+        size_min: 10
+        size_max: 12
+        row_max: 2
+        col_max: 1
+- parser: historydetail_transfer_amount_excel
+  file_type: excel
+  bank: 未识别
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - '[HISTORYDETAIL]'
+    layout:
+      all:
+      - 对方账号
+      - 交易时间
+      - 借贷标志
+      - 对方单位
+      - 对方行号
+      - 用途
+      - 摘要
+      - 附言
+      - 余额
+      - 转入金额
+      - 发生额
+      - 转出金额
+    metadata:
+      all:
+        creator: Apache POI
+    style:
+      all:
+      - text: '[HISTORYDETAIL]'
+        font: 宋体
+        size_min: 10
+        size_max: 12
+        row_max: 1
+      - text: 对方账号
+        font: 宋体
+        size_min: 10
+        size_max: 12
+        row_max: 2
+        col_max: 1
 - parser: ccb_personal_detail_excel
   file_type: excel
   bank: 中国建设银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 中国建设银行个人活期账户全部交易明细
-  layout:
-    all:
+    layout:
+      all:
       - 序号
       - 摘要
       - 交易日期
@@ -152,18 +387,70 @@
       - 账户余额
       - 交易地点/附言
       - 对方账号与户名
-
+- parser: card_detail_download_excel
+  file_type: excel
+  bank: 未识别
+  version: '1.0'
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 明细查询文件下载
+    layout:
+      all:
+      - 卡号
+      - 子账户序号
+      - 子账户类别
+      - 交易日期
+      - 摘要
+      - 交易场所
+      - 交易国家或地区简称
+      - 钞/汇
+      - 交易金额(收入)
+      - 交易金额(支出)
+      - 交易币种
+      - 记账金额(收入)
+      - 记账金额(支出)
+      - 记账币种
+      - 余额
+      - 对方户名
+    style:
+      all:
+      - text: 明细查询文件下载
+        font: 等线
+        row_max: 1
+        col_max: 1
+      - text: 交易日期
+        font: 等线
+        row_max: 7
+        col_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 交易日期
+        - 摘要
+        - 交易场所
+        - 交易金额(收入)
+        - 交易金额(支出)
+        - 记账金额(收入)
+        - 记账金额(支出)
+        - 余额
+        - 对方户名
+    date_format:
+      any:
+      - yyyy-mm-dd
 - parser: ccb_corporate_detail_excel
   file_type: excel
   bank: 中国建设银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 中国建设银行
       - 账户明细编号-交易流水号
-  layout:
-    all:
+    layout:
+      all:
       - 明细查询结果
       - 账号
       - 账户名称
@@ -184,17 +471,26 @@
       - 凭证种类
       - 凭证号
       - 交易介质编号
-
 - parser: ccb_corporate_flat_excel
   file_type: excel
   bank: 中国建设银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
-  identity:
-    any:
+  fingerprint:
+    data:
+      all:
+      - same_row_all:
+        - 账号
+        - 账户名称
+        - 交易时间
+        - 借方发生额（支取）
+        - 贷方发生额（收入）
+        - 账户明细编号-交易流水号
+    identity:
+      any:
       - 账户明细编号-交易流水号
-  layout:
-    all:
+    layout:
+      all:
       - 账号
       - 账户名称
       - 交易时间
@@ -233,44 +529,39 @@
       - 个性化信息9
       - 个性化信息10
       - 交易介质编号
-
 - parser: corporate_account_statement_excel
   file_type: excel
   bank: 招商银行
-  version: "1.0"
+  version: '1.0'
   account_type: 对公
   fingerprint:
-    metadata:
-      all:
-        creator: Unknown
-        application: Microsoft Excel
     style:
       all:
-        - text: 标题
-          font: Arial
-          size_min: 9
-          size_max: 11
-          bold: true
-          row_max: 6
-        - text: 对账单
-          font: Arial
-          size_min: 9
-          size_max: 11
-          row_max: 6
+      - text: 标题
+        font: Arial
+        size_min: 9
+        size_max: 11
+        bold: true
+        row_max: 6
+      - text: 对账单
+        font: Arial
+        size_min: 9
+        size_max: 11
+        row_max: 6
     data:
       all:
-        - same_row_all:
-            - 银行码
-            - "5456"
+      - same_row_all:
+        - 银行码
+        - '5456'
     date_format:
       any:
-        - yyyymmdd
-  identity:
-    any:
+      - yyyymmdd
+    identity:
+      any:
       - 文件类型
       - ACCOUNT
-  layout:
-    all:
+    layout:
+      all:
       - 账号名称
       - 银行账号
       - 查询开始日期
@@ -311,11 +602,10 @@
       - 商务支付订单号
       - 内部编号
       - 公司一卡通号
-
 - parser: headerless_excel
   file_type: excel
   bank: 未识别
-  version: "1.0"
+  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -324,19 +614,19 @@
         application: Apache POI
     style:
       all:
-        - text: 交易日期
-          font: Calibri
-          size_min: 10
-          size_max: 12
-          row_max: 1
+      - text: 交易日期
+        font: Calibri
+        size_min: 10
+        size_max: 12
+        row_max: 1
     date_format:
       any:
-        - yyyy-mm-dd
-  identity:
-    any:
+      - yyyy-mm-dd
+    identity:
+      any:
       - 转账类型
-  layout:
-    all:
+    layout:
+      all:
       - 交易日期
       - 交易金额(元)
       - 对方户名
@@ -344,17 +634,17 @@
       - 转账类型
       - 账户余额(元)
       - 附言
-
 - parser: psbc_debit_history_excel
   file_type: excel
   bank: 中国邮政储蓄银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 中国邮政储蓄银行借记账户历史明细
-  layout:
-    all:
+    layout:
+      all:
       - 卡号/账号
       - 开户行名称
       - 交易时间
@@ -369,20 +659,20 @@
       - 摘要
       - 交易渠道
       - 外部系统流水
-
 - parser: jxrcb_transaction_excel
   file_type: excel
   bank: 江西农商银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 江西 ・ 农商银行交易流水
       - 江西·农商银行交易流水
       - 江西·农商银行交易明细
       - 农商银行交易明细
-  layout:
-    all:
+    layout:
+      all:
       - 户
       - 名
       - 账
@@ -393,18 +683,18 @@
       - 交易摘要
       - 对方户名
       - 对方账号
-
 - parser: cmb_transaction_excel
   file_type: excel
   bank: 招商银行
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 招商银行交易流水
       - Transaction Statement of China Merchants Bank
-  layout:
-    all:
+    layout:
+      all:
       - 户
       - 名
       - 账号
@@ -414,17 +704,17 @@
       - 联机余额
       - 交易摘要
       - 对手信息
-
 - parser: wechat_bill_excel
   file_type: excel
   bank: 微信支付
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 微信支付账单明细
-  layout:
-    all:
+    layout:
+      all:
       - 微信昵称
       - 起始时间
       - 终止时间
@@ -441,17 +731,17 @@
       - 交易单号
       - 商户单号
       - 备注
-
 - parser: wechat_proof_excel
   file_type: excel
   bank: 微信支付
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 微信支付交易明细证明
-  layout:
-    all:
+    layout:
+      all:
       - 兹证明
       - 交易明细对应时间段
       - 具体交易明细
@@ -463,18 +753,18 @@
       - 金额(元)
       - 交易对方
       - 商户单号
-
 - parser: alipay_proof_excel
   file_type: excel
   bank: 支付宝
-  version: "1.0"
+  version: '1.0'
   account_type: 个人
-  identity:
-    any:
+  fingerprint:
+    identity:
+      any:
       - 支付宝支付科技有限公司
       - 交易流水证明
-  layout:
-    all:
+    layout:
+      all:
       - 兹证明
       - 交易时间段
       - 币种
@@ -486,11 +776,10 @@
       - 交易订单号
       - 商家订单号
       - 交易时间
-
 - parser: nanchang_rural_commercial_account_query_excel
   file_type: excel
   bank: 南昌农村商业银行股份有限公司
-  version: "1.0"
+  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -498,26 +787,26 @@
         application: BIFF/XLS
     style:
       all:
-        - text: 账户明细查询结果
-          font: 宋体
-          size_min: 15
-          size_max: 17
-          row_max: 1
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
     data:
       all:
-        - same_row_all:
-            - 南昌农村商业银行股份有限公司罗家支行
-            - 行内转账
-          same_row_none:
-            - 超级网银
+      - same_row_all:
+        - 南昌农村商业银行股份有限公司罗家支行
+        - 行内转账
+        same_row_none:
+        - 超级网银
     date_format:
       any:
-        - yyyy-mm-dd hh:mm:ss
-  identity:
-    any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
       - 账户明细查询结果
-  layout:
-    all:
+    layout:
+      all:
       - 开始日期
       - 截止日期
       - 交易日期
@@ -529,11 +818,10 @@
       - 对方行名
       - 交易渠道
       - 摘要
-
 - parser: jiangxi_lushan_rural_commercial_account_query_excel
   file_type: excel
   bank: 江西庐山农村商业银行
-  version: "1.0"
+  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -541,27 +829,27 @@
         application: BIFF/XLS
     style:
       all:
-        - text: 账户明细查询结果
-          font: 宋体
-          size_min: 15
-          size_max: 17
-          row_max: 1
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
     data:
       all:
-        - same_row_all:
-            - 江西庐山农村商业银行横塘支行
-            - 行内转账
-          same_row_none:
-            - 超级网银
+      - same_row_all:
+        - 江西庐山农村商业银行横塘支行
+        - 行内转账
+        same_row_none:
+        - 超级网银
     date_format:
       any:
-        - yyyy-mm-dd
-        - yyyy-mm-dd hh:mm:ss
-  identity:
-    any:
+      - yyyy-mm-dd
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
       - 账户明细查询结果
-  layout:
-    all:
+    layout:
+      all:
       - 开始日期
       - 截止日期
       - 交易日期
@@ -573,3 +861,43 @@
       - 对方行名
       - 交易渠道
       - 摘要
+- parser: jiujiang_bank_transaction_detail_excel
+  file_type: excel
+  bank: 九江银行
+  version: '1.0'
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - '开户银行:九江银行'
+    layout:
+      all:
+      - 交易明细清单
+      - '查询账号:'
+      - '账户名称:'
+      - 交易时间
+      - 交易金额
+      - 收入
+      - 支出
+      - 余额
+      - 币种
+      - 对方账号
+      - 对方户名
+      - 摘要
+      - 交易用途
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 交易金额
+        - 收入
+        - 支出
+        - 余额
+        - 币种
+        - 对方账号
+        - 对方户名
+        - 摘要
+        - 交易用途
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss

@@ -3,6 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
@@ -17,6 +19,7 @@ router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 
 from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
+from ymb_standardization_core.parsers.routing.rule_loader import PdfRouteRule  # noqa: E402
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
@@ -45,6 +48,17 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(by_parser["icbc_account_detail_table_pdf"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
             self.assertIn(marker, by_parser["wechat_pay_proof_pdf"].layout_all)
+
+    def test_pdf_route_config_uses_fingerprint_for_identity_and_layout(self):
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "pdf_rules.yaml"
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+
+        for item in items:
+            self.assertNotIn("identity", item)
+            self.assertNotIn("layout", item)
+            fingerprint = item.get("fingerprint") or {}
+            self.assertIn("identity", fingerprint)
+            self.assertIn("layout", fingerprint)
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
@@ -78,6 +92,65 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf("中国农业银行账户活期交易明细清单", 0, 1)
 
         self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+
+    def test_specialized_route_without_yaml_fingerprint_falls_back_to_generic(self):
+        original = router.load_pdf_route_rules
+        try:
+            router.load_pdf_route_rules = lambda: [
+                PdfRouteRule(
+                    parser="unfingerprinted_pdf",
+                    file_type="pdf",
+                    bank="测试银行",
+                    version="1.0",
+                    account_type="未知",
+                    identity_any=["测试银行"],
+                    layout_all=["交易时间", "账户余额"],
+                    metadata_all={},
+                    style_all=[],
+                    data_all=[],
+                    date_format_any=[],
+                )
+            ]
+
+            result = router.route_pdf("测试银行 交易时间 账户余额", 0, 1)
+
+            self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+            self.assertEqual(result["decision"], "unmatched")
+            self.assertIn("candidate_fingerprints", result)
+            self.assertEqual(result["candidate_fingerprints"][0]["parser"], "unfingerprinted_pdf")
+            self.assertEqual(result["candidate_fingerprints"][0]["reason"], "missing_yaml_fingerprint")
+        finally:
+            router.load_pdf_route_rules = original
+
+    def test_multiple_strict_fingerprint_matches_are_ambiguous(self):
+        original = router.load_pdf_route_rules
+        rules = []
+        for parser_name in ("first_pdf", "second_pdf"):
+            rules.append(PdfRouteRule(
+                parser=parser_name,
+                file_type="pdf",
+                bank="测试银行",
+                version="1.0",
+                account_type="未知",
+                identity_any=["测试银行"],
+                layout_all=["交易时间", "账户余额"],
+                metadata_all={"Producer": "UnitTest"},
+                style_all=[],
+                data_all=[],
+                date_format_any=[],
+                has_fingerprint=True,
+            ))
+        try:
+            router.load_pdf_route_rules = lambda: rules
+            context = {"metadata": {"Producer": "UnitTest"}, "styles": [], "lines": [], "date_patterns": []}
+
+            result = router.route_pdf("测试银行 交易时间 账户余额", 0, 1, context=context)
+
+            self.assertEqual(result["parser"], "ambiguous_router_match")
+            self.assertEqual(result["decision"], "ambiguous")
+            self.assertEqual([c["parser"] for c in result["candidates"]], ["first_pdf", "second_pdf"])
+        finally:
+            router.load_pdf_route_rules = original
 
     def test_specialized_pdf_route_exposes_identity_and_layout_evidence(self):
         text = (

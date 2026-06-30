@@ -553,6 +553,29 @@ def sniff_account_info(rows, header_idx, preamble=""):
 
 
 _CARD_BIN_RULES = None
+_CARD_BIN_BANK_NAMES = None
+
+
+def _routing_dir():
+    return os.path.join(os.path.dirname(__file__), "parsers", "routing")
+
+
+def load_card_bin_bank_names():
+    """读取银行卡 BIN 银行代码到中文标准名的映射。"""
+    global _CARD_BIN_BANK_NAMES
+    if _CARD_BIN_BANK_NAMES is not None:
+        return _CARD_BIN_BANK_NAMES
+    csv_path = os.path.join(_routing_dir(), "card_bin_banks.csv")
+    names = {}
+    if os.path.exists(csv_path):
+        with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                bank = str(row.get("bank", "")).strip()
+                bank_name = str(row.get("bank_name", "")).strip()
+                if bank and bank_name:
+                    names[bank] = bank_name
+    _CARD_BIN_BANK_NAMES = names
+    return _CARD_BIN_BANK_NAMES
 
 
 def load_card_bin_rules():
@@ -560,7 +583,7 @@ def load_card_bin_rules():
     global _CARD_BIN_RULES
     if _CARD_BIN_RULES is not None:
         return _CARD_BIN_RULES
-    routing_dir = os.path.join(os.path.dirname(__file__), "parsers", "routing")
+    routing_dir = _routing_dir()
     csv_path = os.path.join(routing_dir, "card_bins.csv")
     yaml_path = os.path.join(routing_dir, "card_bins.yaml")
     rules = []
@@ -602,6 +625,13 @@ def match_card_bin(account):
         if digits.startswith(prefix):
             return rule
     return None
+
+
+def bank_name_from_card_bin(card_bin):
+    if not card_bin:
+        return ""
+    bank_code = str(card_bin.get("bank") or "").strip()
+    return load_card_bin_bank_names().get(bank_code, bank_code)
 
 
 KNOWN_ACCOUNT_TYPES = {"个人", "对公"}
@@ -1076,8 +1106,13 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         route_info.get("account_type", ""),
         counterparty_account_type,
     )
+    card_bin_bank_name = bank_name_from_card_bin(account_type_card_bin)
+    if card_bin_bank_name and (not bank_name or bank_infer_source in {"未知", "文件名"}):
+        bank_name = card_bin_bank_name
+        bank_infer_source = "card_bin"
     for record in std_records:
         record["账户类型"] = account_type
+        record["开户行"] = bank_name
 
     # ---- 映射报告 ----
     for field in STD_FIELDS:

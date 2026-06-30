@@ -50,6 +50,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         module = load_module()
         rows = [{
             "银行": "浙江庆元农商银行",
+            "账户类型(YAML)": "个人",
             "格式": "pdf",
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
@@ -73,8 +74,10 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(header, module.MATRIX_COLUMNS)
         self.assertIn("YAML指纹", header)
         self.assertEqual(first_row[0], "浙江庆元农商银行")
-        self.assertEqual(first_row[4], "zhejiang_qyrcb_pdf_text")
-        self.assertEqual(first_row[5], "身份:2；结构:15")
+        self.assertIn("账户类型(YAML)", header)
+        self.assertEqual(first_row[header.index("账户类型(YAML)")], "个人")
+        self.assertEqual(first_row[header.index("router类")], "zhejiang_qyrcb_pdf_text")
+        self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
         self.assertIn("创建时间≈修改时间", header)
         self.assertIn("创建人=修改人", header)
         self.assertEqual(first_row[header.index("创建时间≈修改时间")], "是（差0秒）")
@@ -95,7 +98,160 @@ class AuditTestdataSupportTests(unittest.TestCase):
             module.normalize_bank_name("", "kasikorn_pdf_text", "Kasikorn Bank"),
             "开泰银行（Kasikorn Bank）",
         )
+        self.assertEqual(
+            module.normalize_bank_name("", "icbc_historydetail_excel", ""),
+            "中国工商银行",
+        )
+        self.assertEqual(
+            module.normalize_bank_name("", "abc_legacy_account_detail_excel", ""),
+            "中国农业银行",
+        )
+        self.assertEqual(
+            module.normalize_bank_name("", "wechat_bill_excel", ""),
+            "微信支付",
+        )
         self.assertEqual(module.normalize_bank_name("", "", ""), "未识别")
+
+    def test_bank_name_uses_parser_when_file_name_is_not_trusted(self):
+        module = load_module()
+
+        self.assertEqual(
+            module.support_matrix_bank_name(
+                {"开户行识别来源": "文件名", "开户行": "工行"},
+                "icbc_historydetail_excel",
+                "",
+            ),
+            "中国工商银行",
+        )
+        self.assertEqual(
+            module.support_matrix_bank_name(
+                {"开户行识别来源": "文件名", "开户行": "农行"},
+                "abc_account_detail_excel",
+                "",
+            ),
+            "中国农业银行",
+        )
+        self.assertEqual(
+            module.support_matrix_bank_name({"开户行识别来源": "文件名", "开户行": "工行"}, "", ""),
+            "未识别",
+        )
+
+    def test_bank_name_prefers_yaml_bank_for_parser(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "custom_parser": {"bank": "微信支付"},
+            }
+            self.assertEqual(
+                module.support_matrix_bank_name(
+                    {"开户行识别来源": "文件名", "开户行": "不可信文件名银行"},
+                    "custom_parser",
+                    "",
+                ),
+                "微信支付",
+            )
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_bank_name_uses_card_bin_report_when_yaml_bank_is_unknown(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "personal_card_parser": {"bank": "未识别"},
+            }
+            self.assertEqual(
+                module.support_matrix_bank_name(
+                    {
+                        "开户行识别来源": "card_bin",
+                        "开户行": "中国工商银行",
+                        "确认银行": "中国工商银行",
+                    },
+                    "personal_card_parser",
+                    "",
+                ),
+                "中国工商银行",
+            )
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_yaml_account_type_uses_router_rule(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "custom_parser": {"account_type": "个人"},
+            }
+            self.assertEqual(module.yaml_account_type("custom_parser"), "个人")
+            self.assertEqual(module.yaml_account_type("missing_parser"), "")
+            self.assertEqual(module.yaml_account_type(""), "")
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_yaml_fingerprint_summary_reads_nested_identity_and_layout(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "custom_parser": {
+                    "fingerprint": {
+                        "identity": {"any": ["测试银行"]},
+                        "layout": {"all": ["交易时间", "账户余额"]},
+                        "metadata": {"all": {"application": "UnitTest"}},
+                    }
+                },
+            }
+
+            summary = module.yaml_fingerprint_summary("custom_parser")
+
+            self.assertIn("身份:1", summary)
+            self.assertIn("结构:2", summary)
+            self.assertIn("元数据:application", summary)
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_supported_files_can_be_loaded_from_support_matrix_by_parser(self):
+        module = load_module()
+        rows = [
+            {
+                "银行": "测试银行",
+                "账户类型(YAML)": "未知",
+                "格式": "xlsx",
+                "版本": "1.0",
+                "文件路径": "客户A/a.xlsx",
+                "router类": "strict_excel",
+                "YAML指纹": "元数据:application",
+                "测试结果": "PASS",
+            },
+            {
+                "银行": "测试银行",
+                "账户类型(YAML)": "未知",
+                "格式": "xlsx",
+                "版本": "1.0",
+                "文件路径": "客户A/b.xlsx",
+                "router类": "strict_excel",
+                "YAML指纹": "元数据:application",
+                "测试结果": "FAIL",
+            },
+            {
+                "银行": "测试银行",
+                "账户类型(YAML)": "未知",
+                "格式": "pdf",
+                "版本": "1.0",
+                "文件路径": "客户A/c.pdf",
+                "router类": "other_pdf",
+                "YAML指纹": "数据:1",
+                "测试结果": "PASS",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            matrix = Path(tmp) / "support_matrix.xlsx"
+            module.write_xlsx(matrix, rows)
+
+            files = module.support_matrix_files_for_parser(matrix, "strict_excel")
+
+        self.assertEqual(files, ["客户A/a.xlsx"])
 
 
 if __name__ == "__main__":

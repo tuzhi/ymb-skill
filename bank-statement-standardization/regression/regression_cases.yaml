@@ -1,0 +1,62 @@
+suites:
+  p0_smoke:
+    - id: abc_corporate_xlsx
+      file: 丰城市利华金属制品有限公司/2025.5.1-2025.5.31农行.xlsx
+      reason: 农行对公 xlsx，收入/支出分列，专属 Excel router
+      tags: [xlsx, 对公, 农行, 收支分列, router]
+    - id: abc_legacy_xls
+      file: 丰城市利华金属制品有限公司/2025.1.1-2025.1.31农行.xls
+      reason: 农行旧版 xls，BIFF 元数据和样式指纹
+      tags: [xls, 对公, 农行, legacy, 样式指纹]
+    - id: historydetail_debit_credit
+      file: 万建平/historydetail375.xlsx
+      reason: historydetail 对公格式，银行不可从文件名或账号前缀推断
+      tags: [xlsx, 对公, historydetail, 未识别银行]
+    - id: historydetail_transfer_amount
+      file: 共青极兔/2025年10月.xlsx
+      reason: historydetail 转账金额格式，曾由 generic 转专属指纹
+      tags: [xlsx, 对公, historydetail, 单列金额]
+    - id: boc_bilingual_corporate_xls
+      file: 吉安超创电子PCB/HISXLS-20250101-20250630-0842744197688651565.xls
+      reason: 中国银行 HISXLS 双语对公格式
+      tags: [xls, 对公, 中国银行, 双语表头]
+    - id: account_transaction_export_xls
+      file: 奥特联盈/2022.08.01-2023.08.01.xls
+      reason: 账户交易明细导出格式，银行保持未识别
+      tags: [xls, 对公, 未识别银行, 交易明细]
+    - id: zhejiang_qyrcb_pdf
+      file: 李先根/GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf
+      reason: 浙江庆元农商 PDF 文本模板，单列带符号金额
+      tags: [pdf, 个人, 浙江庆元农商, 单列金额, 专属PDF]
+    - id: kasikorn_pdf
+      file: 泰国开泰银行/111.pdf
+      reason: 泰国开泰银行 PDF 文本模板，外币账户与英文字段
+      tags: [pdf, 个人, Kasikorn, 外币, 专属PDF]
+    - id: cmb_corporate_xlsx
+      file: 宁聚&付亮亮&徐美琴/宁聚招商银行基本户1245.xlsx
+      reason: 招商银行对公 xlsx，与 PDF 同主体互证
+      tags: [xlsx, 对公, 招商银行, 专属Excel]
+    - id: card_detail_download_personal
+      file: 广州沛瑾家具/广州沛瑾家具有限公司@李果红_中国工商银行_TF_1.xlsx
+      reason: 个人卡明细下载格式，个人 account_type 与银行推断风险
+      tags: [xlsx, 个人, 卡明细, 未识别银行]
+    - id: account_header_debit_credit
+      file: 广州沛瑾家具/广州沛瑾家具有限公司_中国工商银行_TF_1.xlsx
+      reason: 对公账号抬头 + 借贷发生额格式，不采信文件名银行
+      tags: [xlsx, 对公, 借贷发生额, 未识别银行]
+    - id: jiujiang_transaction_detail
+      file: 广源流水/九江银行交易明细1.xlsx
+      reason: 九江银行对公 xlsx，顶部开户行证据 + 收支分列表头
+      tags: [xlsx, 对公, 九江银行, 收支分列]
+    - id: jiujiang_generic_header_only
+      file: 广源流水/九江银行交易明细2.xlsx
+      reason: 同款表头但缺少开户行证据，防止误标九江银行
+      tags: [xlsx, generic, 收支分列, 银行证据缺失]
+    - id: jxrcb_personal_xls
+      file: 广源流水/农商流水1.xls
+      reason: 农商个人 xls，个人账户与金额方向覆盖
+      tags: [xls, 个人, 农商, 金额方向]
+    - id: ccb_corporate_xlsx
+      file: 广源流水/建行流水1.xlsx
+      reason: 建行对公 xlsx，常见企业流水格式
+      tags: [xlsx, 对公, 建行, 企业流水]
