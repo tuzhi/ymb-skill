@@ -1,7 +1,7 @@
-- parser: abc_account_detail_excel
+- id: md5:050b7a2e342a8119eb5051b0c68299e4
+  parser: abc_account_detail_excel
   file_type: excel
   bank: 中国农业银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     data:
@@ -27,10 +27,10 @@
       - 对方户名
       - 对方开户行
       - 摘要
-- parser: abc_legacy_account_detail_excel
+- id: md5:fee711a5a8d4ae2b9723b1d40dbaad7b
+  parser: abc_legacy_account_detail_excel
   file_type: excel
   bank: 中国农业银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     metadata:
@@ -77,10 +77,10 @@
       - 对方户名
       - 对方开户行
       - 摘要
-- parser: abc_current_transaction_excel
+- id: md5:a4b03d0f9b685f528c653458ae3c8f01
+  parser: abc_current_transaction_excel
   file_type: excel
   bank: 中国农业银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -98,10 +98,10 @@
       - 日 志  号
       - 交易渠道
       - 交易附言
-- parser: abc_account_query_excel
+- id: md5:e2e29d9def2e53bd994b8f5c10f293de
+  parser: abc_account_query_excel
   file_type: excel
   bank: 中国农业银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -120,10 +120,10 @@
       - 交易类型
       - 交易用途
       - 交易摘要
-- parser: boc_hisxls_bilingual_corporate_excel
+- id: md5:5f061d5e3f23864e581b93923c81d4cf
+  parser: boc_hisxls_bilingual_corporate_excel
   file_type: excel
   bank: 中国银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -171,10 +171,10 @@
         - 交易日期[ Transaction Date ]
         - 交易时间[ Transaction time ]
         - 交易金额[ Trade Amount ]
-- parser: account_transaction_detail_export_excel
+- id: md5:addb8aa652ed33eec9c656c22ee73a5e
+  parser: account_transaction_detail_export_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -218,10 +218,10 @@
         - 对方户名
         - 交易渠道
         - 摘要
-- parser: account_header_debit_credit_excel
+- id: md5:214bb31dec408cc28611416c07ead609
+  parser: account_header_debit_credit_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -268,10 +268,10 @@
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- parser: icbc_historydetail_excel
+- id: md5:e9752a9dd2668c5e7bf37a860180977c
+  parser: icbc_historydetail_excel
   file_type: excel
   bank: 中国工商银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -288,10 +288,10 @@
       - 转出金额
       - 余额
       - 本方账号
-- parser: historydetail_debit_credit_excel
+- id: md5:b5117bb7a97d273c6a4b1231930dbddd
+  parser: historydetail_debit_credit_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -328,10 +328,10 @@
         size_max: 12
         row_max: 2
         col_max: 1
-- parser: historydetail_transfer_amount_excel
+- id: md5:f8063d9515491f8db2f91c2d31feb475
+  parser: historydetail_transfer_amount_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -367,10 +367,10 @@
         size_max: 12
         row_max: 2
         col_max: 1
-- parser: ccb_personal_detail_excel
+- id: md5:9a99975cd80faa7479b1565fb0fc696d
+  parser: ccb_personal_detail_excel
   file_type: excel
   bank: 中国建设银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -387,10 +387,10 @@
       - 账户余额
       - 交易地点/附言
       - 对方账号与户名
-- parser: card_detail_download_excel
+- id: md5:0bcdf4a2db5231199e716177828c4ba4
+  parser: card_detail_download_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -439,10 +439,10 @@
     date_format:
       any:
       - yyyy-mm-dd
-- parser: ccb_corporate_detail_excel
+- id: md5:6a5bd80a746d09a45484b97030b6da52
+  parser: ccb_corporate_detail_excel
   file_type: excel
   bank: 中国建设银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -471,10 +471,10 @@
       - 凭证种类
       - 凭证号
       - 交易介质编号
-- parser: ccb_corporate_flat_excel
+- id: md5:9f87ba8dcb91d4f4640609f355e43f32
+  parser: ccb_corporate_flat_excel
   file_type: excel
   bank: 中国建设银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     data:
@@ -529,10 +529,10 @@
       - 个性化信息9
       - 个性化信息10
       - 交易介质编号
-- parser: corporate_account_statement_excel
+- id: md5:671df073694c2969f2346545065ae02d
+  parser: corporate_account_statement_excel
   file_type: excel
   bank: 招商银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     style:
@@ -602,10 +602,10 @@
       - 商务支付订单号
       - 内部编号
       - 公司一卡通号
-- parser: headerless_excel
+- id: md5:922463a90b09303efc20800cc6bcc34f
+  parser: headerless_excel
   file_type: excel
   bank: 未识别
-  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -634,10 +634,10 @@
       - 转账类型
       - 账户余额(元)
       - 附言
-- parser: psbc_debit_history_excel
+- id: md5:506b4cf8edc5244a37262f3704b61455
+  parser: psbc_debit_history_excel
   file_type: excel
   bank: 中国邮政储蓄银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -659,10 +659,10 @@
       - 摘要
       - 交易渠道
       - 外部系统流水
-- parser: jxrcb_transaction_excel
+- id: md5:437e553e2b14b6bc8995f7e6962b3a6a
+  parser: jxrcb_transaction_excel
   file_type: excel
   bank: 江西农商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -683,10 +683,10 @@
       - 交易摘要
       - 对方户名
       - 对方账号
-- parser: cmb_transaction_excel
+- id: md5:10a4a5258baf0a15daaaf6ee94b19c8c
+  parser: cmb_transaction_excel
   file_type: excel
   bank: 招商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -704,10 +704,10 @@
       - 联机余额
       - 交易摘要
       - 对手信息
-- parser: wechat_bill_excel
+- id: md5:8c082bb670edd40c3038aedd54f98654
+  parser: wechat_bill_excel
   file_type: excel
   bank: 微信支付
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -731,10 +731,10 @@
       - 交易单号
       - 商户单号
       - 备注
-- parser: wechat_proof_excel
+- id: md5:5dd37420ea09d3cae818d355cd4339b7
+  parser: wechat_proof_excel
   file_type: excel
   bank: 微信支付
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -753,10 +753,10 @@
       - 金额(元)
       - 交易对方
       - 商户单号
-- parser: alipay_proof_excel
+- id: md5:37e2db5aede940ca65e7fb88d0a3ccfc
+  parser: alipay_proof_excel
   file_type: excel
   bank: 支付宝
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -776,10 +776,10 @@
       - 交易订单号
       - 商家订单号
       - 交易时间
-- parser: nanchang_rural_commercial_account_query_excel
+- id: md5:8ac0ccaeafccf2dcd277ff0ab875d8d0
+  parser: nanchang_rural_commercial_account_query_excel
   file_type: excel
   bank: 南昌农村商业银行股份有限公司
-  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -818,10 +818,10 @@
       - 对方行名
       - 交易渠道
       - 摘要
-- parser: jiangxi_lushan_rural_commercial_account_query_excel
+- id: md5:c2c06c237dfa0e516a4709594a22c249
+  parser: jiangxi_lushan_rural_commercial_account_query_excel
   file_type: excel
   bank: 江西庐山农村商业银行
-  version: '1.0'
   account_type: 未知
   fingerprint:
     metadata:
@@ -861,15 +861,15 @@
       - 对方行名
       - 交易渠道
       - 摘要
-- parser: jiujiang_bank_transaction_detail_excel
+- id: md5:2d908307fbb17e385e80c69d821ab6e7
+  parser: jiujiang_bank_transaction_detail_excel
   file_type: excel
   bank: 九江银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
       any:
-      - '开户银行:九江银行'
+      - 开户银行:九江银行
     layout:
       all:
       - 交易明细清单

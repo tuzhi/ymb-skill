@@ -51,6 +51,8 @@ bank-statement-standardization/bootstrap-logs/
 # Test data and generated fixtures are intentionally not versioned.
 testdata/
 **/testdata/
+testoutput/
+**/testoutput/
 **/fixtures/data/
 **/fixtures/raw/
 **/fixtures/generated/

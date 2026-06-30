@@ -15,6 +15,7 @@ if str(CORE_PACKAGE) not in sys.path:
 
 from ymb_standardization_core import core  # noqa: E402
 from ymb_standardization_core.parsers.routing.rule_loader import ExcelRouteRule  # noqa: E402
+from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
 
 def load_input_router():
@@ -168,6 +169,9 @@ class InputRouterTests(unittest.TestCase):
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
             fingerprint = item.get("fingerprint") or {}
+            self.assertIn("id", item)
+            self.assertNotIn("version", item)
+            self.assertEqual(item["id"], fingerprint_md5(fingerprint))
             self.assertIn("identity", fingerprint)
             self.assertIn("layout", fingerprint)
 
@@ -177,10 +181,10 @@ class InputRouterTests(unittest.TestCase):
         try:
             module.load_excel_route_rules = lambda: [
                 ExcelRouteRule(
+                    id="md5:test",
                     parser="unfingerprinted_excel",
                     file_type="excel",
                     bank="测试银行",
-                    version="1.0",
                     account_type="未知",
                     identity_any=["测试银行"],
                     layout_all=["交易时间", "账户余额"],

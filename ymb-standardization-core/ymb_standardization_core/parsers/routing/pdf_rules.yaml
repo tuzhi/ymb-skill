@@ -1,7 +1,7 @@
-- parser: abc_text_pdf
+- id: md5:58353c34763109d84edee2ece0d4a71f
+  parser: abc_text_pdf
   file_type: pdf
   bank: 中国农业银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     data:
@@ -28,10 +28,10 @@
       - 日 志 号
       - 交易渠道
       - 交易附言
-- parser: jiangxi_rural_commercial_pdf_text
+- id: md5:1c050bc19c0c8352ce08866d9de86cec
+  parser: jiangxi_rural_commercial_pdf_text
   file_type: pdf
   bank: 江西农商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     data:
@@ -50,10 +50,10 @@
       - 户 名
       - 账 号
       - 起止日期
-- parser: kasikorn_pdf_text
+- id: md5:58425245f4c16c81ed5964a98778b11e
+  parser: kasikorn_pdf_text
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
-  version: '1.0'
   account_type: 个人
   fingerprint:
     metadata:
@@ -83,10 +83,10 @@
       - Channel
       - Details
       - Eff.Date
-- parser: zhejiang_qyrcb_pdf_text
+- id: md5:32b7ac56fda503cc1ee7e04d8fa72502
+  parser: zhejiang_qyrcb_pdf_text
   file_type: pdf
   bank: 浙江庆元农商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     style:
@@ -117,18 +117,19 @@
       - 对方行
       - 交易渠道
       - 备注
-- parser: icbc_account_detail_pdf
+- id: md5:7cb3034de2738fc02c5cb79fe9774c97
+  parser: icbc_account_detail_pdf
   file_type: pdf
   bank: 中国工商银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     data:
       all:
       - same_row_all:
-        - 中国工商银行账户明细清单
         - 交易时间
         - 本方账号
+        - 对方户名
+        - 对方账号
         - 借方发生额
         - 贷方发生额
     identity:
@@ -148,10 +149,10 @@
       - 摘要
       - 用途
       - 余额
-- parser: icbc_account_detail_table_pdf
+- id: md5:08a26f3e09a9d43ac4c1169774974b91
+  parser: icbc_account_detail_table_pdf
   file_type: pdf
   bank: 中国工商银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -171,10 +172,10 @@
       - 对方行名
       - 摘要
       - 回单个性化信息
-- parser: icbc_corporate_account_statement_pdf
+- id: md5:8e36835cd772122927a767634ae05616
+  parser: icbc_corporate_account_statement_pdf
   file_type: pdf
   bank: 中国工商银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     metadata:
@@ -203,10 +204,10 @@
       - 转出金额
       - 转入金额
       - 余额
-- parser: icbc_debit_history_pdf
+- id: md5:71d86675ea319d9ed4f09b28b18aab74
+  parser: icbc_debit_history_pdf
   file_type: pdf
   bank: 中国工商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     data:
@@ -231,10 +232,10 @@
       - 摘要
       - 地区
       - 收入/支出
-- parser: icbc_debit_history_electronic_pdf
+- id: md5:2f09bec3106a41100b3d7bf8d42dde3a
+  parser: icbc_debit_history_electronic_pdf
   file_type: pdf
   bank: 中国工商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     metadata:
@@ -262,10 +263,10 @@
       - 收入/支出金额
       - 余额
       - 渠道
-- parser: ccb_personal_detail_pdf
+- id: md5:51c1335651dc7aae27d1459373076346
+  parser: ccb_personal_detail_pdf
   file_type: pdf
   bank: 中国建设银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -278,10 +279,10 @@
       - 交易金额
       - 账户余额
       - 对方账号与户名
-- parser: ccb_corporate_detail_pdf
+- id: md5:c8256e75be4c87f4ccd8605f38ca8fbc
+  parser: ccb_corporate_detail_pdf
   file_type: pdf
   bank: 中国建设银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -297,10 +298,10 @@
       - 对方户
       - 对方账
       - 账户明
-- parser: boc_transaction_detail_pdf
+- id: md5:62c3c0eefc04c7b19d5c033dca3af251
+  parser: boc_transaction_detail_pdf
   file_type: pdf
   bank: 中国银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -316,10 +317,10 @@
       - 余额
       - 对方账户名
       - 对方卡号/账号
-- parser: psbc_history_detail_pdf
+- id: md5:103e4901f51fff323cac1feb4ebbf674
+  parser: psbc_history_detail_pdf
   file_type: pdf
   bank: 中国邮政储蓄银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -339,10 +340,10 @@
       - 对方账号
       - 摘要
       - 交易渠道
-- parser: abc_account_detail_pdf
+- id: md5:8f742e37b00e5cb31705b5ee781c4c9d
+  parser: abc_account_detail_pdf
   file_type: pdf
   bank: 中国农业银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -360,10 +361,10 @@
       - 对方户名
       - 对方开户行
       - 摘要
-- parser: abc_corporate_account_detail_pdf
+- id: md5:5de76bbd285d3716cc34ecea49cc0838
+  parser: abc_corporate_account_detail_pdf
   file_type: pdf
   bank: 中国农业银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     metadata:
@@ -388,10 +389,10 @@
       - 对方户名
       - 交易用途
       - 会计日期
-- parser: srbank_transaction_detail_pdf
+- id: md5:9a4a045dc7b745487d34d627393c7c01
+  parser: srbank_transaction_detail_pdf
   file_type: pdf
   bank: 上饶银行
-  version: '1.0'
   account_type: 对公
   fingerprint:
     metadata:
@@ -433,10 +434,10 @@
       - 支出
       - 收入
       - 账户余额
-- parser: cmb_transaction_pdf
+- id: md5:6607a212f53442b5c0fe22f7e642ce27
+  parser: cmb_transaction_pdf
   file_type: pdf
   bank: 招商银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -453,10 +454,10 @@
       - 联机余额
       - 交易摘要
       - 对手信息
-- parser: corporate_account_statement_pdf_text
+- id: md5:72d86c2d6d7ce434d1482bfbe830e749
+  parser: corporate_account_statement_pdf_text
   file_type: pdf
   bank: 未识别
-  version: '1.0'
   account_type: 对公
   fingerprint:
     identity:
@@ -482,10 +483,10 @@
         - 收(付)方名称
         - 收(付)方账号
         - 交易类型
-- parser: cmbc_personal_statement_pdf
+- id: md5:b9169959fa2a9175804219594af10115
+  parser: cmbc_personal_statement_pdf
   file_type: pdf
   bank: 中国民生银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -500,10 +501,10 @@
       - 交易金额
       - 账户余额
       - 对方户名/账号
-- parser: fengcheng_shunyin_village_bank_pdf
+- id: md5:f980add8b9a7659278a0859856150da9
+  parser: fengcheng_shunyin_village_bank_pdf
   file_type: pdf
   bank: 丰城顺银村镇银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -517,10 +518,10 @@
       - 交易时间
       - 存入/支取
       - 交易后余额
-- parser: jiangxi_yumin_bank_pdf
+- id: md5:ebb5eb17ed13249fcc7a0306e04bd22e
+  parser: jiangxi_yumin_bank_pdf
   file_type: pdf
   bank: 江西裕民银行
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:
@@ -535,10 +536,10 @@
       - 交易金额(元)
       - 账户余额(元)
       - 对方户名
-- parser: wechat_pay_proof_pdf
+- id: md5:7c692c1a3e2aa8a2540e426fda0cfd58
+  parser: wechat_pay_proof_pdf
   file_type: pdf
   bank: 微信支付
-  version: '1.0'
   account_type: 个人
   fingerprint:
     data:
@@ -565,10 +566,10 @@
       - 金额(元)
       - 交易对方
       - 商户单号
-- parser: alipay_proof_pdf
+- id: md5:2ac1e0212e064b2d8a2673f695897259
+  parser: alipay_proof_pdf
   file_type: pdf
   bank: 支付宝
-  version: '1.0'
   account_type: 个人
   fingerprint:
     identity:

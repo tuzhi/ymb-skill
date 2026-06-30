@@ -58,9 +58,9 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
         image = mapping["文件画像"]
         self.assertEqual(image["parser"], "zhejiang_qyrcb_pdf_text")
         self.assertEqual(image["decision"], "matched")
+        self.assertTrue(image["fingerprint_id"].startswith("md5:"))
         self.assertEqual(image["file_type"], "pdf")
         self.assertEqual(image["bank"], "浙江庆元农商银行")
-        self.assertEqual(image["version"], "1.0")
         self.assertIn("庆元农商银行", image["identity_evidence"])
         self.assertIn("个人账户交易明细", image["layout_evidence"])
         self.assertFalse(image["ocr_supported"])

@@ -34,6 +34,7 @@ def _record_from_artifacts(path, root, mapping_path, csv_path, today):
     image = mapping.get("文件画像", {})
     summary = audit.read_csv_summary(csv_path)
     parser = image.get("parser") or image.get("命中模板") or ""
+    fingerprint_id = audit.support_matrix_fingerprint_id(parser)
     template = audit.template_from_mapping(image)
     bank_name = audit.support_matrix_bank_name(image, parser, template)
     record = {
@@ -42,7 +43,7 @@ def _record_from_artifacts(path, root, mapping_path, csv_path, today):
         "格式": path.suffix.lower().lstrip("."),
         "版本": template,
         "文件路径": rel,
-        "router类": parser,
+        "router类": fingerprint_id,
         "YAML指纹": audit.yaml_fingerprint_summary(parser),
         "测试类": audit.test_class_for_parser(parser),
         "测试日期": today,
@@ -63,6 +64,7 @@ def _record_from_artifacts(path, root, mapping_path, csv_path, today):
             "bank": record["银行"],
             "yaml_account_type": record["账户类型(YAML)"],
             "parser": parser,
+            "fingerprint_id": fingerprint_id,
             "template": record["版本"],
             "yaml_fingerprint": record["YAML指纹"],
             "created_modified_check": record["创建时间≈修改时间"],

@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 import re
 
@@ -7,10 +9,10 @@ import yaml
 
 @dataclass(frozen=True)
 class RouteRule:
+    id: str
     parser: str
     file_type: str
     bank: str
-    version: str
     account_type: str
     identity_any: list
     layout_all: list
@@ -77,6 +79,7 @@ class RouteRule:
         else:
             reason = "fingerprint_mismatch"
         return {
+            "id": self.id,
             "parser": self.parser,
             "bank": self.bank,
             "file_type": self.file_type,
@@ -252,15 +255,52 @@ def _load_yaml(name):
         return yaml.safe_load(f) or []
 
 
+def _normalize_fingerprint(value):
+    if isinstance(value, dict):
+        normalized = {}
+        for key in sorted(value):
+            item = _normalize_fingerprint(value[key])
+            if item not in ({}, [], "", None):
+                normalized[str(key).strip()] = item
+        return normalized
+    if isinstance(value, list):
+        normalized = []
+        for item in value:
+            normalized_item = _normalize_fingerprint(item)
+            if normalized_item not in ({}, [], "", None):
+                normalized.append(normalized_item)
+        return normalized
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def fingerprint_md5(fingerprint):
+    """返回 fingerprint 节点规范化后的 md5 id。"""
+    canonical = _normalize_fingerprint(fingerprint or {})
+    payload = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "md5:" + hashlib.md5(payload.encode("utf-8")).hexdigest()
+
+
+def _rule_id(item, fingerprint):
+    rule_id = str(item.get("id") or "").strip()
+    if not rule_id:
+        raise ValueError(f"missing id for parser: {item.get('parser')}")
+    expected = fingerprint_md5(fingerprint)
+    if rule_id != expected:
+        raise ValueError(f"fingerprint id mismatch for parser: {item.get('parser')}: {rule_id} != {expected}")
+    return rule_id
+
+
 def load_pdf_route_rules():
     rules = []
     for item in _load_yaml("pdf_rules.yaml"):
         fingerprint = item.get("fingerprint", {})
         rules.append(PdfRouteRule(
+            id=_rule_id(item, fingerprint),
             parser=item["parser"],
             file_type=item.get("file_type", "pdf"),
             bank=item["bank"],
-            version=str(item["version"]),
             account_type=item.get("account_type", "未知"),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             layout_all=fingerprint.get("layout", {}).get("all", []),
@@ -278,10 +318,10 @@ def load_excel_route_rules():
     for item in _load_yaml("excel_rules.yaml"):
         fingerprint = item.get("fingerprint", {})
         rules.append(ExcelRouteRule(
+            id=_rule_id(item, fingerprint),
             parser=item["parser"],
             file_type=item.get("file_type", "excel"),
             bank=item["bank"],
-            version=str(item["version"]),
             account_type=item.get("account_type", "未知"),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             layout_all=fingerprint.get("layout", {}).get("all", []),

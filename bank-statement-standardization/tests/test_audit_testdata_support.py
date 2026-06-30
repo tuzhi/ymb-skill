@@ -189,6 +189,62 @@ class AuditTestdataSupportTests(unittest.TestCase):
         finally:
             module.ROUTE_RULE_INDEX = original
 
+    def test_support_matrix_uses_fingerprint_md5_id_in_router_column(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        fingerprint = {
+            "identity": {"any": ["中国工商银行账户明细清单"]},
+        }
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "generic_pdf_table": {
+                    "id": module.fingerprint_md5(fingerprint),
+                    "fingerprint": fingerprint,
+                },
+            }
+
+            self.assertEqual(
+                module.support_matrix_fingerprint_id("generic_pdf_table"),
+                module.fingerprint_md5(fingerprint),
+            )
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_support_matrix_requires_fingerprint_id_for_known_parser(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "generic_pdf_table": {
+                    "fingerprint": {
+                        "identity": {"any": ["中国工商银行账户明细清单"]},
+                    },
+                },
+            }
+
+            with self.assertRaisesRegex(ValueError, "missing id"):
+                module.support_matrix_fingerprint_id("generic_pdf_table")
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
+    def test_support_matrix_rejects_fingerprint_id_mismatch(self):
+        module = load_module()
+        original = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                "generic_pdf_table": {
+                    "id": "md5:bad",
+                    "fingerprint": {
+                        "identity": {"any": ["中国工商银行账户明细清单"]},
+                    },
+                },
+            }
+
+            with self.assertRaisesRegex(ValueError, "fingerprint id mismatch"):
+                module.support_matrix_fingerprint_id("generic_pdf_table")
+        finally:
+            module.ROUTE_RULE_INDEX = original
+
     def test_yaml_fingerprint_summary_reads_nested_identity_and_layout(self):
         module = load_module()
         original = module.ROUTE_RULE_INDEX

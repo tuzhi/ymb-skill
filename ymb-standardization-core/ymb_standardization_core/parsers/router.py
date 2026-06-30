@@ -7,14 +7,14 @@ from ymb_standardization_core.parsers.wechat_pay_proof_pdf import read_wechat_pa
 from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 
-def _pdf_candidate(parser, file_type, bank, version, account_type, identity_evidence, layout_evidence,
+def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence, layout_evidence,
                    route_evidence=None):
     return {
+        "id": id,
         "parser": parser,
         "decision": "matched",
         "file_type": file_type,
         "bank": bank,
-        "version": version,
         "account_type": account_type,
         "identity_evidence": identity_evidence,
         "layout_evidence": layout_evidence,
@@ -69,10 +69,10 @@ def route_pdf(text, table_row_count, page_count, context=None):
         if not match:
             continue
         candidates.append(_pdf_candidate(
+            id=rule.id,
             parser=rule.parser,
             file_type=rule.file_type,
             bank=rule.bank,
-            version=rule.version,
             account_type=rule.account_type,
             identity_evidence=match["identity_evidence"],
             layout_evidence=match["layout_evidence"],

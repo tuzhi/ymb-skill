@@ -18,6 +18,7 @@ ROUTER_SPEC = importlib.util.spec_from_file_location(
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 
+from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
 from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
 from ymb_standardization_core.parsers.routing.rule_loader import PdfRouteRule  # noqa: E402
 
@@ -38,7 +39,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertIn(parser, parser_names)
         self.assertEqual(rules[0].bank, "中国农业银行")
         self.assertEqual(rules[0].file_type, "pdf")
-        self.assertEqual(rules[0].version, "1.0")
+        self.assertTrue(rules[0].id.startswith("md5:"))
 
         by_parser = {rule.parser: rule for rule in rules}
         self.assertEqual(by_parser["abc_text_pdf"].account_type, "个人")
@@ -57,6 +58,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
             fingerprint = item.get("fingerprint") or {}
+            self.assertIn("id", item)
+            self.assertNotIn("version", item)
+            self.assertEqual(item["id"], fingerprint_md5(fingerprint))
             self.assertIn("identity", fingerprint)
             self.assertIn("layout", fingerprint)
 
@@ -98,10 +102,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
         try:
             router.load_pdf_route_rules = lambda: [
                 PdfRouteRule(
+                    id="md5:test",
                     parser="unfingerprinted_pdf",
                     file_type="pdf",
                     bank="测试银行",
-                    version="1.0",
                     account_type="未知",
                     identity_any=["测试银行"],
                     layout_all=["交易时间", "账户余额"],
@@ -127,10 +131,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
         rules = []
         for parser_name in ("first_pdf", "second_pdf"):
             rules.append(PdfRouteRule(
+                id=f"md5:{parser_name}",
                 parser=parser_name,
                 file_type="pdf",
                 bank="测试银行",
-                version="1.0",
                 account_type="未知",
                 identity_any=["测试银行"],
                 layout_all=["交易时间", "账户余额"],
@@ -165,7 +169,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "江西农商银行")
         self.assertEqual(result["file_type"], "pdf")
-        self.assertEqual(result["version"], "1.0")
+        self.assertTrue(result["id"].startswith("md5:"))
         self.assertIn("江西·农商银行", result["identity_evidence"])
         self.assertIn("户 名", result["layout_evidence"])
 
@@ -193,6 +197,21 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["file_type"], "pdf")
+        self.assertEqual(result["account_type"], "对公")
+
+    def test_icbc_account_detail_pdf_allows_title_and_header_on_separate_lines(self):
+        lines = [
+            "中国工商银行账户明细清单",
+            "账号： 1502000209100022223 币种： 人民币 单位： 元",
+            "本方账号户名： 南昌玺诚房地产营销策划有限公司 本方账号开户行： 工行南昌市南昌银湖 时间范围： 20250601 - 20251130",
+            "交易时间 本方账号 对方户名 对方账号 对方账户开户行 凭证号 借/贷 借方发生额 贷方发生额 摘要 用途 余额",
+        ]
+
+        result = router.route_pdf("\n".join(lines), 1, 1, context={"lines": lines})
+
+        self.assertEqual(result["parser"], "icbc_account_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "对公")
 
     def test_icbc_debit_history_electronic_pdf_route(self):

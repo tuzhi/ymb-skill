@@ -34,6 +34,7 @@ if str(CORE_PACKAGE) not in sys.path:
 
 from ymb_standardization_core import core as standardize_core  # noqa: E402
 from ymb_standardization_core.file_hints import load_file_hints, load_file_hints_for_path  # noqa: E402
+from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".pdf"}
@@ -337,6 +338,26 @@ def yaml_account_type(parser):
     return (ROUTE_RULE_INDEX.get(parser) or {}).get("account_type", "") if parser else ""
 
 
+def support_matrix_fingerprint_id(parser):
+    """支持矩阵展示模板身份：必须来自 YAML 顶层 id。
+
+    id 是 fingerprint 节点规范化后的 md5；运行时 parser 仍表示解析策略。
+    """
+    if not parser:
+        return ""
+    rule = ROUTE_RULE_INDEX.get(parser)
+    if not rule:
+        raise ValueError(f"missing route rule for parser: {parser}")
+    fingerprint = rule.get("fingerprint") or {}
+    fingerprint_id = str(rule.get("id") or "").strip()
+    if not fingerprint_id:
+        raise ValueError(f"missing id for parser: {parser}")
+    expected = fingerprint_md5(fingerprint)
+    if fingerprint_id != expected:
+        raise ValueError(f"fingerprint id mismatch for parser: {parser}: {fingerprint_id} != {expected}")
+    return fingerprint_id
+
+
 def load_support_matrix_rows(matrix_path):
     """读取 support_matrix.xlsx，作为已支持样本与指纹归属的事实源。"""
     wb = load_workbook(matrix_path, read_only=True, data_only=True)
@@ -435,13 +456,14 @@ def audit_one_file(path, root, output_work_dir, today):
         summary = read_csv_summary(csv_path)
 
         parser = image.get("parser") or image.get("命中模板") or ""
+        fingerprint_id = support_matrix_fingerprint_id(parser)
         template = template_from_mapping(image)
         bank_name = support_matrix_bank_name(image, parser, template)
         record.update({
             "银行": bank_name,
             "账户类型(YAML)": yaml_account_type(parser),
             "版本": template,
-            "router类": parser,
+            "router类": fingerprint_id,
             "YAML指纹": yaml_fingerprint_summary(parser),
             "测试类": test_class_for_parser(parser),
             "测试结果": "PASS",
@@ -456,6 +478,7 @@ def audit_one_file(path, root, output_work_dir, today):
                 "bank": record["银行"],
                 "yaml_account_type": record["账户类型(YAML)"],
                 "parser": parser,
+                "fingerprint_id": fingerprint_id,
                 "template": record["版本"],
                 "yaml_fingerprint": record["YAML指纹"],
                 "created_modified_check": record["创建时间≈修改时间"],

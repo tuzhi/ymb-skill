@@ -43,11 +43,11 @@ def _require_reader(reader, name):
 
 def _excel_candidate(rule, match):
     return {
+        "id": rule.id,
         "parser": rule.parser,
         "decision": "matched",
         "file_type": rule.file_type,
         "bank": rule.bank,
-        "version": rule.version,
         "account_type": rule.account_type,
         "identity_evidence": match["identity_evidence"],
         "layout_evidence": match["layout_evidence"],
@@ -64,7 +64,6 @@ def _excel_fallback(sheet, candidate_fingerprints=None):
         "decision": "unmatched",
         "file_type": "excel",
         "bank": "",
-        "version": "",
         "account_type": "",
         "identity_evidence": [],
         "layout_evidence": [sheet],
