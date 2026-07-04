@@ -13,7 +13,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.parsers.router import read_pdf_rows
-from ymb_standardization_core.parsers.routing.rule_loader import load_excel_route_rules
+from ymb_standardization_core.parsers.routing.rule_loader import infer_parser_id, load_excel_route_rules
 
 
 @dataclass
@@ -44,8 +44,12 @@ def _require_reader(reader, name):
 def _excel_candidate(rule, match):
     return {
         "id": rule.id,
+        "fingerprint_id": rule.id,
         "parser": rule.parser,
+        "format_id": rule.format_id or rule.parser,
+        "parser_id": rule.parser_id or infer_parser_id(rule.format_id or rule.parser, rule.file_type),
         "decision": "matched",
+        "route_status": "matched",
         "file_type": rule.file_type,
         "bank": rule.bank,
         "account_type": rule.account_type,
@@ -61,8 +65,12 @@ def _excel_candidate(rule, match):
 def _excel_fallback(sheet, candidate_fingerprints=None):
     return {
         "parser": "generic_excel",
+        "format_id": "generic_excel",
+        "parser_id": "excel_grid",
         "decision": "unmatched",
+        "route_status": "unmatched",
         "file_type": "excel",
+        "fingerprint_id": "",
         "bank": "",
         "account_type": "",
         "identity_evidence": [],
@@ -87,8 +95,12 @@ def route_excel(rows, sheet, context=None):
         return _excel_fallback(sheet, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
+        "format_id": "ambiguous_router_match",
+        "parser_id": "none",
         "decision": "ambiguous",
+        "route_status": "ambiguous",
         "file_type": "excel",
+        "fingerprint_id": "",
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints,
     }

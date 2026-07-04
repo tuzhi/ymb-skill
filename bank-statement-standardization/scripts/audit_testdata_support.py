@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +54,10 @@ MATRIX_COLUMNS = [
     "版本",
     "文件路径",
     "router类",
+    "命中parser",
+    "format_id",
+    "parser_id",
+    "route_status",
     "YAML指纹",
     "测试类",
     "测试日期",
@@ -382,7 +387,7 @@ def support_matrix_files_for_parser(matrix_path, parser):
     rows = load_support_matrix_rows(matrix_path)
     files = []
     for row in rows:
-        row_parser = row.get("router类", "")
+        row_parser = row.get("命中parser", "") or row.get("router类", "")
         if row_parser != parser:
             continue
         if row.get("测试结果") != "PASS":
@@ -412,7 +417,7 @@ def read_csv_summary(csv_path):
     }
 
 
-def audit_one_file(path, root, output_work_dir, today):
+def _new_record_and_baseline(path, root, today):
     relative_path = path.relative_to(root).as_posix()
     metadata_check = metadata_checks(path)
     _hints, hints_audit = _hints_for_metadata(path)
@@ -423,6 +428,10 @@ def audit_one_file(path, root, output_work_dir, today):
         "版本": "",
         "文件路径": relative_path,
         "router类": "",
+        "命中parser": "",
+        "format_id": "",
+        "parser_id": "",
+        "route_status": "",
         "YAML指纹": "",
         "测试类": "",
         "测试日期": today,
@@ -443,6 +452,56 @@ def audit_one_file(path, root, output_work_dir, today):
         "csv_summary": {},
         "file_hints": hints_audit,
     }
+    return record, baseline
+
+
+def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_path):
+    with open(json_path, encoding="utf-8") as f:
+        mapping = json.load(f)
+    image = mapping.get("文件画像", {})
+    summary = read_csv_summary(csv_path)
+
+    parser = image.get("parser") or image.get("命中模板") or ""
+    fingerprint_id = support_matrix_fingerprint_id(parser)
+    template = template_from_mapping(image)
+    bank_name = support_matrix_bank_name(image, parser, template)
+    record.update({
+        "银行": bank_name,
+        "账户类型(YAML)": yaml_account_type(parser),
+        "版本": template,
+        "router类": fingerprint_id,
+        "命中parser": parser,
+        "format_id": image.get("format_id") or parser,
+        "parser_id": image.get("parser_id") or "",
+        "route_status": image.get("route_status") or image.get("decision") or "",
+        "YAML指纹": yaml_fingerprint_summary(parser),
+        "测试类": test_class_for_parser(parser),
+        "测试结果": "PASS",
+        "期望行数": str(summary["row_count"]),
+        "本方户名": image.get("本方名称") or "",
+        "本方账号": image.get("本方账户") or "",
+        "备注": "开户行仅由文件名推断，支持矩阵未采信" if image.get("开户行识别来源") == "文件名" else "",
+    })
+    baseline.update({
+        "status": "PASS",
+        "mapping": {
+            "bank": record["银行"],
+            "yaml_account_type": record["账户类型(YAML)"],
+            "parser": parser,
+            "fingerprint_id": fingerprint_id,
+            "template": record["版本"],
+            "yaml_fingerprint": record["YAML指纹"],
+            "created_modified_check": record["创建时间≈修改时间"],
+            "creator_modifier_check": record["创建人=修改人"],
+            "account_name": record["本方户名"],
+            "account_no": record["本方账号"],
+        },
+        "csv_summary": summary,
+    })
+
+
+def audit_one_file(path, root, output_work_dir, today):
+    record, baseline = _new_record_and_baseline(path, root, today)
     work = output_work_dir / hashlib.sha1(str(path).encode("utf-8")).hexdigest()[:16]
     if work.exists():
         shutil.rmtree(work)
@@ -450,44 +509,7 @@ def audit_one_file(path, root, output_work_dir, today):
 
     try:
         csv_path, json_path, _report = standardize_core.standardize(str(path), out_dir=str(work))
-        with open(json_path, encoding="utf-8") as f:
-            mapping = json.load(f)
-        image = mapping.get("文件画像", {})
-        summary = read_csv_summary(csv_path)
-
-        parser = image.get("parser") or image.get("命中模板") or ""
-        fingerprint_id = support_matrix_fingerprint_id(parser)
-        template = template_from_mapping(image)
-        bank_name = support_matrix_bank_name(image, parser, template)
-        record.update({
-            "银行": bank_name,
-            "账户类型(YAML)": yaml_account_type(parser),
-            "版本": template,
-            "router类": fingerprint_id,
-            "YAML指纹": yaml_fingerprint_summary(parser),
-            "测试类": test_class_for_parser(parser),
-            "测试结果": "PASS",
-            "期望行数": str(summary["row_count"]),
-            "本方户名": image.get("本方名称") or "",
-            "本方账号": image.get("本方账户") or "",
-            "备注": "开户行仅由文件名推断，支持矩阵未采信" if image.get("开户行识别来源") == "文件名" else "",
-        })
-        baseline.update({
-            "status": "PASS",
-            "mapping": {
-                "bank": record["银行"],
-                "yaml_account_type": record["账户类型(YAML)"],
-                "parser": parser,
-                "fingerprint_id": fingerprint_id,
-                "template": record["版本"],
-                "yaml_fingerprint": record["YAML指纹"],
-                "created_modified_check": record["创建时间≈修改时间"],
-                "creator_modifier_check": record["创建人=修改人"],
-                "account_name": record["本方户名"],
-                "account_no": record["本方账号"],
-            },
-            "csv_summary": summary,
-        })
+        _populate_record_from_standardized_outputs(record, baseline, csv_path, json_path)
     except Exception as exc:
         msg = str(exc).strip() or exc.__class__.__name__
         record["备注"] = msg
@@ -519,6 +541,10 @@ def write_xlsx(path, rows):
         "版本": 28,
         "文件路径": 72,
         "router类": 32,
+        "命中parser": 36,
+        "format_id": 36,
+        "parser_id": 24,
+        "route_status": 16,
         "YAML指纹": 48,
         "测试类": 34,
         "测试日期": 14,
@@ -541,7 +567,7 @@ def write_json(path, payload):
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def build_outputs(testdata_root, output_dir, write_baseline=False):
+def build_outputs(testdata_root, output_dir, write_baseline=False, sleep_seconds=0.5):
     testdata_root = Path(testdata_root)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -552,10 +578,13 @@ def build_outputs(testdata_root, output_dir, write_baseline=False):
 
     records = []
     baselines = []
-    for path in iter_statement_files(testdata_root):
+    files = iter_statement_files(testdata_root)
+    for index, path in enumerate(files, 1):
         record, baseline = audit_one_file(path, testdata_root, work_root, today)
         records.append(record)
         baselines.append(baseline)
+        if sleep_seconds and index < len(files):
+            time.sleep(float(sleep_seconds))
 
     support_xlsx = output_dir / "support_matrix.xlsx"
 
@@ -577,13 +606,128 @@ def build_outputs(testdata_root, output_dir, write_baseline=False):
     return support_xlsx, baseline_json
 
 
+def _source_filename_from_standardized_csv(csv_path):
+    try:
+        with open(csv_path, encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                source = (row.get("来源文件名") or "").strip()
+                if source:
+                    return source
+    except Exception:
+        return ""
+    return ""
+
+
+def _client_name_from_package_artifact(path):
+    parts = Path(path).parts
+    try:
+        package_index = parts.index("_package_work")
+    except ValueError:
+        return ""
+    if package_index + 1 >= len(parts):
+        return ""
+    package_dir_name = parts[package_index + 1]
+    match = re.match(r"^\d{3}_(.+)$", package_dir_name)
+    return match.group(1) if match else package_dir_name
+
+
+def _match_original_file(csv_path, testdata_root, files_by_client_and_name):
+    client = _client_name_from_package_artifact(csv_path)
+    source = _source_filename_from_standardized_csv(csv_path)
+    if source:
+        match = files_by_client_and_name.get((client, source))
+        if match:
+            return match
+    stem = Path(csv_path).name.removesuffix("__standardized.csv")
+    candidates = [
+        path for (candidate_client, _name), path in files_by_client_and_name.items()
+        if candidate_client == client and path.stem == stem
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def build_outputs_from_standardized_artifacts(testdata_root, package_work_root, output_dir, write_baseline=False):
+    testdata_root = Path(testdata_root)
+    package_work_root = Path(package_work_root)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    files = iter_statement_files(testdata_root)
+    files_by_relative = {path.relative_to(testdata_root).as_posix(): path for path in files}
+    files_by_client_and_name = {
+        (path.relative_to(testdata_root).parts[0], path.name): path
+        for path in files
+        if len(path.relative_to(testdata_root).parts) >= 2
+    }
+
+    records_by_relative = {}
+    baselines_by_relative = {}
+    for csv_path in sorted(package_work_root.rglob("*__standardized.csv")):
+        json_path = csv_path.with_name(csv_path.name.replace("__standardized.csv", "__mapping.json"))
+        original = _match_original_file(csv_path, testdata_root, files_by_client_and_name)
+        if not original or not json_path.exists():
+            continue
+        relative = original.relative_to(testdata_root).as_posix()
+        record, baseline = _new_record_and_baseline(original, testdata_root, today)
+        try:
+            _populate_record_from_standardized_outputs(record, baseline, csv_path, json_path)
+        except Exception as exc:
+            msg = str(exc).strip() or exc.__class__.__name__
+            record["备注"] = msg
+            baseline["error"] = msg
+            baseline["traceback"] = traceback.format_exc()
+        records_by_relative[relative] = record
+        baselines_by_relative[relative] = baseline
+
+    for relative, path in files_by_relative.items():
+        if relative in records_by_relative:
+            continue
+        record, baseline = _new_record_and_baseline(path, testdata_root, today)
+        msg = "未生成标准化产物（客户交付物阶段失败或文件被跳过）"
+        record["备注"] = msg
+        baseline["error"] = msg
+        records_by_relative[relative] = record
+        baselines_by_relative[relative] = baseline
+
+    records = [records_by_relative[relative] for relative in sorted(files_by_relative)]
+    baselines = [baselines_by_relative[relative] for relative in sorted(files_by_relative)]
+    support_xlsx = output_dir / "support_matrix.xlsx"
+    write_xlsx(support_xlsx, records)
+
+    baseline_json = None
+    if write_baseline:
+        baseline_json = output_dir / "baseline_summary.json"
+        write_json(baseline_json, {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "git_sha": git_sha(),
+            "python": sys.version,
+            "platform": platform.platform(),
+            "testdata_root": str(testdata_root),
+            "file_count": len(records),
+            "pass_count": sum(1 for row in records if row["测试结果"] == "PASS"),
+            "fail_count": sum(1 for row in records if row["测试结果"] != "PASS"),
+            "source": "standardized_artifacts",
+            "package_work_root": str(package_work_root),
+            "records": baselines,
+        })
+    return support_xlsx, baseline_json
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="生成 testdata 支持矩阵")
     parser.add_argument("--testdata-root", default=str(ROOT / "testdata"))
     parser.add_argument("--output-dir", default=str(ROOT / "testdata"))
     parser.add_argument("--write-baseline", action="store_true", help="同时生成 baseline_summary.json 回归基准")
+    parser.add_argument("--sleep-seconds", type=float, default=0.5, help="每处理完一个文件后的暂停秒数，默认 0.5 秒用于降低持续发热")
     args = parser.parse_args(argv)
-    support_xlsx, baseline_json = build_outputs(args.testdata_root, args.output_dir, write_baseline=args.write_baseline)
+    support_xlsx, baseline_json = build_outputs(
+        args.testdata_root,
+        args.output_dir,
+        write_baseline=args.write_baseline,
+        sleep_seconds=args.sleep_seconds,
+    )
     print(f"support_matrix_xlsx={support_xlsx}")
     if baseline_json:
         print(f"baseline_summary_json={baseline_json}")

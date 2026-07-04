@@ -401,17 +401,79 @@ def read_rows_excel(path, open_password=None):
     from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
 
     with _maybe_decrypted_office_file(path, open_password=open_password) as source:
-        with pd.ExcelFile(source) as xl:
-            for sheet in xl.sheet_names:
-                df = xl.parse(sheet, header=None, dtype=str)
-                if df.dropna(how="all").shape[0] >= 2:
-                    rows = df.where(pd.notnull(df), None).values.tolist()
-                    rows = _sanitize_nan_strings(rows)
-                    return sheet, rows
-            sheet = xl.sheet_names[0]
+        try:
+            return _read_rows_excel_source(source)
+        except ValueError as exc:
+            repaired = _repair_xlsx_invalid_numeric_literals(source, exc)
+            if not repaired:
+                raise
+            try:
+                return _read_rows_excel_source(repaired)
+            finally:
+                try:
+                    os.unlink(repaired)
+                except OSError:
+                    pass
+
+
+def _read_rows_excel_source(source):
+    """Read the first non-empty worksheet from a pandas-compatible Excel source."""
+    with pd.ExcelFile(source) as xl:
+        for sheet in xl.sheet_names:
             df = xl.parse(sheet, header=None, dtype=str)
-            rows = df.where(pd.notnull(df), None).values.tolist()
-            return sheet, _sanitize_nan_strings(rows)
+            if df.dropna(how="all").shape[0] >= 2:
+                rows = df.where(pd.notnull(df), None).values.tolist()
+                rows = _sanitize_nan_strings(rows)
+                return sheet, rows
+        sheet = xl.sheet_names[0]
+        df = xl.parse(sheet, header=None, dtype=str)
+        rows = df.where(pd.notnull(df), None).values.tolist()
+        return sheet, _sanitize_nan_strings(rows)
+
+
+def _repair_xlsx_invalid_numeric_literals(source, exc):
+    """Return a temp xlsx with invalid numeric '.' cells marked as strings, or None."""
+    if "could not convert string to float: '.'" not in str(exc):
+        return None
+    import tempfile
+    import zipfile
+
+    try:
+        zin = zipfile.ZipFile(source)
+    except Exception:
+        return None
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+    tmp.close()
+    changed = False
+    try:
+        with zin, zipfile.ZipFile(tmp.name, "w") as zout:
+            for info in zin.infolist():
+                data = zin.read(info.filename)
+                if info.filename.startswith("xl/worksheets/") and info.filename.endswith(".xml"):
+                    text = data.decode("utf-8")
+                    fixed = re.sub(
+                        r'(<c\b(?=[^>]*>\s*<v>\.</v>)(?![^>]*\bt=)([^>]*)>)',
+                        lambda m: f'<c{m.group(2)} t="str">',
+                        text,
+                    )
+                    if fixed != text:
+                        changed = True
+                        data = fixed.encode("utf-8")
+                zout.writestr(info, data)
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        return None
+    if not changed:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+        return None
+    return tmp.name
 
 
 def _sanitize_nan_strings(rows):
@@ -1176,8 +1238,11 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "本方名称": acct["本方名称"],
             "本方账户": acct["本方账户"],
             "parser": route_info.get("parser", ""),
+            "format_id": route_info.get("format_id", route_info.get("parser", "")),
+            "parser_id": route_info.get("parser_id", ""),
+            "route_status": route_info.get("route_status", route_info.get("decision", "")),
             "decision": route_info.get("decision", ""),
-            "fingerprint_id": route_info.get("id", ""),
+            "fingerprint_id": route_info.get("fingerprint_id", route_info.get("id", "")),
             "file_type": route_info.get("file_type", file_kind),
             "bank": route_info.get("bank", ""),
             "account_type": route_info.get("account_type", ""),

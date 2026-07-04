@@ -4,6 +4,10 @@ P2 全量 test 目录规范：
 - testdata/ 只作为输入样本目录。
 - testoutput/YYYYMMDDHHMMSS/ 保存 support_matrix、baseline、客户交付物、日志和汇总。
 - 产品级 *_已清洗_待分析.xlsx 也只进入本次 run 目录，不写回 testdata。
+
+默认顺序：
+1. 按客户生成产品级 *_已清洗_待分析.xlsx，并保留每个文件的标准化工作产物。
+2. 从标准化工作产物生成 support_matrix.xlsx/baseline_summary.json，避免重复读取解析原始文件。
 """
 
 import argparse
@@ -11,6 +15,7 @@ import csv
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -56,8 +61,17 @@ def iter_client_dirs(testdata_root):
     return sorted(clients, key=lambda p: p.name)
 
 
-def run_support_matrix(testdata_root, run_dir):
-    return audit.build_outputs(testdata_root, run_dir, write_baseline=True)
+def run_support_matrix(testdata_root, run_dir, sleep_seconds=0.5):
+    return audit.build_outputs(testdata_root, run_dir, write_baseline=True, sleep_seconds=sleep_seconds)
+
+
+def run_support_matrix_from_package_work(testdata_root, run_dir, package_work_root):
+    return audit.build_outputs_from_standardized_artifacts(
+        testdata_root,
+        package_work_root,
+        run_dir,
+        write_baseline=True,
+    )
 
 
 def _copy_deliverables(work_dir, run_dir, index):
@@ -115,14 +129,17 @@ def write_summary_csv(run_dir, rows):
     return summary
 
 
-def run_package_deliverables(testdata_root, run_dir, temp_root=None):
+def run_package_deliverables(testdata_root, run_dir, temp_root=None, sleep_seconds=0.5):
     temp_root = Path(temp_root) if temp_root else run_dir / "_package_work"
     temp_root.mkdir(parents=True, exist_ok=True)
     rows = []
-    for index, client_dir in enumerate(iter_client_dirs(testdata_root), 1):
+    clients = iter_client_dirs(testdata_root)
+    for index, client_dir in enumerate(clients, 1):
         row = package_one_client(index, client_dir, run_dir, temp_root)
         rows.append(row)
         print(f"{index:03d} {row['client']} {row['status']} {row['file_count']}", flush=True)
+        if sleep_seconds and index < len(clients):
+            time.sleep(float(sleep_seconds))
     return write_summary_csv(run_dir, rows), rows
 
 
@@ -133,21 +150,24 @@ def main(argv=None):
     parser.add_argument("--testdata-root", default=str(DEFAULT_TESTDATA))
     parser.add_argument("--output-root", help="默认是 testdata 同级 testoutput")
     parser.add_argument("--run-id", help="默认使用 YYYYMMDDHHMMSS")
-    parser.add_argument("--skip-package", action="store_true", help="只生成 support_matrix 与 baseline，不生成 *_已清洗_待分析.xlsx")
+    parser.add_argument("--sleep-seconds", type=float, default=0.5, help="每处理完一个客户交付物后的暂停秒数，默认 0.5 秒")
     args = parser.parse_args(argv)
 
     testdata_root = Path(args.testdata_root)
     run_dir = create_run_dir(testdata_root, run_id=args.run_id, output_root=args.output_root)
-    support_xlsx, baseline_json = run_support_matrix(testdata_root, run_dir)
     print(f"run_dir={run_dir}")
+
+    summary_csv, rows = run_package_deliverables(testdata_root, run_dir, sleep_seconds=args.sleep_seconds)
+    support_xlsx, baseline_json = run_support_matrix_from_package_work(
+        testdata_root,
+        run_dir,
+        run_dir / "_package_work",
+    )
     print(f"support_matrix_xlsx={support_xlsx}")
     print(f"baseline_summary_json={baseline_json}")
-
-    if not args.skip_package:
-        summary_csv, rows = run_package_deliverables(testdata_root, run_dir)
-        print(f"summary_csv={summary_csv}")
-        print(f"package_pass_count={sum(1 for row in rows if row['status'] == 'PASS')}")
-        print(f"package_fail_count={sum(1 for row in rows if row['status'] != 'PASS')}")
+    print(f"summary_csv={summary_csv}")
+    print(f"package_pass_count={sum(1 for row in rows if row['status'] == 'PASS')}")
+    print(f"package_fail_count={sum(1 for row in rows if row['status'] != 'PASS')}")
 
 
 if __name__ == "__main__":

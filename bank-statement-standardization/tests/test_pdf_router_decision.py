@@ -73,6 +73,26 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
+        self.assertEqual(result["format_id"], "wechat_pay_proof_pdf")
+        self.assertEqual(result["parser_id"], "payment_proof_text")
+        self.assertEqual(result["route_status"], "matched")
+        self.assertTrue(result["fingerprint_id"].startswith("md5:"))
+        self.assertEqual(result["decision"], "matched")
+
+    def test_wechat_pay_proof_wps_pdf_route_allows_truncated_table_extract(self):
+        text = (
+            "微信支付交易明细证明 兹证明 交易明细对应时间段 具体交易明细 "
+            "交易单号 交易时间 交易类型 收/支/其他 交易方式 金额(元) 交易对方 商户单号"
+        )
+        context = {
+            "metadata": {"Creator": "WPS 表格"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "lines": ["交易单号 交易时间 交易类型 收/支/其他 交易方式 金额(元)"],
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
         self.assertEqual(result["decision"], "matched")
 
     def test_identity_only_kasikorn_markers_do_not_create_ambiguous_route(self):
@@ -158,12 +178,14 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_specialized_pdf_route_exposes_identity_and_layout_evidence(self):
         text = (
-            "江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "
+            "江西·农商银行交易流水 江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "
+            "记账日期 交易金额(元) 交易后余额(元) 交易摘要 对方户名 对方账号 "
             "2025-01-01 1.00 2.00 2025-01-02 1.00 3.00 2025-01-03 1.00 4.00 "
             "2025-01-04 1.00 5.00 2025-01-05 1.00 6.00"
         )
+        context = {"lines": text.splitlines(), "date_patterns": ["yyyy-mm-dd"]}
 
-        result = router.route_pdf(text, 0, 1)
+        result = router.route_pdf(text, 0, 1, context=context)
 
         self.assertEqual(result["parser"], "jiangxi_rural_commercial_pdf_text")
         self.assertEqual(result["decision"], "matched")
@@ -172,17 +194,17 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertTrue(result["id"].startswith("md5:"))
         self.assertIn("江西·农商银行", result["identity_evidence"])
         self.assertIn("户 名", result["layout_evidence"])
+        self.assertEqual(result["date_format_evidence"], ["yyyy-mm-dd"])
 
-    def test_transaction_regex_evidence_is_not_required_for_specialized_route(self):
+    def test_identity_only_jiangxi_rural_commercial_pdf_does_not_match(self):
         text = (
             "江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期"
         )
 
         result = router.route_pdf(text, 0, 1)
 
-        self.assertEqual(result["parser"], "jiangxi_rural_commercial_pdf_text")
-        self.assertEqual(result["decision"], "matched")
-        self.assertNotIn("route_evidence", result)
+        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+        self.assertEqual(result["decision"], "unmatched")
 
     def test_table_pdf_routes_to_specialized_icbc_parser(self):
         text = (
@@ -199,6 +221,78 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["file_type"], "pdf")
         self.assertEqual(result["account_type"], "对公")
 
+    def test_corporate_online_detail_table_pdf_route(self):
+        text = (
+            "企业网上银行--账户管理/明细查询 单位名称 账号 开户行 户名 "
+            "交易时间 转出金额 转入金额 币种 余额 对方单位 对方账号 摘要 操作 详细信息"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["parser"], "corporate_online_detail_table_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "未识别")
+        self.assertEqual(result["account_type"], "对公")
+
+    def test_jiujiang_bank_corporate_detail_pdf_route(self):
+        text = (
+            "交易明细清单 查询账号:787079100000024212 开户银行:九江银行股份有限公司南昌分行营业部 "
+            "账户名称:南昌宁聚商贸有限公司 交易时间范围:2026-01-01至2026-03-10 "
+            "交易时间 收入(元) 支出(元) 余额(元) 对方账号 对方户名 摘要 交易用途"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["parser"], "jiujiang_bank_corporate_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "九江银行")
+        self.assertEqual(result["account_type"], "对公")
+
+    def test_electronic_transaction_proof_pdf_route(self):
+        text = (
+            "中国光大银行账户明细查询清单 Transaction Statement of China Everbright Bank "
+            "交易日期 支出金额 存入金额 账户余额 对手信息 摘要 "
+            "Trans Date Trans Amt Dr Trans Amt Cr Account Balance Payment Receipt Account Information Abstract "
+            "2025-08-30 89.00 660.55 支付宝 网上支付"
+        )
+
+        result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd"]})
+
+        self.assertEqual(result["parser"], "electronic_transaction_proof_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "中国光大银行")
+
+    def test_corporate_debit_credit_timestamp_pdf_route(self):
+        text = (
+            "交易时间 借贷标志 对方单位 摘要 转出金额 转入金额 余额 时间戳 "
+            "2025-07-31 17:57:53 借 赣州市百诚工程咨询有限公司 保证金 10000.00 214746.53"
+        )
+
+        result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd hh:mm:ss"]})
+
+        self.assertEqual(result["parser"], "corporate_debit_credit_timestamp_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "未识别")
+
+    def test_corporate_online_transaction_detail_pdf_does_not_infer_bank(self):
+        text = (
+            "交易明细 序号 交易流水号 交易时间 对方户名 对方账号 对方账户开户网点 "
+            "支出 收入 账户余额 批次号 总笔数 附言 摘要 "
+            "2025-12-27 19:45:07 江西万宏纺织有限公司 中国建设银行 13284 2980.7 纱 超网-贷记转出"
+        )
+
+        context = {
+            "metadata": {"Creator": "JasperReports (testReport)", "Producer": "iText 2.1.7 by 1T3XT"},
+            "styles": [{"text": "交易明细", "font": "STSong-Light", "size": 24, "top": 21, "x0": 260, "x1": 335, "page_width": 595}],
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "corporate_online_transaction_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "未识别")
+
     def test_icbc_account_detail_pdf_allows_title_and_header_on_separate_lines(self):
         lines = [
             "中国工商银行账户明细清单",
@@ -213,6 +307,51 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "对公")
+
+    def test_srbank_personal_history_pdf_route_is_distinct_from_corporate_detail(self):
+        lines = [
+            "上饶银行历史交易流水",
+            "户名：付亮亮 账号：6214169112455813",
+            "流水日期：2026/03/01 - 2026/03/10 开户行：南昌县支行",
+            "申请时间：2026-03-10 17:45:22",
+            "序号 交易日期 交易时间 交易金额 余额 对方银行 对方户名 摘要",
+            "卡号",
+        ]
+        context = {
+            "metadata": {},
+            "styles": [
+                {
+                    "text": "上饶银行历史交易流水",
+                    "font": "STSongStd-Light",
+                    "size": 20,
+                    "top": 62.4,
+                    "x0": 197.5,
+                    "x1": 397.5,
+                    "page_width": 595,
+                }
+            ],
+            "lines": lines,
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+        }
+
+        result = router.route_pdf("\n".join(lines), 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "srbank_transaction_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "上饶银行")
+        self.assertEqual(result["account_type"], "个人")
+
+        corporate_lines = [
+            "上饶银行账户交易明细",
+            "序号 交易时间 流水号 对方账号 对方户名 支出 收入 账户余额 摘要 附言",
+        ]
+        corporate_result = router.route_pdf(
+            "\n".join(corporate_lines),
+            1,
+            1,
+            context={"lines": corporate_lines, "date_patterns": ["yyyy-mm-dd hh:mm:ss"]},
+        )
+        self.assertEqual(corporate_result["parser"], "generic_pdf_table")
 
     def test_icbc_debit_history_electronic_pdf_route(self):
         text = (
@@ -266,6 +405,92 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         self.assertEqual(result["parser"], "icbc_corporate_account_statement_pdf")
         self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["account_type"], "对公")
+
+    def test_icbc_debit_history_wps_pdf_route(self):
+        text = (
+            "中国工商银行借记账户历史明细（电子版） 卡号 户名：徐长河 起止日期 "
+            "交易日期 账号 储种 序号 币种 钞汇 摘要 地区 收入/支出金额"
+        )
+        context = {
+            "metadata": {"Creator": "WPS 表格", "Title": "借记卡账户明细清单"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "icbc_debit_history_electronic_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["account_type"], "个人")
+
+    def test_icbc_debit_history_openpdf_pdf_route(self):
+        text = (
+            "中国工商银行借记账户历史明细（电子版） 卡号 户名：夏侯军刚 起止日期 "
+            "交易日期 账号 储种 序号 币种 钞汇 摘要 地区 收入/支出金额 余额 对方户名 对方账号 渠道"
+        )
+        context = {
+            "metadata": {"Producer": "OpenPDF 1.3.27", "Title": "借记卡账户明细清单"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "icbc_debit_history_electronic_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["account_type"], "个人")
+
+    def test_industrial_bank_transaction_detail_pdf_route(self):
+        text = (
+            "兴业银行交易流水 Industrial Bank Transaction Details 户 名 账号 币 种 账户类型 "
+            "交易时间 Transaction Time 记账日期 Accounting Date 摘要 Transaction Type "
+            "交易金额 Transaction Amount 账户余额 Account Balance 对方户名 Counterparty’s "
+            "对方账户/对方银行 Counterparty’s Account No./Counterparty’s Account Bank"
+        )
+        context = {
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["parser"], "industrial_bank_transaction_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "兴业银行")
+        self.assertEqual(result["account_type"], "个人")
+
+    def test_srbank_corporate_transaction_detail_pdf_route(self):
+        text = (
+            "上饶银行账户交易明细 账号：209103090000064662 户名：上饶市皓景光电科技有限公司 "
+            "银行盖章： 打印时间：2026-03-11 操作员号：200158192402 "
+            "序号 交易时间 流水号 对方账号 对方户名 支出 收入 账户余额 摘要 附言"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["parser"], "srbank_corporate_transaction_detail_pdf")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "上饶银行")
+        self.assertEqual(result["account_type"], "对公")
+
+    def test_mybank_corporate_statement_pdf_route(self):
+        text = (
+            "企业名称 江西嘟咔熊电子商务有限公司 企业账号 8888888826100206(人民币) "
+            "借方交易笔数 935笔 借方交易金额 11562010.64元 "
+            "贷方交易笔数 153笔 贷方交易金额 11565004.40元 "
+            "序号 账务流水号 提交时间 交易时间 交易名称 借方金额（收） "
+            "贷方金额（支） 余额 对方户名 对方账号 对方机构 备注"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["parser"], "mybank_corporate_transaction_detail_excel")
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")
 
 

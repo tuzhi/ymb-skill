@@ -2,17 +2,27 @@ from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.parsers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
-from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
+from ymb_standardization_core.parsers.routing.rule_loader import infer_parser_id, load_pdf_route_rules
 from ymb_standardization_core.parsers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
 from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
+TEXT_TABLE_PARSERS = {
+    "cmb_transaction_pdf",
+    "jiujiang_bank_transaction_statement_pdf",
+    "cmbc_personal_statement_pdf",
+}
+
 
 def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence, layout_evidence,
-                   route_evidence=None):
+                   route_evidence=None, format_id=None, parser_id=None):
     return {
         "id": id,
+        "fingerprint_id": id,
         "parser": parser,
+        "format_id": format_id or parser,
+        "parser_id": parser_id or "pdf_table",
         "decision": "matched",
+        "route_status": "matched",
         "file_type": file_type,
         "bank": bank,
         "account_type": account_type,
@@ -26,10 +36,15 @@ def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence,
 
 
 def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=None):
+    format_id = "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched"
     return {
-        "parser": "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched",
+        "parser": format_id,
+        "format_id": format_id,
+        "parser_id": "pdf_table" if table_row_count else "none",
         "decision": "unmatched",
+        "route_status": "unmatched",
         "file_type": "pdf",
+        "fingerprint_id": "",
         "account_type": "",
         "candidate_fingerprints": candidate_fingerprints or [],
     }
@@ -42,8 +57,12 @@ def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candida
         return _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
+        "format_id": "ambiguous_router_match",
+        "parser_id": "none",
         "decision": "ambiguous",
+        "route_status": "ambiguous",
         "file_type": "pdf",
+        "fingerprint_id": "",
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints or [],
     }
@@ -71,6 +90,8 @@ def route_pdf(text, table_row_count, page_count, context=None):
         candidates.append(_pdf_candidate(
             id=rule.id,
             parser=rule.parser,
+            format_id=rule.format_id or rule.parser,
+            parser_id=rule.parser_id or infer_parser_id(rule.format_id or rule.parser, rule.file_type),
             file_type=rule.file_type,
             bank=rule.bank,
             account_type=rule.account_type,
@@ -112,6 +133,149 @@ def _extract_pdf_tables(pdf):
                 else:
                     all_rows.append(cells)
     return all_rows
+
+
+def _is_noise_text_table_line(line):
+    text = str(line or "").strip()
+    if not text:
+        return True
+    noise_markers = (
+        "Transaction Statement",
+        "Account No",
+        "Account Type",
+        "Sub Branch",
+        "Verification Code",
+        "Transaction Type Counter Party",
+        "Transaction Type C o unter Party",
+        "Date Currency",
+        "Amount",
+        "Balance",
+        "Name Account",
+        "合同ID号",
+        "版本:",
+        "发布时间:",
+    )
+    return any(marker in text for marker in noise_markers)
+
+
+def _parse_currency_text_row(line):
+    import re
+
+    text = str(line or "").strip()
+    match = re.match(
+        r"^(?P<date>20\d{2}[-/]?\d{2}[-/]?\d{2})\s+"
+        r"(?P<currency>[A-Z]{3})\s+"
+        r"(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+"
+        r"(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+"
+        r"(?P<tail>.+)$",
+        text,
+    )
+    if not match:
+        return None
+    tail = match.group("tail").strip()
+    parts = tail.split(maxsplit=1)
+    summary = parts[0] if parts else ""
+    counterparty = parts[1] if len(parts) > 1 else ""
+    return [
+        match.group("date"),
+        match.group("currency"),
+        match.group("amount"),
+        match.group("balance"),
+        summary,
+        counterparty,
+    ]
+
+
+def _parse_cmbc_personal_text_row(line):
+    import re
+
+    text = str(line or "").strip()
+    match = re.match(
+        r"^(?P<voucher_type>\S+)\s+"
+        r"(?P<voucher_no>\d[\d*]{5,})\s+"
+        r"(?P<date>20\d{2}/\d{2}/\d{2})\s+"
+        r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
+        r"(?P<tail>.+)$",
+        text,
+    )
+    if not match:
+        match = re.match(
+            r"^(?P<date>20\d{2}/\d{2}/\d{2})\s+"
+            r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
+            r"(?P<tail>.+)$",
+            text,
+        )
+    if not match:
+        return None
+
+    tokens = match.group("tail").split()
+    amount_indexes = [
+        idx for idx, token in enumerate(tokens)
+        if re.match(r"^[+-]?\d[\d,]*\.\d{2}$", token)
+    ]
+    if len(amount_indexes) < 2:
+        return None
+    amount_idx, balance_idx = amount_indexes[:2]
+    summary = " ".join(tokens[:amount_idx])
+    after = tokens[balance_idx + 1:]
+    current_flag = after[0] if len(after) > 0 else ""
+    channel = after[1] if len(after) > 1 else ""
+    institution = after[2] if len(after) > 2 else ""
+    counterparty = " ".join(after[3:]) if len(after) > 3 else ""
+    return [
+        match.groupdict().get("voucher_type") or "",
+        match.groupdict().get("voucher_no") or "",
+        f"{match.group('date')} {match.group('time')}",
+        summary,
+        tokens[amount_idx],
+        tokens[balance_idx],
+        current_flag,
+        channel,
+        institution,
+        counterparty,
+        "",
+    ]
+
+
+def _extract_pdf_text_table_rows(text, parser):
+    """Fallback for text-layer statement PDFs where extract_tables() returns no rows."""
+    if parser in {"cmb_transaction_pdf", "jiujiang_bank_transaction_statement_pdf"}:
+        header = ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"]
+        rows = [header]
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            parsed = _parse_currency_text_row(line)
+            if parsed:
+                rows.append(parsed)
+            elif len(rows) > 1 and line and not _is_noise_text_table_line(line):
+                rows[-1][-1] = (rows[-1][-1] + " " + line).strip()
+        return rows if len(rows) > 1 else []
+
+    if parser == "cmbc_personal_statement_pdf":
+        header = [
+            "凭证类型", "凭证号码", "交易时间", "摘要", "交易金额", "账户余额",
+            "现转标志", "交易渠道", "交易机构", "对方户名/账号", "对方行名",
+        ]
+        rows = [header]
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            parsed = _parse_cmbc_personal_text_row(line)
+            if parsed:
+                rows.append(parsed)
+            elif len(rows) > 1 and line and not _is_noise_text_table_line(line):
+                import re
+
+                voucher_continuation = re.match(r"^(\d{4,})(?:\s+(.*))?$", line)
+                if voucher_continuation and rows[-1][1]:
+                    rows[-1][1] = (rows[-1][1] + voucher_continuation.group(1)).strip()
+                    rest = (voucher_continuation.group(2) or "").strip()
+                    if rest:
+                        rows[-1][9] = (rows[-1][9] + " " + rest).strip()
+                else:
+                    rows[-1][9] = (rows[-1][9] + " " + line).strip()
+        return rows if len(rows) > 1 else []
+
+    return []
 
 
 def _pdf_context(pdf, text):
@@ -215,5 +379,8 @@ def read_pdf_rows(path, open_password=None):
         if route_info["parser"] == "wechat_pay_proof_pdf":
             preamble, rows = read_wechat_pay_proof_pdf(pdf)
             return preamble, rows, route_info
+        if route_info["parser"] in TEXT_TABLE_PARSERS and not table_rows:
+            rows = _extract_pdf_text_table_rows(text, route_info["parser"])
+            return preamble or "", rows, route_info
 
     return preamble or "", table_rows, route_info

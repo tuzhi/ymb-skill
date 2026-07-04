@@ -268,6 +268,323 @@
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
+- id: md5:10731c7d3e717d5435589b3e87690259
+  parser: account_detail_income_expense_usage_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    style:
+      all:
+      - text: 账户明细
+        font: 黑体
+        size_min: 19
+        size_max: 21
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 收入金额
+        - 支出金额
+        - 账户余额
+        - 对方账号
+        - 对方户名
+        - 对方开户行
+        - 交易用途
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细
+    layout:
+      all:
+      - '账号:'
+      - '户名:'
+      - '币种:'
+      - '起止日期:'
+      - 交易时间
+      - 收入金额
+      - 支出金额
+      - 账户余额
+      - 对方账号
+      - 对方户名
+      - 对方开户行
+      - 交易用途
+- id: md5:b699cccd6075d34ad6301115fb5b7d37
+  parser: hunan_sanxiang_bank_account_detail_excel
+  file_type: excel
+  bank: 湖南三湘银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易日期
+        - 收支方向
+        - 收入金额(元)
+        - 支出金额(元)
+        - 账户余额(元)
+        - 对方户名
+        - 对方账号
+        - 用途
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 湖南三湘银行账户明细
+    layout:
+      all:
+      - 湖南三湘银行账户明细
+      - 账号
+      - 账户名称
+      - 查询日期
+      - 收支方向
+      - 客户号
+      - 币种
+      - 收入总笔数
+      - 收入总金额
+      - 支出总笔数
+      - 支出总金额
+      - 序号
+      - 交易日期
+      - 收入金额(元)
+      - 支出金额(元)
+      - 账户余额(元)
+      - 对方户名
+      - 对方账号
+      - 用途
+- id: md5:e4f7d7b4fe254107c3886415a4f78c44
+  parser: icbc_debit_history_electronic_excel
+  file_type: excel
+  bank: 中国工商银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细（电子版）
+    layout:
+      all:
+      - 卡号
+      - 户名：
+      - 起止日期：
+      - 交易日期
+      - 账号
+      - 储种
+      - 序号
+      - 币种
+      - 钞汇
+      - 摘要
+      - 地区
+      - 收入/支出金额
+      - 余额
+      - 对方户名
+      - 对方账号
+      - 渠道
+    data:
+      all:
+      - same_row_all:
+        - 交易日期
+        - 账号
+        - 储种
+        - 序号
+        - 币种
+        - 钞汇
+        - 摘要
+        - 地区
+        - 收入/支出金额
+        - 余额
+        - 对方户名
+        - 对方账号
+        - 渠道
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:2d78f6c6c8b37afdeaf5452c2c1bd0db
+  parser: detail_download_debit_credit_counterparty_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 明细下载
+    layout:
+      all:
+      - 账号
+      - 序号
+      - 交易时间
+      - 币种
+      - 借方发生额
+      - 贷方发生额
+      - 余额
+      - 对手方
+      - 对手方账号
+      - 对手方银行
+      - 收款人
+      - 收款账号
+      - 用途
+      - 备注
+      - 凭证号
+      - 摘要
+      - 流水号
+      - 操作员
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易时间
+        - 币种
+        - 借方发生额
+        - 贷方发生额
+        - 余额
+        - 对手方
+        - 对手方账号
+        - 对手方银行
+        - 收款人
+        - 收款账号
+        - 用途
+        - 备注
+        - 凭证号
+        - 摘要
+        - 流水号
+        - 操作员
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:5b26730719b23dcbffac29c334c87e6a
+  parser: current_account_detail_query_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 活期账户明细查询
+    layout:
+      all:
+      - 交易时间
+      - 摘要
+      - 币种
+      - 收入
+      - 支出
+      - 余额
+      - 对方账户
+      - 对方户名
+      - 对方行行名
+      - 备注
+      - 交易流水号
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 摘要
+        - 币种
+        - 收入
+        - 支出
+        - 余额
+        - 对方账户
+        - 对方户名
+        - 对方行行名
+        - 备注
+        - 交易流水号
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:631f7177ed25173929bd845bfe0ed4a9
+  parser: debit_card_date_range_detail_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    identity:
+      any:
+      - 账户类型
+      - 借记卡
+    layout:
+      all:
+      - 账号
+      - 账户类型
+      - 借记卡
+      - 日期范围
+      - 顺序号
+      - 交易日期
+      - 交易类型
+      - 存入金额
+      - 取出金额
+      - 余额
+      - 交易对手名称
+      - 交易对手账号
+      - 附言
+    data:
+      all:
+      - same_row_all:
+        - 顺序号
+        - 交易日期
+        - 交易类型
+        - 存入金额
+        - 取出金额
+        - 余额
+        - 交易对手名称
+        - 交易对手账号
+        - 附言
+- id: md5:003931ea6f2f30cc91531b64dc4f3397
+  parser: mybank_corporate_transaction_detail_excel
+  file_type: excel
+  bank: 浙江网商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 浙江网商银行企业账户交易明细
+    layout:
+      all:
+      - 企业名称
+      - 企业账号
+      - 借方交易笔数
+      - 借方交易金额
+      - 贷方交易笔数
+      - 贷方交易金额
+      - 账务流水号
+      - 提交时间
+      - 交易时间
+      - 交易名称
+      - 借方金额（收）
+      - 贷方金额（支）
+      - 余额
+      - 对方户名
+      - 对方账号
+      - 对方机构
+      - 备注
+    data:
+      all:
+      - same_row_all:
+        - 账务流水号
+        - 提交时间
+        - 交易时间
+        - 交易名称
+        - 借方金额（收）
+        - 贷方金额（支）
+        - 余额
+        - 对方户名
+        - 对方账号
+        - 对方机构
+        - 备注
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
 - id: md5:e9752a9dd2668c5e7bf37a860180977c
   parser: icbc_historydetail_excel
   file_type: excel
@@ -367,6 +684,39 @@
         size_max: 12
         row_max: 2
         col_max: 1
+- id: md5:5f6832e9ec3389addfd68adea444ae1c
+  parser: historydetail_transfer_in_out_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - '[HISTORYDETAIL]'
+    layout:
+      all:
+      - 交易时间
+      - 凭证号
+      - 对方单位
+      - 摘要
+      - 转入金额
+      - 转出金额
+      - 余额
+      - 业务编号
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 凭证号
+        - 对方单位
+        - 摘要
+        - 转入金额
+        - 转出金额
+        - 余额
+        - 业务编号
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
 - id: md5:9a99975cd80faa7479b1565fb0fc696d
   parser: ccb_personal_detail_excel
   file_type: excel
@@ -471,6 +821,136 @@
       - 凭证种类
       - 凭证号
       - 交易介质编号
+- id: md5:5f02392ca5f443262407ea270258ab77
+  parser: ccb_account_detail_info_excel
+  file_type: excel
+  bank: 中国建设银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        creator: 中国建设银行
+    style:
+      all:
+      - text: 中国建设银行账户明细信息
+        font: STSong
+        size_min: 7
+        size_max: 9
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 账号
+        - 交易时间
+        - 借方发
+        - 贷方发
+        - 余额
+        - 币种
+        - 对方户名
+        - 对方账号
+        - 对方开
+        - 户机构
+        - 记账日期
+        - 摘要
+        - 备注
+        - 账户明
+        - 细编号
+        - 交易流
+        - 水号
+        - 企业流
+        - 水号
+        - 凭证种类
+        - 凭证号
+        - 交易介
+    date_format:
+      any:
+      - yyyymmdd
+    identity:
+      any:
+      - 中国建设银行账户明细信息
+    layout:
+      all:
+      - 本方户名：
+      - 查询时间段：
+      - 打印日期：
+      - 账号
+      - 交易时间
+      - 借方发
+      - 贷方发
+      - 余额
+      - 币种
+      - 对方户名
+      - 对方账号
+      - 对方开
+      - 户机构
+      - 记账日期
+      - 摘要
+      - 备注
+      - 账户明
+      - 细编号
+      - 交易流
+      - 水号
+      - 企业流
+      - 水号
+      - 凭证种类
+      - 凭证号
+      - 交易介
+- id: md5:fb12b3a5e591ecffa3f81d54085ea48e
+  parser: ccb_detail_query_download_excel
+  file_type: excel
+  bank: 中国建设银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    identity:
+      any:
+      - 中国建设银行
+    layout:
+      all:
+      - 明细查询结果
+      - 明细查询结果下载
+      - 开户机构
+      - 账户名称
+      - 记账日期
+      - 交易时间
+      - 凭证种类
+      - 凭证号
+      - 发生额/元
+      - 余额/元
+      - 钞汇标志
+      - 对方户名
+      - 对方账号
+      - 摘要
+      - 备注
+      - 账户明细编号-交易流水号
+      - 企业流水号
+      - 本方账号
+      - 本方账户名称
+      - 本方账户开户机构
+    data:
+      all:
+      - same_row_all:
+        - 记账日期
+        - 交易时间
+        - 凭证种类
+        - 凭证号
+        - 发生额/元
+        - 余额/元
+        - 钞汇标志
+        - 对方户名
+        - 对方账号
+        - 摘要
+        - 备注
+        - 账户明细编号-交易流水号
+        - 企业流水号
+        - 本方账号
+        - 本方账户名称
+        - 本方账户开户机构
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
 - id: md5:9f87ba8dcb91d4f4640609f355e43f32
   parser: ccb_corporate_flat_excel
   file_type: excel
@@ -683,6 +1163,42 @@
       - 交易摘要
       - 对方户名
       - 对方账号
+- id: md5:3fadf64d25e300625c69752664ef7f0f
+  parser: jiangxi_rural_commercial_watermarked_excel
+  file_type: excel
+  bank: 江西农商银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        creator: openpyxl
+    style:
+      all:
+      - text: 江西·农商银行
+        font: SimHei
+        size_min: 13
+        size_max: 15
+    data:
+      all:
+      - same_row_all:
+        - 微信支付
+        - 微信转账
+        - '1000050201'
+      - same_row_all:
+        - 跨行转出-张从金
+        - 张从金
+    date_format:
+      any:
+      - yyyymmdd
+    identity:
+      any:
+      - 江西·农商银行
+    layout:
+      all:
+      - 江西·农商银行
+      - 微信支付
+      - 跨行转出-张从金
+      - 张从金
 - id: md5:10a4a5258baf0a15daaaf6ee94b19c8c
   parser: cmb_transaction_excel
   file_type: excel
@@ -861,6 +1377,402 @@
       - 对方行名
       - 交易渠道
       - 摘要
+- id: md5:6d37398ab968d5df17e67f89735e4904
+  parser: rural_commercial_account_query_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 九江银行股份有限公司
+        - 超级网银来贷
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:201577751af2552c4bc0a46679902de1
+  parser: rural_commercial_super_online_debit_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: Admin
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 超级网银往贷
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:b7c1febbd5568bb49a81508e4796729c
+  parser: rural_commercial_administrator_account_query_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: Administrator
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 行内转账
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:ad1cc8826ae747aed69643eabd2b7487
+  parser: rural_commercial_administrator_no_range_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: Administrator
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        bold: false
+        row_max: 1
+      - text: 交易日期
+        font: 宋体
+        row_max: 2
+    data:
+      all:
+      - same_row_all:
+        - 超级网银往贷
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:5d8c3409b87b7fe0a1f27f53c969812a
+  parser: rural_commercial_expedited_transfer_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: ""
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        bold: true
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 加急汇Ｘ
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:a7aed7ca2fd7978fe859cc9a1ee17f8d
+  parser: bank_of_nanjing_transaction_detail_excel
+  file_type: excel
+  bank: 南京银行
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    identity:
+      any:
+      - 南京银行交易明细
+    layout:
+      all:
+      - 交易日期
+      - 摘要
+      - 借方发生额
+      - 贷方发生额
+      - 余额
+      - 凭证序号
+      - 营业机构号
+      - 对方账号
+      - 对方户名
+      - 柜员流水号
+      - 备注信息
+    data:
+      all:
+      - same_row_all:
+        - 交易日期
+        - 摘要
+        - 借方发生额
+        - 贷方发生额
+        - 余额
+        - 凭证序号
+        - 营业机构号
+        - 对方账号
+        - 对方户名
+        - 柜员流水号
+        - 备注信息
+    date_format:
+      any:
+      - yyyy-mm-dd
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:6c007d1dffdf98bc69a1a1b147765ca9
+  parser: bank_of_jiangsu_corporate_statement_excel
+  file_type: excel
+  bank: 江苏银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    identity:
+      any:
+      - 江苏银行对公帐户对帐单
+    layout:
+      all:
+      - 账号
+      - 户名
+      - 江苏银行对公帐户对帐单
+      - 序号
+      - 付款账号
+      - 交易日期
+      - 交易时间
+      - 凭证代号
+      - 借贷标记
+      - 交易金额
+      - 账户余额
+      - 交易柜员
+      - 摘要代码
+      - 对方账号
+      - 对方户名
+      - 币种
+      - 流水号
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 付款账号
+        - 交易日期
+        - 交易时间
+        - 凭证代号
+        - 借贷标记
+        - 交易金额
+        - 账户余额
+        - 交易柜员
+        - 摘要代码
+        - 对方账号
+        - 对方户名
+        - 币种
+        - 流水号
+    date_format:
+      any:
+      - yyyymmdd
+- id: md5:1c1889ffd0b891f07207d4bab9afeec6
+  parser: account_serial_income_expense_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        sheet: 交易明细
+    identity:
+      any:
+      - 账户号
+    layout:
+      all:
+      - 账户号
+      - 交易流水号
+      - 交易日期
+      - 交易时间
+      - 对方账户名
+      - 对方账户
+      - 相关信息
+      - 收支
+      - 交易金额
+      - 交易类型
+      - 交易渠道
+      - 账户余额
+      - 币种
+      - 附言
+    data:
+      all:
+      - same_row_all:
+        - 账户号
+        - 交易流水号
+        - 交易日期
+        - 交易时间
+        - 对方账户名
+        - 对方账户
+        - 相关信息
+        - 收支
+        - 交易金额
+        - 交易类型
+        - 交易渠道
+        - 账户余额
+        - 币种
+        - 附言
+    date_format:
+      any:
+      - yyyymmdd
 - id: md5:2d908307fbb17e385e80c69d821ab6e7
   parser: jiujiang_bank_transaction_detail_excel
   file_type: excel
@@ -901,3 +1813,571 @@
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
+- id: md5:5725ca9efdcfa54020705b534a39edb1
+  parser: jiujiang_bank_wide_transaction_export_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: Apache POI
+        creator: Apache POI
+    identity:
+      any:
+      - 交易时间
+    layout:
+      all:
+      - 交易时间
+      - 交易金额
+      - 本方账号
+      - 本方子账号序号
+      - 收入
+      - 支出
+      - 余额
+      - 币种
+      - 对方账号
+      - 对方子账号序号
+      - 对方户名
+      - 对方开户行
+      - 交易流水号
+      - 摘要
+      - 渠道标志
+      - 交易用途
+      - 备注
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 交易金额
+        - 本方账号
+        - 本方子账号序号
+        - 收入
+        - 支出
+        - 余额
+        - 币种
+        - 对方账号
+        - 对方子账号序号
+        - 对方户名
+        - 对方开户行
+        - 交易流水号
+        - 摘要
+        - 渠道标志
+        - 交易用途
+        - 备注
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:17d1eafea12ac7f1bc1041741e54a4dc
+  parser: corporate_query_account_summary_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 查询账号
+    layout:
+      all:
+      - 查询账号
+      - 总笔数
+      - 查询时间范围
+      - 借方发生总笔数
+      - 贷方发生总笔数
+      - 交易流水号
+      - 交易时间
+      - 收入(元)
+      - 支出(元)
+      - 余额(元)
+      - 对方账号
+      - 对方子账号序号
+      - 对方户名
+      - 对方开户行
+      - 摘要
+      - 渠道标志
+      - 交易用途
+      - 备注
+    data:
+      all:
+      - same_row_all:
+        - 交易流水号
+        - 交易时间
+        - 收入(元)
+        - 支出(元)
+        - 余额(元)
+        - 对方账号
+        - 对方子账号序号
+        - 对方户名
+        - 对方开户行
+        - 摘要
+        - 渠道标志
+        - 交易用途
+        - 备注
+        same_row_none:
+        - 交易子账号序号
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:3a11082366c64cf914ef384964f00837
+  parser: jiujiang_bank_corporate_detail_excel
+  file_type: excel
+  bank: 九江银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 查询账号
+      - 九江银行股份有限公司
+    layout:
+      all:
+      - 查询账号
+      - 总笔数
+      - 查询时间范围
+      - 借方发生总笔数
+      - 贷方发生总笔数
+      - 交易流水号
+      - 交易时间
+      - 交易子账号序号
+      - 收入(元)
+      - 支出(元)
+      - 余额(元)
+      - 对方账号
+      - 对方子账号序号
+      - 对方户名
+      - 对方开户行
+      - 摘要
+      - 渠道标志
+      - 交易用途
+      - 备注
+    data:
+      all:
+      - same_row_all:
+        - 交易流水号
+        - 交易时间
+        - 交易子账号序号
+        - 收入(元)
+        - 支出(元)
+        - 余额(元)
+        - 对方账号
+        - 对方子账号序号
+        - 对方户名
+        - 对方开户行
+        - 摘要
+        - 渠道标志
+        - 交易用途
+        - 备注
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:05299adcb3c68f98a8966df5e5a442e9
+  parser: srbank_personal_history_excel
+  file_type: excel
+  bank: 上饶银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 上饶银行历史交易流水
+    layout:
+      all:
+      - 户名：
+      - 账号：
+      - 流水日期：
+      - 开户行：
+      - 申请时间：
+      - 序号
+      - 交易日期
+      - 交易时间
+      - 交易金额
+      - 余额
+      - 对方银行卡号
+      - 对方户名
+      - 交易摘要
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易日期
+        - 交易时间
+        - 交易金额
+        - 余额
+        - 对方银行卡号
+        - 对方户名
+- id: md5:cacae7ad74f436d2fb14ed649f2b5306
+  parser: srbank_personal_history_excel
+  file_type: excel
+  bank: 上饶银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        application: ""
+    identity:
+      any:
+      - 上饶银行历史交易流水
+    layout:
+      all:
+      - 户名：
+      - 账号：
+      - 流水日期：
+      - 开户行：
+      - 申请时间：
+      - 序号
+      - 交易日期
+      - 交易时间
+      - 交易金额
+      - 余额
+      - 对方银行卡号
+      - 对方户名
+      - 摘要
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易日期
+        - 交易时间
+        - 交易金额
+        - 余额
+        - 对方银行卡号
+        - 对方户名
+        - 摘要
+- id: md5:9ad0cd5663d3596025e347176f7fa614
+  parser: account_history_detail_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 账户历史明细
+    layout:
+      all:
+      - '账号:'
+      - '户名:'
+      - '币种:'
+      - '起止日期:'
+      - 交易时间
+      - 收入金额
+      - 支出金额
+      - 账户余额
+      - 对方账号
+      - 对方户名
+      - 对方开户行
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 收入金额
+        - 支出金额
+        - 账户余额
+        - 对方账号
+        - 对方户名
+        - 对方开户行
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:fe663a28cfd3a85002bd291a337fdda7
+  parser: counterparty_wide_debit_credit_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: SheetJS
+        last_modified_by: 玲
+    identity:
+      any:
+      - 序号
+    layout:
+      all:
+      - 序号
+      - 交易时间
+      - 币种
+      - 借方发生额
+      - 贷方发生额
+      - 余额
+      - 对手方
+      - 对手方账号
+      - 对手方银行
+      - 收款人
+      - 收款账号
+      - 用途
+      - 备注
+      - 凭证号
+      - 摘要
+      - 流水号
+      - 操作员
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易时间
+        - 币种
+        - 借方发生额
+        - 贷方发生额
+        - 余额
+        - 对手方
+        - 对手方账号
+        - 对手方银行
+        - 收款人
+        - 收款账号
+        - 用途
+        - 备注
+        - 凭证号
+        - 摘要
+        - 流水号
+        - 操作员
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:e6de7955b9f41253acefd3e73a88f640
+  parser: industrial_bank_transaction_detail_excel
+  file_type: excel
+  bank: 兴业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 兴业银行交易流水
+      - Industrial Bank Transaction Details
+    layout:
+      all:
+      - 户          名
+      - 账号：
+      - 币          种
+      - 账户类型
+      - 交易时间
+      - Transaction Time
+      - 记账日期
+      - Accounting Date
+      - 摘要
+      - Transaction Type
+      - 支/收
+      - 交易金额
+      - Transaction Amount
+      - 账户余额
+      - Account Balance
+      - 对方户名
+      - Counterparty’s
+      - 对方账户/对方银行
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - Transaction Time
+        - 记账日期
+        - Accounting Date
+        - 摘要
+        - Transaction Type
+        - 支/收
+        - 交易金额
+        - Transaction Amount
+        - 账户余额
+        - Account Balance
+        - 对方户名
+        - Counterparty’s
+        - 对方账户/对方银行
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+      - yyyymmdd
+- id: md5:44f1bbdaf3ec7ca70c0d45f204dce63a
+  parser: rural_commercial_laptop_account_query_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: Laptop
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 手机银行
+        - 行内转账
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:14c613d816864deba3044181f29ff8ad
+  parser: rural_commercial_biff_super_online_debit_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: ""
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        bold: true
+        row_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 时晓艳
+        - 超级网银往贷
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 收入金额
+        - 账户余额
+        - 对方账号
+        - 对方名称
+        - 对方行名
+        - 交易渠道
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    layout:
+      all:
+      - 开始日期
+      - 截止日期
+      - 交易日期
+      - 支出金额
+      - 收入金额
+      - 账户余额
+      - 对方账号
+      - 对方名称
+      - 对方行名
+      - 交易渠道
+      - 摘要
+- id: md5:d7888d7a019cdb7d36990752c3a7de24
+  parser: srbank_corporate_online_detail_excel
+  file_type: excel
+  bank: 上饶银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        sheet: 上饶银行企业网银交易明细
+    identity:
+      any:
+      - 交易流水号
+    layout:
+      all:
+      - 序号
+      - 交易流水号
+      - 交易时间
+      - 对方户名
+      - 对方账号
+      - 对方账户开户网点
+      - 支出
+      - 收入
+      - 账户余额
+      - 批次号
+      - 总笔数
+      - 附言
+      - 摘要
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易流水号
+        - 交易时间
+        - 对方户名
+        - 对方账号
+        - 对方账户开户网点
+        - 支出
+        - 收入
+        - 账户余额
+        - 批次号
+        - 总笔数
+        - 附言
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:bb5397eabaefbc3510278e306329999f
+  parser: jiujiang_bank_simple_transaction_export_excel
+  file_type: excel
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        creator: openpyxl
+        last_modified_by: 陈会开
+    style:
+      all:
+      - text: 交易时间
+        font: STSong
+        size_min: 8
+        size_max: 10
+        row_max: 2
+        col_max: 1
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 交易金额
+        - 收入
+        - 支出
+        - 余额
+        - 币种
+        - 对方账号
+        - 对方户名
+        - 摘要
+        - 交易用途
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 交易时间
+    layout:
+      all:
+      - 交易时间
+      - 交易金额
+      - 收入
+      - 支出
+      - 余额
+      - 币种
+      - 对方账号
+      - 对方户名
+      - 摘要
+      - 交易用途

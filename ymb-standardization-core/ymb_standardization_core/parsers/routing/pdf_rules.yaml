@@ -28,7 +28,7 @@
       - 日 志 号
       - 交易渠道
       - 交易附言
-- id: md5:1c050bc19c0c8352ce08866d9de86cec
+- id: md5:f25d1960686525515cc3c5d3eb69ad59
   parser: jiangxi_rural_commercial_pdf_text
   file_type: pdf
   bank: 江西农商银行
@@ -37,19 +37,31 @@
     data:
       all:
       - same_row_all:
-        - 江西·农商银行
-        - 户 名
-        - 账 号
-        - 起止日期
+        - 记账日期
+        - 交易金额(元)
+        - 交易后余额(元)
+        - 交易摘要
+        - 对方户名
+        - 对方账号
+    date_format:
+      any:
+      - yyyy-mm-dd
     identity:
       any:
       - 江西·农商银行
       - 江西农商银行
     layout:
       all:
+      - 江西·农商银行交易流水
       - 户 名
       - 账 号
       - 起止日期
+      - 记账日期
+      - 交易金额(元)
+      - 交易后余额(元)
+      - 交易摘要
+      - 对方户名
+      - 对方账号
 - id: md5:58425245f4c16c81ed5964a98778b11e
   parser: kasikorn_pdf_text
   file_type: pdf
@@ -263,6 +275,66 @@
       - 收入/支出金额
       - 余额
       - 渠道
+- id: md5:7229157e2843152ed73e1a0d78798d59
+  parser: icbc_debit_history_electronic_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Creator: WPS 表格
+        Title: 借记卡账户明细清单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    layout:
+      all:
+      - 电子版
+      - 卡号
+      - 户名
+      - 交易日期
+      - 账号
+      - 储种
+      - 序号
+      - 币种
+      - 钞汇
+      - 地区
+      - 收入/支出金额
+- id: md5:64cc57a27324f122376095ebcec2432b
+  parser: icbc_debit_history_electronic_pdf
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.27
+        Title: 借记卡账户明细清单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    layout:
+      all:
+      - 电子版
+      - 卡号
+      - 户名
+      - 交易日期
+      - 账号
+      - 储种
+      - 序号
+      - 币种
+      - 钞汇
+      - 地区
+      - 收入/支出金额
+      - 余额
+      - 渠道
 - id: md5:51c1335651dc7aae27d1459373076346
   parser: ccb_personal_detail_pdf
   file_type: pdf
@@ -434,12 +506,215 @@
       - 支出
       - 收入
       - 账户余额
-- id: md5:6607a212f53442b5c0fe22f7e642ce27
+- id: md5:a32bfe23cdb22ec2a3b5b8d44855a25e
+  parser: corporate_online_transaction_detail_pdf
+  file_type: pdf
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Creator: JasperReports (testReport)
+        Producer: iText 2.1.7 by 1T3XT
+    style:
+      all:
+      - text: 交易明细
+        font: STSong-Light
+        size_min: 23
+        size_max: 25
+        top_max: 60
+        centered: true
+    data:
+      all:
+      - same_row_all:
+        - 超网-贷记转出
+      - same_row_all:
+        - 序号
+        - 交易流水号
+        - 交易时间
+        - 对方户名
+        - 对方账号
+        - 对方账户开户网点
+        - 支出
+        - 收入
+        - 账户余额
+        - 批次号
+        - 总笔数
+        - 附言
+        - 摘要
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 交易明细
+    layout:
+      all:
+      - 交易流水号
+      - 交易时间
+      - 对方户名
+      - 对方账号
+      - 对方账户开户网点
+      - 支出
+      - 收入
+      - 账户余额
+      - 附言
+      - 摘要
+- id: md5:62241d5bf25ea039790b52d5edb0c533
+  parser: srbank_transaction_detail_pdf
+  file_type: pdf
+  bank: 上饶银行
+  account_type: 个人
+  fingerprint:
+    style:
+      all:
+      - text: 上饶银行历史交易流水
+        font: STSongStd-Light
+        size_min: 19
+        size_max: 21
+        top_max: 70
+        centered: true
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易日期
+        - 交易时间
+        - 交易金额
+        - 余额
+        - 对方银行
+        - 对方户名
+        - 摘要
+        same_row_none:
+        - 支出
+        - 收入
+        - 账户余额
+        - 流水号
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 上饶银行历史交易流水
+    layout:
+      all:
+      - 户名：
+      - 账号：
+      - 流水日期：
+      - 开户行：
+      - 申请时间：
+      - 序号
+      - 交易日期
+      - 交易时间
+      - 交易金额
+      - 余额
+      - 对方银行
+      - 卡号
+      - 对方户名
+      - 摘要
+- id: md5:c5d4f3762aee935d017a5b82b6c6bb0e
+  parser: srbank_corporate_transaction_detail_pdf
+  file_type: pdf
+  bank: 上饶银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 上饶银行账户交易明细
+    layout:
+      all:
+      - 账号：
+      - 户名：
+      - 银行盖章
+      - 打印时间
+      - 操作员号
+      - 序号
+      - 交易时间
+      - 流水号
+      - 对方账号
+      - 对方户名
+      - 支出
+      - 收入
+      - 账户余额
+      - 摘要
+      - 附言
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 交易时间
+        - 流水号
+        - 对方账号
+        - 对方户名
+        - 支出
+        - 收入
+        - 账户余额
+        - 摘要
+        - 附言
+- id: md5:0313446a4971e637471b0cf8732d9818
+  parser: mybank_corporate_transaction_detail_excel
+  file_type: pdf
+  bank: 浙江网商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 企业账号
+    layout:
+      all:
+      - 企业名称
+      - 企业账号
+      - 借方交易笔数
+      - 借方交易金额
+      - 贷方交易笔数
+      - 贷方交易金额
+      - 账务流水号
+      - 提交时间
+      - 交易时间
+      - 交易名称
+      - 借方金额（收）
+      - 贷方金额（支）
+      - 余额
+      - 对方户名
+      - 对方账号
+      - 对方机构
+      - 备注
+    data:
+      all:
+      - same_row_all:
+        - 序号
+        - 账务流水号
+        - 提交时间
+        - 交易时间
+        - 交易名称
+        - 借方金额（收）
+        - 贷方金额（支）
+        - 余额
+        - 对方户名
+        - 对方账号
+        - 对方机构
+        - 备注
+- id: md5:9ca4a1e3e124a0620137ed16ecf6b3c7
   parser: cmb_transaction_pdf
   file_type: pdf
   bank: 招商银行
   account_type: 个人
   fingerprint:
+    metadata:
+      all:
+        Producer: openhtmltopdf.com
+    data:
+      all:
+      - same_row_all:
+        - 记账日期
+        - 货币
+        - 交易金额
+        - 联机余额
+        - 交易摘要
+        - 对手信息
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 招商银行交易流水
@@ -454,12 +729,84 @@
       - 联机余额
       - 交易摘要
       - 对手信息
-- id: md5:72d86c2d6d7ce434d1482bfbe830e749
+- id: md5:05aa9e0b4f374fb4e51712da57762434
+  parser: industrial_bank_transaction_detail_pdf
+  file_type: pdf
+  bank: 兴业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 兴业银行交易流水
+      - Industrial Bank Transaction Details
+    layout:
+      all:
+      - 交易时间
+      - Transaction Time
+      - 记账日期
+      - Accounting Date
+      - 摘要
+      - Transaction Type
+      - 交易金额
+      - Transaction Amount
+      - 账户余额
+      - Account Balance
+      - 对方户名
+      - Counterparty’s
+      - 对方账户/对方银行
+    data:
+      all:
+      - same_row_all:
+        - Transaction Time
+        - Accounting Date
+        - Transaction Type
+        - Transaction Amount
+        - Account Balance
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:e21957b74777c6587ba66bed7a3adf47
+  parser: industrial_bank_transaction_detail_pdf
+  file_type: pdf
+  bank: 兴业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 兴业银⾏交易流⽔
+    layout:
+      all:
+      - Bank Transaction Details
+      - Transaction Time
+      - Accounting Date
+      - Transaction Type
+      - Transaction Amount
+      - Account Balance
+      - Counterparty’s
+      - Counterparty’s Account No.
+    data:
+      all:
+      - same_row_all:
+        - Transaction Time
+        - Accounting Date
+        - Transaction Type
+        - Transaction Amount
+        - Account Balance
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+- id: md5:8da682129dd526c298de9b95e27f0570
   parser: corporate_account_statement_pdf_text
   file_type: pdf
   bank: 未识别
   account_type: 对公
   fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.30
+    date_format:
+      any:
+      - yyyy-mm-dd
     identity:
       any:
       - 用户所属公司
@@ -483,6 +830,198 @@
         - 收(付)方名称
         - 收(付)方账号
         - 交易类型
+- id: md5:cf9a296fd7e85d9e2040b7e0dfaffe68
+  parser: jiujiang_bank_transaction_statement_pdf
+  file_type: pdf
+  bank: 九江银行
+  account_type: 个人
+  fingerprint:
+    style:
+      all:
+      - text: 九江银行交易流水
+        font: SimSun
+        size_min: 9
+        size_max: 11
+        top_max: 40
+        centered: true
+    data:
+      all:
+      - same_row_all:
+        - 记账日期
+        - 货币
+        - 交易金额
+        - 联机余额
+        - 交易摘要
+        - 对手信息
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 九江银行交易流水
+      - Transaction Statement of Bank of JiuJiang
+    layout:
+      all:
+      - '合同ID号:'
+      - '版本: V2'
+      - 九江银行交易流水
+      - Transaction Statement of Bank of JiuJiang
+      - '姓名:'
+      - '账号:'
+      - '账户类型:'
+      - '开户行:'
+      - '申请时间:'
+      - 记账日期
+      - 货币
+      - 交易金额
+      - 联机余额
+      - 交易摘要
+      - 对手信息
+- id: md5:d83fe0b286cc78568a2138784fa98697
+  parser: corporate_online_detail_table_pdf
+  file_type: pdf
+  bank: 未识别
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 企业网上银行--账户管理/明细查询
+    layout:
+      all:
+      - 交易时间
+      - 转出金额
+      - 转入金额
+      - 币种
+      - 余额
+      - 对方单位
+      - 对方账号
+      - 摘要
+      - 操作
+      - 详细信息
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 转出金额
+        - 转入金额
+        - 币种
+        - 余额
+        - 对方单位
+        - 对方账号
+        - 摘要
+        - 操作
+        - 详细信息
+- id: md5:acd013011a0c04b398b28dfc5194da0b
+  parser: jiujiang_bank_corporate_detail_pdf
+  file_type: pdf
+  bank: 九江银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 开户银行:九江银行
+      - 开户银行:九江银行股份有限公司
+    layout:
+      all:
+      - 交易明细清单
+      - '查询账号:'
+      - '账户名称:'
+      - '交易时间范围:'
+      - 交易时间
+      - 收入(元)
+      - 支出(元)
+      - 余额(元)
+      - 对方账号
+      - 对方户名
+      - 摘要
+      - 交易用途
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 收入(元)
+        - 支出(元)
+        - 余额(元)
+        - 对方账号
+        - 对方户名
+        - 摘要
+        - 交易用途
+- id: md5:7f03a1e79923c4a3eb1931780c937192
+  parser: electronic_transaction_proof_pdf
+  file_type: pdf
+  bank: 中国光大银行
+  account_type: 未知
+  fingerprint:
+    identity:
+      any:
+      - 中国光大银行账户明细查询清单
+      - Transaction Statement of China Everbright Bank
+    layout:
+      all:
+      - 交易日期
+      - 支出金额
+      - 存入金额
+      - 账户余额
+      - 对手信息
+      - 摘要
+      - Trans Date
+      - Trans Amt Dr
+      - Trans Amt Cr
+      - Account Balance
+      - Payment Receipt Account Information
+      - Abstract
+    data:
+      all:
+      - same_row_all:
+        - 交易日期
+        - 支出金额
+        - 存入金额
+        - 账户余额
+        - 对手信息
+        - 摘要
+      - same_row_all:
+        - Trans Date
+        - Trans Amt Dr
+        - Trans Amt Cr
+        - Account Balance
+        - Payment Receipt Account Information
+        - Abstract
+    date_format:
+      any:
+      - yyyy-mm-dd
+- id: md5:d81ec57be6bc5ad3f491d3ca0e1d4a2d
+  parser: corporate_debit_credit_timestamp_pdf
+  file_type: pdf
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    identity:
+      any:
+      - 时间戳
+    layout:
+      all:
+      - 交易时间
+      - 借贷标志
+      - 对方单位
+      - 摘要
+      - 转出金额
+      - 转入金额
+      - 余额
+      - 时间戳
+    data:
+      all:
+      - same_row_all:
+        - 交易时间
+        - 借贷标志
+        - 对方单位
+        - 摘要
+        - 转出金额
+        - 转入金额
+        - 余额
+        - 时间戳
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
 - id: md5:b9169959fa2a9175804219594af10115
   parser: cmbc_personal_statement_pdf
   file_type: pdf
@@ -536,7 +1075,7 @@
       - 交易金额(元)
       - 账户余额(元)
       - 对方户名
-- id: md5:7c692c1a3e2aa8a2540e426fda0cfd58
+- id: md5:e2ee17dbcbcd36d7cf8885732c76f783
   parser: wechat_pay_proof_pdf
   file_type: pdf
   bank: 微信支付
@@ -545,11 +1084,51 @@
     data:
       all:
       - same_row_all:
-        - 微信支付交易明细证明
         - 交易单号
+        - 交易时间
+        - 交易类型
         - 收/支/其他
+        - 交易方式
         - 金额(元)
+        - 交易对方
         - 商户单号
+    identity:
+      any:
+      - 微信支付交易明细证明
+    layout:
+      all:
+      - 兹证明
+      - 交易明细对应时间段
+      - 具体交易明细
+      - 交易单号
+      - 交易时间
+      - 交易类型
+      - 收/支/其他
+      - 交易方式
+      - 金额(元)
+      - 交易对方
+      - 商户单号
+- id: md5:b813e7faf777a5ec1020e091ca4ecff0
+  parser: wechat_pay_proof_pdf
+  file_type: pdf
+  bank: 微信支付
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Creator: WPS 表格
+    data:
+      all:
+      - same_row_all:
+        - 交易单号
+        - 交易时间
+        - 交易类型
+        - 收/支/其他
+        - 交易方式
+        - 金额(元)
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 微信支付交易明细证明

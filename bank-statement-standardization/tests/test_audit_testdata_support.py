@@ -46,6 +46,41 @@ class AuditTestdataSupportTests(unittest.TestCase):
 
         self.assertEqual([p.name for p in files], ["流水.pdf", "流水.xlsx"])
 
+    def test_build_outputs_sleeps_between_files_by_default(self):
+        module = load_module()
+        calls = []
+
+        def fake_iter_statement_files(root):
+            return [Path(root) / "a.pdf", Path(root) / "b.pdf"]
+
+        def fake_audit_one_file(path, root, output_work_dir, today):
+            return (
+                {
+                    "测试结果": "PASS",
+                    "文件路径": Path(path).name,
+                },
+                {
+                    "file_path": Path(path).name,
+                    "status": "PASS",
+                },
+            )
+
+        original_iter = module.iter_statement_files
+        original_audit = module.audit_one_file
+        original_sleep = module.time.sleep
+        try:
+            module.iter_statement_files = fake_iter_statement_files
+            module.audit_one_file = fake_audit_one_file
+            module.time.sleep = lambda seconds: calls.append(seconds)
+            with tempfile.TemporaryDirectory() as tmp:
+                module.build_outputs(Path(tmp) / "testdata", Path(tmp) / "out")
+        finally:
+            module.iter_statement_files = original_iter
+            module.audit_one_file = original_audit
+            module.time.sleep = original_sleep
+
+        self.assertEqual(calls, [0.5])
+
     def test_write_excel_contains_requested_columns(self):
         module = load_module()
         rows = [{
@@ -55,6 +90,10 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
             "router类": "zhejiang_qyrcb_pdf_text",
+            "命中parser": "zhejiang_qyrcb_pdf_text",
+            "format_id": "zhejiang_qyrcb_pdf_text",
+            "parser_id": "pdf_fixed_width",
+            "route_status": "matched",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
             "测试日期": "2026-06-17",
@@ -77,6 +116,12 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertIn("账户类型(YAML)", header)
         self.assertEqual(first_row[header.index("账户类型(YAML)")], "个人")
         self.assertEqual(first_row[header.index("router类")], "zhejiang_qyrcb_pdf_text")
+        self.assertIn("命中parser", header)
+        self.assertEqual(first_row[header.index("命中parser")], "zhejiang_qyrcb_pdf_text")
+        self.assertIn("format_id", header)
+        self.assertIn("parser_id", header)
+        self.assertIn("route_status", header)
+        self.assertEqual(first_row[header.index("parser_id")], "pdf_fixed_width")
         self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
         self.assertIn("创建时间≈修改时间", header)
         self.assertIn("创建人=修改人", header)
@@ -276,7 +321,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "格式": "xlsx",
                 "版本": "1.0",
                 "文件路径": "客户A/a.xlsx",
-                "router类": "strict_excel",
+                "router类": "md5:strict",
+                "命中parser": "strict_excel",
                 "YAML指纹": "元数据:application",
                 "测试结果": "PASS",
             },
@@ -286,7 +332,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "格式": "xlsx",
                 "版本": "1.0",
                 "文件路径": "客户A/b.xlsx",
-                "router类": "strict_excel",
+                "router类": "md5:strict",
+                "命中parser": "strict_excel",
                 "YAML指纹": "元数据:application",
                 "测试结果": "FAIL",
             },
@@ -296,7 +343,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "格式": "pdf",
                 "版本": "1.0",
                 "文件路径": "客户A/c.pdf",
-                "router类": "other_pdf",
+                "router类": "md5:other",
+                "命中parser": "other_pdf",
                 "YAML指纹": "数据:1",
                 "测试结果": "PASS",
             },

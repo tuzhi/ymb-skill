@@ -21,6 +21,8 @@ class RouteRule:
     data_all: list
     date_format_any: list
     has_fingerprint: bool = False
+    format_id: str = ""
+    parser_id: str = ""
 
     def base_match_text(self, text, context=None):
         context = context or {}
@@ -80,7 +82,10 @@ class RouteRule:
             reason = "fingerprint_mismatch"
         return {
             "id": self.id,
+            "fingerprint_id": self.id,
             "parser": self.parser,
+            "format_id": self.format_id or self.parser,
+            "parser_id": self.parser_id or infer_parser_id(self.format_id or self.parser, self.file_type),
             "bank": self.bank,
             "file_type": self.file_type,
             "reason": reason,
@@ -292,6 +297,32 @@ def _rule_id(item, fingerprint):
     return rule_id
 
 
+def infer_parser_id(format_id, file_type):
+    """Return the abstract row-reader/parser strategy for a routed format."""
+    format_id = str(format_id or "")
+    if file_type == "excel":
+        return "excel_grid"
+    if format_id in {"wechat_pay_proof_pdf", "alipay_proof_pdf"}:
+        return "payment_proof_text"
+    if format_id in {
+        "abc_text_pdf",
+        "jiangxi_rural_commercial_pdf_text",
+        "jiangxi_yumin_bank_pdf",
+        "kasikorn_pdf_text",
+        "zhejiang_qyrcb_pdf_text",
+    }:
+        return "pdf_fixed_width"
+    if format_id in {
+        "cmb_transaction_pdf",
+        "jiujiang_bank_transaction_statement_pdf",
+        "cmbc_personal_statement_pdf",
+    }:
+        return "pdf_text_lines"
+    if file_type == "pdf":
+        return "pdf_table"
+    return "none"
+
+
 def load_pdf_route_rules():
     rules = []
     for item in _load_yaml("pdf_rules.yaml"):
@@ -299,6 +330,8 @@ def load_pdf_route_rules():
         rules.append(PdfRouteRule(
             id=_rule_id(item, fingerprint),
             parser=item["parser"],
+            format_id=item.get("format_id") or item["parser"],
+            parser_id=item.get("parser_id") or infer_parser_id(item.get("format_id") or item["parser"], item.get("file_type", "pdf")),
             file_type=item.get("file_type", "pdf"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
@@ -320,6 +353,8 @@ def load_excel_route_rules():
         rules.append(ExcelRouteRule(
             id=_rule_id(item, fingerprint),
             parser=item["parser"],
+            format_id=item.get("format_id") or item["parser"],
+            parser_id=item.get("parser_id") or infer_parser_id(item.get("format_id") or item["parser"], item.get("file_type", "excel")),
             file_type=item.get("file_type", "excel"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
