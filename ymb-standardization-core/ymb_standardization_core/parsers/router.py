@@ -14,15 +14,13 @@ TEXT_TABLE_PARSERS = {
 
 
 def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence, layout_evidence,
-                   route_evidence=None, format_id=None, parser_id=None):
+                   route_evidence=None, parser_id=None):
     return {
         "id": id,
         "fingerprint_id": id,
         "parser": parser,
-        "format_id": format_id or parser,
         "parser_id": parser_id or "pdf_table",
         "decision": "matched",
-        "route_status": "matched",
         "file_type": file_type,
         "bank": bank,
         "account_type": account_type,
@@ -36,13 +34,11 @@ def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence,
 
 
 def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=None):
-    format_id = "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched"
+    parser = "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched"
     return {
-        "parser": format_id,
-        "format_id": format_id,
+        "parser": parser,
         "parser_id": "pdf_table" if table_row_count else "none",
         "decision": "unmatched",
-        "route_status": "unmatched",
         "file_type": "pdf",
         "fingerprint_id": "",
         "account_type": "",
@@ -57,10 +53,8 @@ def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candida
         return _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
-        "format_id": "ambiguous_router_match",
         "parser_id": "none",
         "decision": "ambiguous",
-        "route_status": "ambiguous",
         "file_type": "pdf",
         "fingerprint_id": "",
         "candidates": candidates,
@@ -90,8 +84,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
         candidates.append(_pdf_candidate(
             id=rule.id,
             parser=rule.parser,
-            format_id=rule.format_id or rule.parser,
-            parser_id=rule.parser_id or infer_parser_id(rule.format_id or rule.parser, rule.file_type),
+            parser_id=rule.parser_id or infer_parser_id(rule.parser, rule.file_type),
             file_type=rule.file_type,
             bank=rule.bank,
             account_type=rule.account_type,

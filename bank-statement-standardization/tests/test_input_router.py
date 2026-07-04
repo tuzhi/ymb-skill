@@ -478,9 +478,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(result.kind, "excel")
         self.assertEqual(result.route_info["parser"], "generic_excel")
-        self.assertEqual(result.route_info["format_id"], "generic_excel")
         self.assertEqual(result.route_info["parser_id"], "excel_grid")
-        self.assertEqual(result.route_info["route_status"], "unmatched")
         self.assertEqual(result.route_info["decision"], "unmatched")
         self.assertEqual(result.route_info["file_type"], "excel")
 
@@ -521,9 +519,7 @@ class InputRouterTests(unittest.TestCase):
             route = module.route_excel([["测试银行", "交易时间", "账户余额"]], "Sheet1", context={})
 
             self.assertEqual(route["parser"], "generic_excel")
-            self.assertEqual(route["format_id"], "generic_excel")
             self.assertEqual(route["parser_id"], "excel_grid")
-            self.assertEqual(route["route_status"], "unmatched")
             self.assertEqual(route["decision"], "unmatched")
             self.assertIn("candidate_fingerprints", route)
             self.assertEqual(route["candidate_fingerprints"][0]["parser"], "unfingerprinted_excel")

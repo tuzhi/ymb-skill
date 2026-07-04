@@ -91,9 +91,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "文件路径": "testdata/李先根/GRZD.pdf",
             "router类": "zhejiang_qyrcb_pdf_text",
             "命中parser": "zhejiang_qyrcb_pdf_text",
-            "format_id": "zhejiang_qyrcb_pdf_text",
             "parser_id": "pdf_fixed_width",
-            "route_status": "matched",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
             "测试日期": "2026-06-17",
@@ -118,9 +116,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[header.index("router类")], "zhejiang_qyrcb_pdf_text")
         self.assertIn("命中parser", header)
         self.assertEqual(first_row[header.index("命中parser")], "zhejiang_qyrcb_pdf_text")
-        self.assertIn("format_id", header)
         self.assertIn("parser_id", header)
-        self.assertIn("route_status", header)
         self.assertEqual(first_row[header.index("parser_id")], "pdf_fixed_width")
         self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
         self.assertIn("创建时间≈修改时间", header)

@@ -46,10 +46,8 @@ def _excel_candidate(rule, match):
         "id": rule.id,
         "fingerprint_id": rule.id,
         "parser": rule.parser,
-        "format_id": rule.format_id or rule.parser,
-        "parser_id": rule.parser_id or infer_parser_id(rule.format_id or rule.parser, rule.file_type),
+        "parser_id": rule.parser_id or infer_parser_id(rule.parser, rule.file_type),
         "decision": "matched",
-        "route_status": "matched",
         "file_type": rule.file_type,
         "bank": rule.bank,
         "account_type": rule.account_type,
@@ -65,10 +63,8 @@ def _excel_candidate(rule, match):
 def _excel_fallback(sheet, candidate_fingerprints=None):
     return {
         "parser": "generic_excel",
-        "format_id": "generic_excel",
         "parser_id": "excel_grid",
         "decision": "unmatched",
-        "route_status": "unmatched",
         "file_type": "excel",
         "fingerprint_id": "",
         "bank": "",
@@ -95,10 +91,8 @@ def route_excel(rows, sheet, context=None):
         return _excel_fallback(sheet, candidate_fingerprints=candidate_fingerprints)
     return {
         "parser": "ambiguous_router_match",
-        "format_id": "ambiguous_router_match",
         "parser_id": "none",
         "decision": "ambiguous",
-        "route_status": "ambiguous",
         "file_type": "excel",
         "fingerprint_id": "",
         "candidates": candidates,

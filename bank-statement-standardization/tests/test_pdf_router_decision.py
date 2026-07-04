@@ -73,9 +73,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
-        self.assertEqual(result["format_id"], "wechat_pay_proof_pdf")
         self.assertEqual(result["parser_id"], "payment_proof_text")
-        self.assertEqual(result["route_status"], "matched")
         self.assertTrue(result["fingerprint_id"].startswith("md5:"))
         self.assertEqual(result["decision"], "matched")
 
