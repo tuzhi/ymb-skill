@@ -27,34 +27,36 @@ class PdfRouterDecisionTests(unittest.TestCase):
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
 
-        parser_names = [rule.parser for rule in rules]
-        for parser in [
-            "abc_text_pdf",
-            "jiangxi_rural_commercial_pdf_text",
-            "kasikorn_pdf_text",
-            "zhejiang_qyrcb_pdf_text",
-            "icbc_account_detail_pdf",
-            "wechat_pay_proof_pdf",
+        by_id = {rule.id: rule for rule in rules}
+        for fingerprint_id in [
+            "md5:ab5d413308d9d27f3aa913d772fa3494",
+            "md5:e833fbf4a2171d66315c5a3bda64711c",
+            "md5:37399b38ddd3572cc70fc6f8b9be2900",
+            "md5:69c7df7286e238aef80ae49938fd397a",
+            "md5:0488448d0f1d96413a25254a500aab29",
+            "md5:48a1a9cde662e1515e3d8f3238934e92",
         ]:
-            self.assertIn(parser, parser_names)
+            self.assertIn(fingerprint_id, by_id)
         self.assertEqual(rules[0].bank, "中国农业银行")
         self.assertEqual(rules[0].file_type, "pdf")
         self.assertTrue(rules[0].id.startswith("md5:"))
 
-        by_parser = {rule.parser: rule for rule in rules}
-        self.assertEqual(by_parser["abc_text_pdf"].account_type, "个人")
+        self.assertEqual(by_id["md5:ab5d413308d9d27f3aa913d772fa3494"].account_type, "个人")
         for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日 志 号", "交易渠道", "交易附言"]:
-            self.assertIn(marker, by_parser["abc_text_pdf"].layout_all)
-        self.assertEqual(by_parser["icbc_account_detail_pdf"].account_type, "对公")
-        self.assertEqual(by_parser["icbc_account_detail_table_pdf"].account_type, "对公")
+            self.assertIn(marker, by_id["md5:ab5d413308d9d27f3aa913d772fa3494"].column_markers)
+        self.assertEqual(by_id["md5:0488448d0f1d96413a25254a500aab29"].account_type, "对公")
+        self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
-            self.assertIn(marker, by_parser["wechat_pay_proof_pdf"].layout_all)
+            self.assertIn(marker, by_id["md5:48a1a9cde662e1515e3d8f3238934e92"].column_markers)
 
-    def test_pdf_route_config_uses_fingerprint_for_identity_and_layout(self):
+    def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
         rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "pdf_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:
+            self.assertNotIn("parser", item)
+            self.assertIn("parser_id", item)
+            self.assertNotIn("column_mapping", item)
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
             fingerprint = item.get("fingerprint") or {}
@@ -62,7 +64,11 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertNotIn("version", item)
             self.assertEqual(item["id"], fingerprint_md5(fingerprint))
             self.assertIn("identity", fingerprint)
-            self.assertIn("layout", fingerprint)
+            self.assertNotIn("layout", fingerprint)
+            self.assertNotIn("data", fingerprint)
+            columns = fingerprint.get("columns") or {}
+            self.assertIsInstance(columns.get("all"), dict)
+            self.assertTrue(columns.get("all"))
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
@@ -72,8 +78,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
+        self.assertNotIn("parser", result)
         self.assertEqual(result["parser_id"], "payment_proof_text")
+        self.assertEqual(result["column_mapping"]["交易时间"], "交易时间")
+        self.assertEqual(result["column_mapping"]["金额(元)"], "交易金额")
         self.assertTrue(result["fingerprint_id"].startswith("md5:"))
         self.assertEqual(result["decision"], "matched")
 
@@ -90,7 +98,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "wechat_pay_proof_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:48a1a9cde662e1515e3d8f3238934e92', 'md5:13cbd1af07e92414229d298a67bcf533'})
         self.assertEqual(result["decision"], "matched")
 
     def test_identity_only_kasikorn_markers_do_not_create_ambiguous_route(self):
@@ -107,13 +116,16 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 0, 1)
 
-        self.assertEqual(result["parser"], "abc_text_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:ab5d413308d9d27f3aa913d772fa3494'})
         self.assertEqual(result["decision"], "matched")
 
-    def test_abc_text_pdf_requires_transaction_header_layout(self):
+    def test_abc_text_pdf_requires_transaction_header_columns(self):
         result = router.route_pdf("中国农业银行账户活期交易明细清单", 0, 1)
 
-        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "unmatched")
+        self.assertEqual(result["parser_id"], "none")
 
     def test_specialized_route_without_yaml_fingerprint_falls_back_to_generic(self):
         original = router.load_pdf_route_rules
@@ -121,25 +133,26 @@ class PdfRouterDecisionTests(unittest.TestCase):
             router.load_pdf_route_rules = lambda: [
                 PdfRouteRule(
                     id="md5:test",
-                    parser="unfingerprinted_pdf",
+                    parser_id="pdf_table",
                     file_type="pdf",
                     bank="测试银行",
                     account_type="未知",
+                    column_mapping={},
                     identity_any=["测试银行"],
-                    layout_all=["交易时间", "账户余额"],
+                    column_markers=["交易时间", "账户余额"],
                     metadata_all={},
                     style_all=[],
-                    data_all=[],
                     date_format_any=[],
                 )
             ]
 
             result = router.route_pdf("测试银行 交易时间 账户余额", 0, 1)
 
-            self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+            self.assertNotIn("parser", result)
             self.assertEqual(result["decision"], "unmatched")
+            self.assertEqual(result["parser_id"], "none")
             self.assertIn("candidate_fingerprints", result)
-            self.assertEqual(result["candidate_fingerprints"][0]["parser"], "unfingerprinted_pdf")
+            self.assertEqual(result["candidate_fingerprints"][0]["parser_id"], "pdf_table")
             self.assertEqual(result["candidate_fingerprints"][0]["reason"], "missing_yaml_fingerprint")
         finally:
             router.load_pdf_route_rules = original
@@ -150,15 +163,15 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for parser_name in ("first_pdf", "second_pdf"):
             rules.append(PdfRouteRule(
                 id=f"md5:{parser_name}",
-                parser=parser_name,
+                parser_id="pdf_table",
                 file_type="pdf",
                 bank="测试银行",
                 account_type="未知",
+                column_mapping={},
                 identity_any=["测试银行"],
-                layout_all=["交易时间", "账户余额"],
+                column_markers=["交易时间", "账户余额"],
                 metadata_all={"Producer": "UnitTest"},
                 style_all=[],
-                data_all=[],
                 date_format_any=[],
                 has_fingerprint=True,
             ))
@@ -168,13 +181,14 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
             result = router.route_pdf("测试银行 交易时间 账户余额", 0, 1, context=context)
 
-            self.assertEqual(result["parser"], "ambiguous_router_match")
+            self.assertNotIn("parser", result)
+            self.assertEqual(result["parser_id"], "none")
             self.assertEqual(result["decision"], "ambiguous")
-            self.assertEqual([c["parser"] for c in result["candidates"]], ["first_pdf", "second_pdf"])
+            self.assertEqual([c["fingerprint_id"] for c in result["candidates"]], ["md5:first_pdf", "md5:second_pdf"])
         finally:
             router.load_pdf_route_rules = original
 
-    def test_specialized_pdf_route_exposes_identity_and_layout_evidence(self):
+    def test_specialized_pdf_route_exposes_identity_and_columns_evidence(self):
         text = (
             "江西·农商银行交易流水 江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "
             "记账日期 交易金额(元) 交易后余额(元) 交易摘要 对方户名 对方账号 "
@@ -185,13 +199,14 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 0, 1, context=context)
 
-        self.assertEqual(result["parser"], "jiangxi_rural_commercial_pdf_text")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:e833fbf4a2171d66315c5a3bda64711c'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "江西农商银行")
         self.assertEqual(result["file_type"], "pdf")
         self.assertTrue(result["id"].startswith("md5:"))
         self.assertIn("江西·农商银行", result["identity_evidence"])
-        self.assertIn("户 名", result["layout_evidence"])
+        self.assertIn("户 名", result["columns_evidence"])
         self.assertEqual(result["date_format_evidence"], ["yyyy-mm-dd"])
 
     def test_identity_only_jiangxi_rural_commercial_pdf_does_not_match(self):
@@ -201,7 +216,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 0, 1)
 
-        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "unmatched")
+        self.assertEqual(result["parser_id"], "none")
         self.assertEqual(result["decision"], "unmatched")
 
     def test_table_pdf_routes_to_specialized_icbc_parser(self):
@@ -213,7 +230,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "icbc_account_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:0488448d0f1d96413a25254a500aab29'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["file_type"], "pdf")
@@ -227,7 +245,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "corporate_online_detail_table_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:fcbe39d694aa34cf564500f187aa8137'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "未识别")
         self.assertEqual(result["account_type"], "对公")
@@ -241,7 +260,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "jiujiang_bank_corporate_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:cdccd6123047eb2b26165e7e19d4e205'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "九江银行")
         self.assertEqual(result["account_type"], "对公")
@@ -256,7 +276,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd"]})
 
-        self.assertEqual(result["parser"], "electronic_transaction_proof_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:ae05becb79352db902ea07365adcc6fa'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国光大银行")
 
@@ -268,7 +289,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd hh:mm:ss"]})
 
-        self.assertEqual(result["parser"], "corporate_debit_credit_timestamp_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:faa7f06d9f76df95dee8e82cb190016f'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "未识别")
 
@@ -287,7 +309,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "corporate_online_transaction_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:b175ebd2e387d181fe3c4a5fbdfa998d'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "未识别")
 
@@ -301,7 +324,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf("\n".join(lines), 1, 1, context={"lines": lines})
 
-        self.assertEqual(result["parser"], "icbc_account_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:0488448d0f1d96413a25254a500aab29'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "对公")
@@ -334,7 +358,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf("\n".join(lines), 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "srbank_transaction_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:abe9a2a993c8f00e5c19e8cdb14ee611', 'md5:7f811c14e0a4fdfc0d0efeaf64be0210'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "个人")
@@ -349,7 +374,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
             1,
             context={"lines": corporate_lines, "date_patterns": ["yyyy-mm-dd hh:mm:ss"]},
         )
-        self.assertEqual(corporate_result["parser"], "generic_pdf_table")
+        self.assertNotIn("parser", corporate_result)
+        self.assertEqual(corporate_result["decision"], "unmatched")
+        self.assertEqual(corporate_result["parser_id"], "pdf_table")
 
     def test_icbc_debit_history_electronic_pdf_route(self):
         text = (
@@ -365,7 +392,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "icbc_debit_history_electronic_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -383,7 +411,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "abc_corporate_account_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:6c0358919ac011286e44822dbcd66c8b'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国农业银行")
 
@@ -401,7 +430,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "icbc_corporate_account_statement_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:84a33d2b19cac75ce0e72118080eb538'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "对公")
 
@@ -419,7 +449,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "icbc_debit_history_electronic_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -437,7 +468,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "icbc_debit_history_electronic_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -456,7 +488,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1, context=context)
 
-        self.assertEqual(result["parser"], "industrial_bank_transaction_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:fe8aa1a88dca8739966109a8ef23a10e', 'md5:a70735a0cf8fd249d144458896f7346c'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")
@@ -470,7 +503,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "srbank_corporate_transaction_detail_pdf")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:c17d8fd6703ef2b8dab16bb0d02d16ef'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "对公")
@@ -486,7 +520,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         result = router.route_pdf(text, 1, 1)
 
-        self.assertEqual(result["parser"], "mybank_corporate_transaction_detail_excel")
+        self.assertNotIn("parser", result)
+        self.assertIn(result["fingerprint_id"], {'md5:aa3ad86844e3ad1b5b077d765301c287'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")

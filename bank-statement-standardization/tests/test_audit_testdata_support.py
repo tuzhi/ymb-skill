@@ -89,8 +89,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "格式": "pdf",
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
-            "router类": "zhejiang_qyrcb_pdf_text",
-            "命中parser": "zhejiang_qyrcb_pdf_text",
+            "router类": "md5:69c7df7286e238aef80ae49938fd397a",
             "parser_id": "pdf_fixed_width",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
@@ -113,9 +112,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[0], "浙江庆元农商银行")
         self.assertIn("账户类型(YAML)", header)
         self.assertEqual(first_row[header.index("账户类型(YAML)")], "个人")
-        self.assertEqual(first_row[header.index("router类")], "zhejiang_qyrcb_pdf_text")
-        self.assertIn("命中parser", header)
-        self.assertEqual(first_row[header.index("命中parser")], "zhejiang_qyrcb_pdf_text")
+        self.assertEqual(first_row[header.index("router类")], "md5:69c7df7286e238aef80ae49938fd397a")
+        self.assertNotIn("命中parser", header)
         self.assertIn("parser_id", header)
         self.assertEqual(first_row[header.index("parser_id")], "pdf_fixed_width")
         self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
@@ -124,54 +122,38 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[header.index("创建时间≈修改时间")], "是（差0秒）")
         self.assertEqual(first_row[header.index("创建人=修改人")], "是（创建人:test；修改人:test）")
 
-    def test_bank_name_is_expanded_from_parser_and_template(self):
+    def test_bank_name_is_expanded_from_fingerprint_and_template(self):
         module = load_module()
 
         self.assertEqual(
-            module.normalize_bank_name("农村商业银行", "jiangxi_rural_commercial_pdf_text", "江西·农商银行"),
+            module.normalize_bank_name("农村商业银行", "md5:e833fbf4a2171d66315c5a3bda64711c", "江西·农商银行"),
             "江西农商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("农村商业银行", "zhejiang_qyrcb_pdf_text", "浙江庆元农商银行"),
+            module.normalize_bank_name("农村商业银行", "md5:69c7df7286e238aef80ae49938fd397a", "浙江庆元农商银行"),
             "浙江庆元农商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "kasikorn_pdf_text", "Kasikorn Bank"),
+            module.normalize_bank_name("", "md5:37399b38ddd3572cc70fc6f8b9be2900", "Kasikorn Bank"),
             "开泰银行（Kasikorn Bank）",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "icbc_historydetail_excel", ""),
+            module.normalize_bank_name("中国工商银行", "", ""),
             "中国工商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "abc_legacy_account_detail_excel", ""),
+            module.normalize_bank_name("中国农业银行", "", ""),
             "中国农业银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "wechat_bill_excel", ""),
+            module.normalize_bank_name("微信支付", "", ""),
             "微信支付",
         )
         self.assertEqual(module.normalize_bank_name("", "", ""), "未识别")
 
-    def test_bank_name_uses_parser_when_file_name_is_not_trusted(self):
+    def test_bank_name_does_not_trust_file_name_without_fingerprint(self):
         module = load_module()
 
-        self.assertEqual(
-            module.support_matrix_bank_name(
-                {"开户行识别来源": "文件名", "开户行": "工行"},
-                "icbc_historydetail_excel",
-                "",
-            ),
-            "中国工商银行",
-        )
-        self.assertEqual(
-            module.support_matrix_bank_name(
-                {"开户行识别来源": "文件名", "开户行": "农行"},
-                "abc_account_detail_excel",
-                "",
-            ),
-            "中国农业银行",
-        )
         self.assertEqual(
             module.support_matrix_bank_name({"开户行识别来源": "文件名", "开户行": "工行"}, "", ""),
             "未识别",
@@ -182,12 +164,12 @@ class AuditTestdataSupportTests(unittest.TestCase):
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "custom_parser": {"bank": "微信支付"},
+                "md5:custom": {"bank": "微信支付"},
             }
             self.assertEqual(
                 module.support_matrix_bank_name(
                     {"开户行识别来源": "文件名", "开户行": "不可信文件名银行"},
-                    "custom_parser",
+                    "md5:custom",
                     "",
                 ),
                 "微信支付",
@@ -200,7 +182,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "personal_card_parser": {"bank": "未识别"},
+                "md5:personal": {"bank": "未识别"},
             }
             self.assertEqual(
                 module.support_matrix_bank_name(
@@ -209,7 +191,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                         "开户行": "中国工商银行",
                         "确认银行": "中国工商银行",
                     },
-                    "personal_card_parser",
+                    "md5:personal",
                     "",
                 ),
                 "中国工商银行",
@@ -222,10 +204,10 @@ class AuditTestdataSupportTests(unittest.TestCase):
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "custom_parser": {"account_type": "个人"},
+                "md5:custom": {"account_type": "个人"},
             }
-            self.assertEqual(module.yaml_account_type("custom_parser"), "个人")
-            self.assertEqual(module.yaml_account_type("missing_parser"), "")
+            self.assertEqual(module.yaml_account_type("md5:custom"), "个人")
+            self.assertEqual(module.yaml_account_type("md5:missing"), "")
             self.assertEqual(module.yaml_account_type(""), "")
         finally:
             module.ROUTE_RULE_INDEX = original
@@ -238,14 +220,14 @@ class AuditTestdataSupportTests(unittest.TestCase):
         }
         try:
             module.ROUTE_RULE_INDEX = {
-                "generic_pdf_table": {
+                "md5:strict": {
                     "id": module.fingerprint_md5(fingerprint),
                     "fingerprint": fingerprint,
                 },
             }
 
             self.assertEqual(
-                module.support_matrix_fingerprint_id("generic_pdf_table"),
+                module.support_matrix_fingerprint_id("md5:strict"),
                 module.fingerprint_md5(fingerprint),
             )
         finally:
@@ -256,7 +238,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "generic_pdf_table": {
+                "md5:strict": {
                     "fingerprint": {
                         "identity": {"any": ["中国工商银行账户明细清单"]},
                     },
@@ -264,7 +246,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             }
 
             with self.assertRaisesRegex(ValueError, "missing id"):
-                module.support_matrix_fingerprint_id("generic_pdf_table")
+                module.support_matrix_fingerprint_id("md5:strict")
         finally:
             module.ROUTE_RULE_INDEX = original
 
@@ -273,7 +255,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "generic_pdf_table": {
+                "md5:strict": {
                     "id": "md5:bad",
                     "fingerprint": {
                         "identity": {"any": ["中国工商银行账户明细清单"]},
@@ -282,33 +264,33 @@ class AuditTestdataSupportTests(unittest.TestCase):
             }
 
             with self.assertRaisesRegex(ValueError, "fingerprint id mismatch"):
-                module.support_matrix_fingerprint_id("generic_pdf_table")
+                module.support_matrix_fingerprint_id("md5:strict")
         finally:
             module.ROUTE_RULE_INDEX = original
 
-    def test_yaml_fingerprint_summary_reads_nested_identity_and_layout(self):
+    def test_yaml_fingerprint_summary_reads_nested_identity_and_columns(self):
         module = load_module()
         original = module.ROUTE_RULE_INDEX
         try:
             module.ROUTE_RULE_INDEX = {
-                "custom_parser": {
+                "md5:custom": {
                     "fingerprint": {
                         "identity": {"any": ["测试银行"]},
-                        "layout": {"all": ["交易时间", "账户余额"]},
+                        "columns": {"all": {"交易时间": "交易时间", "账户余额": "账户余额"}},
                         "metadata": {"all": {"application": "UnitTest"}},
                     }
                 },
             }
 
-            summary = module.yaml_fingerprint_summary("custom_parser")
+            summary = module.yaml_fingerprint_summary("md5:custom")
 
             self.assertIn("身份:1", summary)
-            self.assertIn("结构:2", summary)
+            self.assertIn("列标记:2", summary)
             self.assertIn("元数据:application", summary)
         finally:
             module.ROUTE_RULE_INDEX = original
 
-    def test_supported_files_can_be_loaded_from_support_matrix_by_parser(self):
+    def test_supported_files_can_be_loaded_from_support_matrix_by_fingerprint(self):
         module = load_module()
         rows = [
             {
@@ -318,7 +300,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/a.xlsx",
                 "router类": "md5:strict",
-                "命中parser": "strict_excel",
+                "parser_id": "excel_grid",
                 "YAML指纹": "元数据:application",
                 "测试结果": "PASS",
             },
@@ -329,7 +311,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/b.xlsx",
                 "router类": "md5:strict",
-                "命中parser": "strict_excel",
+                "parser_id": "excel_grid",
                 "YAML指纹": "元数据:application",
                 "测试结果": "FAIL",
             },
@@ -340,7 +322,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/c.pdf",
                 "router类": "md5:other",
-                "命中parser": "other_pdf",
+                "parser_id": "pdf_table",
                 "YAML指纹": "数据:1",
                 "测试结果": "PASS",
             },
@@ -349,7 +331,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             matrix = Path(tmp) / "support_matrix.xlsx"
             module.write_xlsx(matrix, rows)
 
-            files = module.support_matrix_files_for_parser(matrix, "strict_excel")
+            files = module.support_matrix_files_for_fingerprint(matrix, "md5:strict")
 
         self.assertEqual(files, ["客户A/a.xlsx"])
 

@@ -10,18 +10,17 @@ import yaml
 @dataclass(frozen=True)
 class RouteRule:
     id: str
-    parser: str
+    parser_id: str
     file_type: str
     bank: str
     account_type: str
+    column_mapping: dict
     identity_any: list
-    layout_all: list
+    column_markers: list
     metadata_all: dict
     style_all: list
-    data_all: list
     date_format_any: list
     has_fingerprint: bool = False
-    parser_id: str = ""
 
     def base_match_text(self, text, context=None):
         context = context or {}
@@ -29,13 +28,13 @@ class RouteRule:
         if not identity_hits:
             return None
 
-        layout_hits = [marker for marker in self.layout_all if marker in text]
-        if len(layout_hits) != len(self.layout_all):
+        column_hits = [marker for marker in self.column_markers if marker in text]
+        if len(column_hits) != len(self.column_markers):
             return None
 
         return {
             "identity_evidence": identity_hits,
-            "layout_evidence": layout_hits,
+            "columns_evidence": column_hits,
         }
 
     def match_text(self, text, context=None):
@@ -52,10 +51,6 @@ class RouteRule:
         if self.style_all and len(style_hits) != len(self.style_all):
             return None
 
-        data_hits = _match_data(self.data_all, context, text)
-        if self.data_all and len(data_hits) != len(self.data_all):
-            return None
-
         date_hits = _match_date_formats(self.date_format_any, context)
         if self.date_format_any and not date_hits:
             return None
@@ -64,7 +59,6 @@ class RouteRule:
             **base_hits,
             "metadata_evidence": metadata_hits,
             "style_evidence": style_hits,
-            "data_evidence": data_hits,
             "date_format_evidence": date_hits,
         }
 
@@ -82,8 +76,7 @@ class RouteRule:
         return {
             "id": self.id,
             "fingerprint_id": self.id,
-            "parser": self.parser,
-            "parser_id": self.parser_id or infer_parser_id(self.parser, self.file_type),
+            "parser_id": self.parser_id,
             "bank": self.bank,
             "file_type": self.file_type,
             "reason": reason,
@@ -190,29 +183,6 @@ def _match_one_style(rule, styles):
     return None
 
 
-def _match_data(data_rules, context, text):
-    if not data_rules:
-        return []
-    lines = context.get("lines") or str(text or "").splitlines()
-    hits = []
-    for rule in data_rules:
-        same_row_all = [str(x) for x in rule.get("same_row_all", [])]
-        same_row_none = [str(x) for x in rule.get("same_row_none", [])]
-        min_hits = int(rule.get("min_hits", 1) or 1)
-        matched_lines = []
-        for line in lines:
-            if all(term in line for term in same_row_all) and not any(term in line for term in same_row_none):
-                matched_lines.append(line[:200])
-        if len(matched_lines) < min_hits:
-            return hits
-        hits.append({
-            "same_row_all": same_row_all,
-            "same_row_none": same_row_none,
-            "matched_lines": matched_lines[:5],
-        })
-    return hits
-
-
 def _match_date_formats(patterns, context):
     if not patterns:
         return []
@@ -263,7 +233,7 @@ def _normalize_fingerprint(value):
         normalized = {}
         for key in sorted(value):
             item = _normalize_fingerprint(value[key])
-            if item not in ({}, [], "", None):
+            if item not in ({}, [], ""):
                 normalized[str(key).strip()] = item
         return normalized
     if isinstance(value, list):
@@ -288,37 +258,47 @@ def fingerprint_md5(fingerprint):
 def _rule_id(item, fingerprint):
     rule_id = str(item.get("id") or "").strip()
     if not rule_id:
-        raise ValueError(f"missing id for parser: {item.get('parser')}")
+        raise ValueError(f"missing id for route rule: bank={item.get('bank')}")
     expected = fingerprint_md5(fingerprint)
     if rule_id != expected:
-        raise ValueError(f"fingerprint id mismatch for parser: {item.get('parser')}: {rule_id} != {expected}")
+        raise ValueError(f"fingerprint id mismatch for route rule: {rule_id} != {expected}")
     return rule_id
 
 
-def infer_parser_id(parser_name, file_type):
-    """Return the abstract row-reader/parser strategy for a routed format."""
-    parser_name = str(parser_name or "")
+def _parser_id(item, default_file_type):
+    parser_id = str(item.get("parser_id") or "").strip()
+    if parser_id:
+        return parser_id
+    file_type = item.get("file_type", default_file_type)
     if file_type == "excel":
         return "excel_grid"
-    if parser_name in {"wechat_pay_proof_pdf", "alipay_proof_pdf"}:
-        return "payment_proof_text"
-    if parser_name in {
-        "abc_text_pdf",
-        "jiangxi_rural_commercial_pdf_text",
-        "jiangxi_yumin_bank_pdf",
-        "kasikorn_pdf_text",
-        "zhejiang_qyrcb_pdf_text",
-    }:
-        return "pdf_fixed_width"
-    if parser_name in {
-        "cmb_transaction_pdf",
-        "jiujiang_bank_transaction_statement_pdf",
-        "cmbc_personal_statement_pdf",
-    }:
-        return "pdf_text_lines"
     if file_type == "pdf":
         return "pdf_table"
     return "none"
+
+
+def _columns_all(fingerprint):
+    columns = (fingerprint or {}).get("columns") or {}
+    all_columns = columns.get("all") or {}
+    if not isinstance(all_columns, dict):
+        raise ValueError("fingerprint.columns.all must be a dict")
+    return all_columns
+
+
+def _column_markers(fingerprint):
+    return [str(key).strip() for key in _columns_all(fingerprint).keys() if str(key).strip()]
+
+
+def _column_mapping(fingerprint):
+    mapping = {}
+    for key, value in _columns_all(fingerprint).items():
+        source = str(key).strip()
+        target = "" if value is None else str(value).strip()
+        if source and target:
+            mapping[source] = target
+    if not isinstance(mapping, dict):
+        raise ValueError("column_mapping must be a dict")
+    return {str(key).strip(): str(value).strip() for key, value in mapping.items() if str(key).strip() and str(value).strip()}
 
 
 def load_pdf_route_rules():
@@ -327,16 +307,15 @@ def load_pdf_route_rules():
         fingerprint = item.get("fingerprint", {})
         rules.append(PdfRouteRule(
             id=_rule_id(item, fingerprint),
-            parser=item["parser"],
-            parser_id=item.get("parser_id") or infer_parser_id(item["parser"], item.get("file_type", "pdf")),
+            parser_id=_parser_id(item, "pdf"),
             file_type=item.get("file_type", "pdf"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
+            column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
-            layout_all=fingerprint.get("layout", {}).get("all", []),
+            column_markers=_column_markers(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
-            data_all=fingerprint.get("data", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
             has_fingerprint=bool(fingerprint),
         ))
@@ -349,16 +328,15 @@ def load_excel_route_rules():
         fingerprint = item.get("fingerprint", {})
         rules.append(ExcelRouteRule(
             id=_rule_id(item, fingerprint),
-            parser=item["parser"],
-            parser_id=item.get("parser_id") or infer_parser_id(item["parser"], item.get("file_type", "excel")),
+            parser_id=_parser_id(item, "excel"),
             file_type=item.get("file_type", "excel"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
+            column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
-            layout_all=fingerprint.get("layout", {}).get("all", []),
+            column_markers=_column_markers(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
-            data_all=fingerprint.get("data", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
             has_fingerprint=bool(fingerprint),
         ))

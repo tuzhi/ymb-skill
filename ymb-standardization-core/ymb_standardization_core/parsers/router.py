@@ -2,48 +2,79 @@ from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.parsers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
-from ymb_standardization_core.parsers.routing.rule_loader import infer_parser_id, load_pdf_route_rules
+from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
 from ymb_standardization_core.parsers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
 from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
-TEXT_TABLE_PARSERS = {
-    "cmb_transaction_pdf",
-    "jiujiang_bank_transaction_statement_pdf",
-    "cmbc_personal_statement_pdf",
+ABC_TEXT_PDF_FINGERPRINTS = {"md5:ab5d413308d9d27f3aa913d772fa3494"}
+JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
+KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
+ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
+JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS = {"md5:19c8a8f7513adce0f0ad32a5c0b05154"}
+WECHAT_PAY_PROOF_PDF_FINGERPRINTS = {
+    "md5:48a1a9cde662e1515e3d8f3238934e92",
+    "md5:13cbd1af07e92414229d298a67bcf533",
+}
+TEXT_TABLE_FINGERPRINTS = {
+    "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
+    "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
+    "md5:831325d33aa7b01f10771881ffc3ae76": "cmbc_personal",
 }
 
 
-def _pdf_candidate(id, parser, file_type, bank, account_type, identity_evidence, layout_evidence,
-                   route_evidence=None, parser_id=None):
+def _pdf_candidate(id, parser_id, file_type, bank, account_type, column_mapping,
+                   identity_evidence, columns_evidence, route_evidence=None):
     return {
         "id": id,
         "fingerprint_id": id,
-        "parser": parser,
-        "parser_id": parser_id or "pdf_table",
+        "parser_id": parser_id,
         "decision": "matched",
         "file_type": file_type,
         "bank": bank,
         "account_type": account_type,
+        "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
-        "layout_evidence": layout_evidence,
+        "columns_evidence": columns_evidence,
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
         "style_evidence": route_evidence.get("style_evidence", []) if route_evidence else [],
-        "data_evidence": route_evidence.get("data_evidence", []) if route_evidence else [],
         "date_format_evidence": route_evidence.get("date_format_evidence", []) if route_evidence else [],
     }
 
 
 def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=None):
-    parser = "generic_pdf_table" if table_row_count else "generic_pdf_text_unmatched"
     return {
-        "parser": parser,
         "parser_id": "pdf_table" if table_row_count else "none",
         "decision": "unmatched",
         "file_type": "pdf",
         "fingerprint_id": "",
         "account_type": "",
+        "column_mapping": {},
         "candidate_fingerprints": candidate_fingerprints or [],
     }
+
+
+def _choose_specific_candidate(candidates):
+    if not candidates:
+        return None
+    def score(item):
+        return (
+            len(item.get("columns_evidence", []))
+            + len(item.get("metadata_evidence", {})) * 2
+            + len(item.get("style_evidence", []))
+            + len(item.get("date_format_evidence", []))
+        )
+
+    by_score = sorted(candidates, key=score, reverse=True)
+    if len(by_score) == 1:
+        return by_score[0]
+    if score(by_score[0]) > score(by_score[1]):
+        return by_score[0]
+
+    identified = [item for item in candidates if item.get("bank") and item.get("bank") != "未识别"]
+    unidentified = [item for item in candidates if not item.get("bank") or item.get("bank") == "未识别"]
+    if len(identified) == 1 and unidentified:
+        return identified[0]
+    return None
 
 
 def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candidate_fingerprints=None):
@@ -51,12 +82,15 @@ def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candida
         return candidates[0]
     if not candidates:
         return _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=candidate_fingerprints)
+    specific = _choose_specific_candidate(candidates)
+    if specific:
+        return specific
     return {
-        "parser": "ambiguous_router_match",
         "parser_id": "none",
         "decision": "ambiguous",
         "file_type": "pdf",
         "fingerprint_id": "",
+        "column_mapping": {},
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints or [],
     }
@@ -83,17 +117,16 @@ def route_pdf(text, table_row_count, page_count, context=None):
             continue
         candidates.append(_pdf_candidate(
             id=rule.id,
-            parser=rule.parser,
-            parser_id=rule.parser_id or infer_parser_id(rule.parser, rule.file_type),
+            parser_id=rule.parser_id,
             file_type=rule.file_type,
             bank=rule.bank,
             account_type=rule.account_type,
+            column_mapping=rule.column_mapping,
             identity_evidence=match["identity_evidence"],
-            layout_evidence=match["layout_evidence"],
+            columns_evidence=match["columns_evidence"],
             route_evidence={
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
-                "data_evidence": match.get("data_evidence", []),
                 "date_format_evidence": match.get("date_format_evidence", []),
             },
         ))
@@ -230,9 +263,9 @@ def _parse_cmbc_personal_text_row(line):
     ]
 
 
-def _extract_pdf_text_table_rows(text, parser):
+def _extract_pdf_text_table_rows(text, text_table_kind):
     """Fallback for text-layer statement PDFs where extract_tables() returns no rows."""
-    if parser in {"cmb_transaction_pdf", "jiujiang_bank_transaction_statement_pdf"}:
+    if text_table_kind == "currency":
         header = ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"]
         rows = [header]
         for raw_line in str(text or "").splitlines():
@@ -244,7 +277,7 @@ def _extract_pdf_text_table_rows(text, parser):
                 rows[-1][-1] = (rows[-1][-1] + " " + line).strip()
         return rows if len(rows) > 1 else []
 
-    if parser == "cmbc_personal_statement_pdf":
+    if text_table_kind == "cmbc_personal":
         header = [
             "凭证类型", "凭证号码", "交易时间", "摘要", "交易金额", "账户余额",
             "现转标志", "交易渠道", "交易机构", "对方户名/账号", "对方行名",
@@ -353,27 +386,28 @@ def read_pdf_rows(path, open_password=None):
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         route_info = route_pdf(text, len(table_rows), len(pdf.pages), context=_pdf_context(pdf, text))
 
-        # 专属 parser 只接管已识别模板；未命中时回退到通用表格行，交给标准化层映射字段。
-        if route_info["parser"] == "abc_text_pdf":
+        fingerprint_id = route_info.get("fingerprint_id", "")
+        # 专用 reader 只接管已识别模板；未命中时回退到通用表格行，交给标准化层映射字段。
+        if fingerprint_id in ABC_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_abc_text_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] == "jiangxi_rural_commercial_pdf_text":
+        if fingerprint_id in JXRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_jxrcb_text_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] == "jiangxi_yumin_bank_pdf":
+        if fingerprint_id in JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS:
             preamble, rows = read_jiangxi_yumin_bank_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] == "kasikorn_pdf_text":
+        if fingerprint_id in KASIKORN_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_kasikorn_text_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] == "zhejiang_qyrcb_pdf_text":
+        if fingerprint_id in ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] == "wechat_pay_proof_pdf":
+        if fingerprint_id in WECHAT_PAY_PROOF_PDF_FINGERPRINTS:
             preamble, rows = read_wechat_pay_proof_pdf(pdf)
             return preamble, rows, route_info
-        if route_info["parser"] in TEXT_TABLE_PARSERS and not table_rows:
-            rows = _extract_pdf_text_table_rows(text, route_info["parser"])
+        if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
+            rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])
             return preamble or "", rows, route_info
 
     return preamble or "", table_rows, route_info

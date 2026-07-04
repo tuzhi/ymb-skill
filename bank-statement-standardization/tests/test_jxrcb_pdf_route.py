@@ -39,13 +39,17 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
             "交易日期 交易时间 交易摘要 交易金额 本次余额 对手信息 日 志 号 交易渠道 交易附言",
             0, 1)
         jxrcb = router.route_pdf(
-            "江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "
+            "江西·农商银行交易流水 江西·农商银行 户 名 张华峰 账 号 6226822011500474554 起止日期 "
+            "记账日期 交易金额(元) 交易后余额(元) 交易摘要 对方户名 对方账号 "
             "2025-01-01 1.00 2.00 2025-01-02 1.00 3.00 2025-01-03 1.00 4.00 "
             "2025-01-04 1.00 5.00 2025-01-05 1.00 6.00",
-            0, 1)
+            0, 1,
+            context={"lines": [], "date_patterns": ["yyyy-mm-dd"]})
 
-        self.assertEqual(abc["parser"], "abc_text_pdf")
-        self.assertEqual(jxrcb["parser"], "jiangxi_rural_commercial_pdf_text")
+        self.assertNotIn("parser", abc)
+        self.assertEqual(abc["fingerprint_id"], "md5:ab5d413308d9d27f3aa913d772fa3494")
+        self.assertNotIn("parser", jxrcb)
+        self.assertEqual(jxrcb["fingerprint_id"], "md5:e833fbf4a2171d66315c5a3bda64711c")
 
     def test_jxrcb_requires_bank_heading(self):
         text = (
@@ -56,7 +60,9 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
 
         result = router.route_pdf(text, 0, 1)
 
-        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "unmatched")
+        self.assertEqual(result["parser_id"], "none")
 
     def test_watermarked_text_line_is_parsed(self):
         # 江西农商 PDF 文本层会把水印字插入数字 token，解析器必须先清理再定位日期/金额。

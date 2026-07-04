@@ -54,7 +54,6 @@ MATRIX_COLUMNS = [
     "版本",
     "文件路径",
     "router类",
-    "命中parser",
     "parser_id",
     "YAML指纹",
     "测试类",
@@ -220,13 +219,13 @@ def git_sha():
         return ""
 
 
-def test_class_for_parser(parser):
+def test_class_for_fingerprint(fingerprint_id):
     mapping = {
-        "jiangxi_rural_commercial_pdf_text": "test_jxrcb_pdf_route.py",
-        "kasikorn_pdf_text": "test_kasikorn_pdf_route.py",
-        "zhejiang_qyrcb_pdf_text": "test_zhejiang_qyrcb_pdf_route.py",
+        "md5:e833fbf4a2171d66315c5a3bda64711c": "test_jxrcb_pdf_route.py",
+        "md5:37399b38ddd3572cc70fc6f8b9be2900": "test_kasikorn_pdf_route.py",
+        "md5:69c7df7286e238aef80ae49938fd397a": "test_zhejiang_qyrcb_pdf_route.py",
     }
-    return mapping.get(parser or "", "")
+    return mapping.get(fingerprint_id or "", "")
 
 
 def _load_route_rule_index():
@@ -238,74 +237,69 @@ def _load_route_rule_index():
         except Exception:
             items = []
         for item in items:
-            parser = item.get("parser")
-            if parser:
-                rules[parser] = item
+            fingerprint_id = item.get("id")
+            if fingerprint_id:
+                rules[fingerprint_id] = item
     return rules
 
 
 ROUTE_RULE_INDEX = _load_route_rule_index()
 
 
-def yaml_fingerprint_summary(parser):
+def yaml_fingerprint_summary(fingerprint_id):
     """返回支持矩阵中可读的 YAML 指纹配置摘要。"""
-    if not parser:
+    if not fingerprint_id:
         return ""
-    if parser.startswith("generic_") or parser == "ambiguous_router_match":
+    if fingerprint_id in {"", "ambiguous_router_match"}:
         return "无 YAML 指纹"
-    rule = ROUTE_RULE_INDEX.get(parser)
+    rule = ROUTE_RULE_INDEX.get(fingerprint_id)
     if not rule:
         return "未找到 YAML 规则"
 
     parts = []
     fingerprint = rule.get("fingerprint") or {}
     identity_any = fingerprint.get("identity", {}).get("any") or []
-    layout_all = fingerprint.get("layout", {}).get("all") or []
+    columns_all = (fingerprint.get("columns") or {}).get("all") or {}
     metadata_all = fingerprint.get("metadata", {}).get("all") or {}
     style_all = fingerprint.get("style", {}).get("all") or []
-    data_all = fingerprint.get("data", {}).get("all") or []
     date_any = fingerprint.get("date_format", {}).get("any") or []
 
     if identity_any:
         parts.append(f"身份:{len(identity_any)}")
-    if layout_all:
-        parts.append(f"结构:{len(layout_all)}")
+    if columns_all:
+        parts.append(f"列标记:{len(columns_all)}")
     if metadata_all:
         parts.append("元数据:" + ",".join(metadata_all.keys()))
     if style_all:
         style_labels = [str(item.get("text", "")).strip() for item in style_all if isinstance(item, dict)]
         parts.append("样式:" + ",".join([label for label in style_labels if label][:3]))
-    if data_all:
-        parts.append(f"数据:{len(data_all)}")
     if date_any:
         parts.append("日期:" + ",".join(date_any))
     return "；".join(parts) if parts else "YAML 规则未配置指纹"
 
 
 def template_from_mapping(image):
-    parser = image.get("parser") or image.get("命中模板") or ""
+    fingerprint_id = image.get("fingerprint_id") or image.get("命中模板") or ""
     evidence = image.get("route_evidence") or {}
     marker = evidence.get("bank_marker") or image.get("命中模板") or ""
-    if parser:
-        return marker or parser
+    if fingerprint_id:
+        return marker or fingerprint_id
     return marker
 
 
-def normalize_bank_name(bank, parser="", template=""):
+def normalize_bank_name(bank, fingerprint_id="", template=""):
     """将映射结果里的简称或模板标记统一成支持矩阵里的银行全称。"""
-    text = " ".join(str(part or "") for part in (bank, parser, template))
+    text = " ".join(str(part or "") for part in (bank, fingerprint_id, template))
     rules = [
-        ("zhejiang_qyrcb_pdf_text", "浙江庆元农商银行"),
+        ("md5:69c7df7286e238aef80ae49938fd397a", "浙江庆元农商银行"),
         ("庆元农商银行", "浙江庆元农商银行"),
-        ("jiangxi_rural_commercial_pdf_text", "江西农商银行"),
+        ("md5:e833fbf4a2171d66315c5a3bda64711c", "江西农商银行"),
         ("江西·农商银行", "江西农商银行"),
         ("江西农商", "江西农商银行"),
-        ("kasikorn_pdf_text", "开泰银行（Kasikorn Bank）"),
+        ("md5:37399b38ddd3572cc70fc6f8b9be2900", "开泰银行（Kasikorn Bank）"),
         ("Kasikorn", "开泰银行（Kasikorn Bank）"),
-        ("icbc_", "中国工商银行"),
         ("农业银行", "中国农业银行"),
         ("农行", "中国农业银行"),
-        ("abc_", "中国农业银行"),
         ("工商银行", "中国工商银行"),
         ("工行", "中国工商银行"),
         ("建设银行", "中国建设银行"),
@@ -317,7 +311,6 @@ def normalize_bank_name(bank, parser="", template=""):
         ("长沙银行", "长沙银行"),
         ("三湘银行", "湖南三湘银行"),
         ("上饶银行", "上饶银行"),
-        ("wechat_", "微信支付"),
         ("微信支付", "微信支付"),
         ("支付宝", "支付宝"),
     ]
@@ -327,38 +320,38 @@ def normalize_bank_name(bank, parser="", template=""):
     return str(bank or "").strip() or "未识别"
 
 
-def support_matrix_bank_name(image, parser="", template=""):
-    route_bank = (ROUTE_RULE_INDEX.get(parser) or {}).get("bank") if parser else ""
+def support_matrix_bank_name(image, fingerprint_id="", template=""):
+    route_bank = (ROUTE_RULE_INDEX.get(fingerprint_id) or {}).get("bank") if fingerprint_id else ""
     if route_bank and route_bank not in {"未识别", "未知"}:
-        return normalize_bank_name(route_bank, parser, template)
+        return normalize_bank_name(route_bank, fingerprint_id, template)
     source = image.get("开户行识别来源") or ""
     if source == "文件名":
-        return normalize_bank_name("", parser, template)
-    return normalize_bank_name(image.get("确认银行") or image.get("开户行") or "", parser, template)
+        return normalize_bank_name("", fingerprint_id, template)
+    return normalize_bank_name(image.get("确认银行") or image.get("开户行") or "", fingerprint_id, template)
 
 
-def yaml_account_type(parser):
-    return (ROUTE_RULE_INDEX.get(parser) or {}).get("account_type", "") if parser else ""
+def yaml_account_type(fingerprint_id):
+    return (ROUTE_RULE_INDEX.get(fingerprint_id) or {}).get("account_type", "") if fingerprint_id else ""
 
 
-def support_matrix_fingerprint_id(parser):
+def support_matrix_fingerprint_id(fingerprint_id):
     """支持矩阵展示模板身份：必须来自 YAML 顶层 id。
 
-    id 是 fingerprint 节点规范化后的 md5；运行时 parser 仍表示解析策略。
+    id 是 fingerprint 节点规范化后的 md5；parser_id 只表示读取策略。
     """
-    if not parser:
-        return ""
-    rule = ROUTE_RULE_INDEX.get(parser)
-    if not rule:
-        raise ValueError(f"missing route rule for parser: {parser}")
-    fingerprint = rule.get("fingerprint") or {}
-    fingerprint_id = str(rule.get("id") or "").strip()
     if not fingerprint_id:
-        raise ValueError(f"missing id for parser: {parser}")
+        return ""
+    rule = ROUTE_RULE_INDEX.get(fingerprint_id)
+    if not rule:
+        raise ValueError(f"missing route rule for fingerprint_id: {fingerprint_id}")
+    fingerprint = rule.get("fingerprint") or {}
+    rule_fingerprint_id = str(rule.get("id") or "").strip()
+    if not rule_fingerprint_id:
+        raise ValueError(f"missing id for fingerprint_id: {fingerprint_id}")
     expected = fingerprint_md5(fingerprint)
-    if fingerprint_id != expected:
-        raise ValueError(f"fingerprint id mismatch for parser: {parser}: {fingerprint_id} != {expected}")
-    return fingerprint_id
+    if rule_fingerprint_id != expected:
+        raise ValueError(f"fingerprint id mismatch: {rule_fingerprint_id} != {expected}")
+    return rule_fingerprint_id
 
 
 def load_support_matrix_rows(matrix_path):
@@ -381,16 +374,14 @@ def load_support_matrix_rows(matrix_path):
     return records
 
 
-def support_matrix_files_for_parser(matrix_path, parser):
+def support_matrix_files_for_fingerprint(matrix_path, fingerprint_id):
     rows = load_support_matrix_rows(matrix_path)
     files = []
     for row in rows:
-        row_parser = row.get("命中parser", "") or row.get("router类", "")
-        if row_parser != parser:
+        row_fingerprint_id = row.get("router类", "")
+        if row_fingerprint_id != fingerprint_id:
             continue
         if row.get("测试结果") != "PASS":
-            continue
-        if row_parser.startswith("generic_") or row_parser == "ambiguous_router_match":
             continue
         if not row.get("YAML指纹") or row.get("YAML指纹") == "无 YAML 指纹":
             continue
@@ -426,7 +417,6 @@ def _new_record_and_baseline(path, root, today):
         "版本": "",
         "文件路径": relative_path,
         "router类": "",
-        "命中parser": "",
         "parser_id": "",
         "YAML指纹": "",
         "测试类": "",
@@ -457,19 +447,18 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
     image = mapping.get("文件画像", {})
     summary = read_csv_summary(csv_path)
 
-    parser = image.get("parser") or image.get("命中模板") or ""
-    fingerprint_id = support_matrix_fingerprint_id(parser)
+    fingerprint_id = image.get("fingerprint_id") or ""
+    fingerprint_id = support_matrix_fingerprint_id(fingerprint_id) if fingerprint_id else ""
     template = template_from_mapping(image)
-    bank_name = support_matrix_bank_name(image, parser, template)
+    bank_name = support_matrix_bank_name(image, fingerprint_id, template)
     record.update({
         "银行": bank_name,
-        "账户类型(YAML)": yaml_account_type(parser),
+        "账户类型(YAML)": yaml_account_type(fingerprint_id),
         "版本": template,
         "router类": fingerprint_id,
-        "命中parser": parser,
         "parser_id": image.get("parser_id") or "",
-        "YAML指纹": yaml_fingerprint_summary(parser),
-        "测试类": test_class_for_parser(parser),
+        "YAML指纹": yaml_fingerprint_summary(fingerprint_id),
+        "测试类": test_class_for_fingerprint(fingerprint_id),
         "测试结果": "PASS",
         "期望行数": str(summary["row_count"]),
         "本方户名": image.get("本方名称") or "",
@@ -481,8 +470,8 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
         "mapping": {
             "bank": record["银行"],
             "yaml_account_type": record["账户类型(YAML)"],
-            "parser": parser,
             "fingerprint_id": fingerprint_id,
+            "parser_id": record["parser_id"],
             "template": record["版本"],
             "yaml_fingerprint": record["YAML指纹"],
             "created_modified_check": record["创建时间≈修改时间"],
@@ -535,7 +524,6 @@ def write_xlsx(path, rows):
         "版本": 28,
         "文件路径": 72,
         "router类": 32,
-        "命中parser": 36,
         "parser_id": 24,
         "YAML指纹": 48,
         "测试类": 34,

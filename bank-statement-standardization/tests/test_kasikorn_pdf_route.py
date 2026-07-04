@@ -35,7 +35,9 @@ class KasikornPdfRouteTests(unittest.TestCase):
                 rows = list(csv.DictReader(f))
 
         image = mapping["文件画像"]
-        self.assertEqual(image["parser"], "kasikorn_pdf_text")
+        self.assertNotIn("parser", image)
+        self.assertEqual(image["fingerprint_id"], "md5:37399b38ddd3572cc70fc6f8b9be2900")
+        self.assertEqual(image["parser_id"], "pdf_fixed_width")
         self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "HUAHUA JIANG")

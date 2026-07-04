@@ -1,34 +1,25 @@
-- id: md5:050b7a2e342a8119eb5051b0c68299e4
-  parser: abc_account_detail_excel
+- id: md5:d22af808fd5c4c01357fc0b41a2b029b
   file_type: excel
   bank: 中国农业银行
   account_type: 对公
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 收入金额
-        - 支出金额
-        - 账户余额
-        - 对方账号
     identity:
       any:
       - 账户明细
       - 中国农业银行账户活期交易明细清单
-    layout:
+    columns:
       all:
-      - 序号
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方开户行
-      - 摘要
-- id: md5:fee711a5a8d4ae2b9723b1d40dbaad7b
-  parser: abc_legacy_account_detail_excel
+        序号: null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: null
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:64f43069b1537d001356c35b3f96ff3f
   file_type: excel
   bank: 中国农业银行
   account_type: 对公
@@ -48,37 +39,28 @@
         size_min: 11
         size_max: 13
         row_max: 3
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 收入金额
-        - 支出金额
-        - 账户余额
-        same_row_none:
-        - 序号
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细
-    layout:
+    columns:
       all:
-      - '账号:'
-      - '户名:'
-      - '币种:'
-      - '起止日期:'
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方开户行
-      - 摘要
-- id: md5:a4b03d0f9b685f528c653458ae3c8f01
-  parser: abc_current_transaction_excel
+        '账号:': 本方账户
+        '户名:': 本方名称
+        '币种:': null
+        '起止日期:': null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: null
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:123baf3afa5c24b1a775396d23e5a246
   file_type: excel
   bank: 中国农业银行
   account_type: 个人
@@ -87,19 +69,19 @@
       any:
       - 中国农业银行账户活期交易明细清单
       - 账户活期交易明细清单
-    layout:
+    columns:
       all:
-      - 交易日期
-      - 交易时间
-      - 交易摘要
-      - 交易金额
-      - 本次余额
-      - 对手信息
-      - 日 志  号
-      - 交易渠道
-      - 交易附言
-- id: md5:e2e29d9def2e53bd994b8f5c10f293de
-  parser: abc_account_query_excel
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易摘要: 银行备注
+        交易金额: 交易金额
+        本次余额: 账户余额
+        对手信息: 对手名称
+        日 志  号: null
+        交易渠道: 交易渠道
+        交易附言: 账户方附言
+  parser_id: excel_grid
+- id: md5:c7c83e9f3740ba3a9b6992e6f9bd75ae
   file_type: excel
   bank: 中国农业银行
   account_type: 个人
@@ -107,21 +89,21 @@
     identity:
       any:
       - 账户明细查询
-    layout:
+    columns:
       all:
-      - 交易日期
-      - 交易时间
-      - 交易金额
-      - 本次余额
-      - 对方户名
-      - 对方账号
-      - 交易行
-      - 交易渠道
-      - 交易类型
-      - 交易用途
-      - 交易摘要
-- id: md5:5f061d5e3f23864e581b93923c81d4cf
-  parser: boc_hisxls_bilingual_corporate_excel
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        本次余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        交易行: null
+        交易渠道: 交易渠道
+        交易类型: 银行备注
+        交易用途: 银行备注
+        交易摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:80c960dd889647481791d4f4a22a9481
   file_type: excel
   bank: 中国银行
   account_type: 对公
@@ -129,30 +111,6 @@
     identity:
       any:
       - 查询账号[ Inquirer account number ]
-    layout:
-      all:
-      - 总笔数[ Total number ]
-      - 借方发生总笔数[ Total Numbers of Debited Payments ]
-      - 贷方发生总笔数[ Total Numbers of Credited Payments ]
-      - 查询时间范围[ Time Range ]
-      - 交易类型[ Transaction Type ]
-      - 业务类型[ Business type ]
-      - 付款人开户行号[ Account holding bank number of payer ]
-      - 付款人开户行名[ Payer account bank ]
-      - 付款人账号[ Debit Account No. ]
-      - 付款人名称[ Payer's Name ]
-      - 收款人开户行行号[ Account holding bank number of beneficiary ]
-      - 收款人开户行名[ Beneficiary account bank ]
-      - 收款人账号[ Payee's Account Number ]
-      - 收款人名称[ Payee's Name ]
-      - 交易日期[ Transaction Date ]
-      - 交易时间[ Transaction time ]
-      - 交易货币[ Trade Currency ]
-      - 交易金额[ Trade Amount ]
-      - 交易后余额[ After-transaction balance ]
-      - 交易流水号[ Transaction reference number ]
-      - 名义付款人开户行行号[ Opening bank number of nominal payer ]
-      - 名义收款人名称[ Name of nominal payee ]
     style:
       all:
       - text: 查询账号[ Inquirer account number ]
@@ -163,16 +121,32 @@
         font: Arial
         row_max: 9
         col_max: 1
-    data:
+    columns:
       all:
-      - same_row_all:
-        - 交易类型[ Transaction Type ]
-        - 业务类型[ Business type ]
-        - 交易日期[ Transaction Date ]
-        - 交易时间[ Transaction time ]
-        - 交易金额[ Trade Amount ]
-- id: md5:addb8aa652ed33eec9c656c22ee73a5e
-  parser: account_transaction_detail_export_excel
+        总笔数[ Total number ]: null
+        借方发生总笔数[ Total Numbers of Debited Payments ]: 支出金额
+        贷方发生总笔数[ Total Numbers of Credited Payments ]: 收入金额
+        查询时间范围[ Time Range ]: null
+        交易类型[ Transaction Type ]: 银行备注
+        业务类型[ Business type ]: null
+        付款人开户行号[ Account holding bank number of payer ]: null
+        付款人开户行名[ Payer account bank ]: null
+        付款人账号[ Debit Account No. ]: 本方账户
+        付款人名称[ Payer's Name ]: null
+        收款人开户行行号[ Account holding bank number of beneficiary ]: null
+        收款人开户行名[ Beneficiary account bank ]: null
+        收款人账号[ Payee's Account Number ]: 本方账户
+        收款人名称[ Payee's Name ]: null
+        交易日期[ Transaction Date ]: 交易日期
+        交易时间[ Transaction time ]: 交易时间
+        交易货币[ Trade Currency ]: null
+        交易金额[ Trade Amount ]: 交易金额
+        交易后余额[ After-transaction balance ]: 账户余额
+        交易流水号[ Transaction reference number ]: null
+        名义付款人开户行行号[ Opening bank number of nominal payer ]: null
+        名义收款人名称[ Name of nominal payee ]: null
+  parser_id: excel_grid
+- id: md5:3ffb58ecb2fb3217b992a3fad6049fe5
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -180,19 +154,6 @@
     identity:
       any:
       - 账户交易明细
-    layout:
-      all:
-      - 账户
-      - 交易流水号
-      - 交易日期
-      - 借方发生额
-      - 贷方发生额
-      - 余额
-      - 对方账号
-      - 对方户名
-      - 交易渠道
-      - 摘要
-      - 备注
     metadata:
       all:
         sheet: 数据导出
@@ -206,20 +167,21 @@
         font: 微软雅黑 Light
         row_max: 4
         col_max: 1
-    data:
+    columns:
       all:
-      - same_row_all:
-        - 交易流水号
-        - 交易日期
-        - 借方发生额
-        - 贷方发生额
-        - 余额
-        - 对方账号
-        - 对方户名
-        - 交易渠道
-        - 摘要
-- id: md5:214bb31dec408cc28611416c07ead609
-  parser: account_header_debit_credit_excel
+        账户: 本方名称
+        交易流水号: null
+        交易日期: 交易日期
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:59cd5796389f547d334e8c2e939dd45b
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -227,21 +189,6 @@
     identity:
       any:
       - '网点号:'
-    layout:
-      all:
-      - '账号:'
-      - '户名:'
-      - '币种:'
-      - 日期
-      - 交易类型
-      - 凭证种类
-      - 凭证号
-      - 对方户名
-      - 对方账号
-      - 摘要
-      - 借方发生额
-      - 贷方发生额
-      - 余额
     style:
       all:
       - text: '账号:'
@@ -252,24 +199,26 @@
         font: 等线
         row_max: 5
         col_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 日期
-        - 交易类型
-        - 凭证种类
-        - 凭证号
-        - 对方户名
-        - 对方账号
-        - 摘要
-        - 借方发生额
-        - 贷方发生额
-        - 余额
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:10731c7d3e717d5435589b3e87690259
-  parser: account_detail_income_expense_usage_excel
+    columns:
+      all:
+        '账号:': 本方账户
+        '户名:': 本方名称
+        '币种:': null
+        日期: 交易日期
+        交易类型: 银行备注
+        凭证种类: null
+        凭证号: null
+        对方户名: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+  parser_id: excel_grid
+- id: md5:d63bd9e802734b3117ff743fab1711ea
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -284,39 +233,28 @@
         size_min: 19
         size_max: 21
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 收入金额
-        - 支出金额
-        - 账户余额
-        - 对方账号
-        - 对方户名
-        - 对方开户行
-        - 交易用途
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细
-    layout:
+    columns:
       all:
-      - '账号:'
-      - '户名:'
-      - '币种:'
-      - '起止日期:'
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方开户行
-      - 交易用途
-- id: md5:b699cccd6075d34ad6301115fb5b7d37
-  parser: hunan_sanxiang_bank_account_detail_excel
+        '账号:': 本方账户
+        '户名:': 本方名称
+        '币种:': null
+        '起止日期:': null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: null
+        交易用途: 银行备注
+  parser_id: excel_grid
+- id: md5:54d482f1bb6fb6bc4f80787d078dd9c0
   file_type: excel
   bank: 湖南三湘银行
   account_type: 对公
@@ -324,47 +262,35 @@
     metadata:
       all:
         application: BIFF/XLS
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易日期
-        - 收支方向
-        - 收入金额(元)
-        - 支出金额(元)
-        - 账户余额(元)
-        - 对方户名
-        - 对方账号
-        - 用途
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 湖南三湘银行账户明细
-    layout:
+    columns:
       all:
-      - 湖南三湘银行账户明细
-      - 账号
-      - 账户名称
-      - 查询日期
-      - 收支方向
-      - 客户号
-      - 币种
-      - 收入总笔数
-      - 收入总金额
-      - 支出总笔数
-      - 支出总金额
-      - 序号
-      - 交易日期
-      - 收入金额(元)
-      - 支出金额(元)
-      - 账户余额(元)
-      - 对方户名
-      - 对方账号
-      - 用途
-- id: md5:e4f7d7b4fe254107c3886415a4f78c44
-  parser: icbc_debit_history_electronic_excel
+        湖南三湘银行账户明细: null
+        账号: 本方账户
+        账户名称: 本方名称
+        查询日期: null
+        收支方向: 收支方向
+        客户号: null
+        币种: null
+        收入总笔数: 收入金额
+        收入总金额: 收入金额
+        支出总笔数: 支出金额
+        支出总金额: 支出金额
+        序号: null
+        交易日期: 交易日期
+        收入金额(元): 收入金额
+        支出金额(元): 支出金额
+        账户余额(元): 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        用途: 银行备注
+  parser_id: excel_grid
+- id: md5:7697b00a861bee4b02b2298ef2acdfd0
   file_type: excel
   bank: 中国工商银行
   account_type: 个人
@@ -372,45 +298,29 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细（电子版）
-    layout:
-      all:
-      - 卡号
-      - 户名：
-      - 起止日期：
-      - 交易日期
-      - 账号
-      - 储种
-      - 序号
-      - 币种
-      - 钞汇
-      - 摘要
-      - 地区
-      - 收入/支出金额
-      - 余额
-      - 对方户名
-      - 对方账号
-      - 渠道
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 账号
-        - 储种
-        - 序号
-        - 币种
-        - 钞汇
-        - 摘要
-        - 地区
-        - 收入/支出金额
-        - 余额
-        - 对方户名
-        - 对方账号
-        - 渠道
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:2d78f6c6c8b37afdeaf5452c2c1bd0db
-  parser: detail_download_debit_credit_counterparty_excel
+    columns:
+      all:
+        卡号: 本方账户
+        户名：: 本方名称
+        起止日期：: null
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        摘要: 银行备注
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        渠道: 交易渠道
+  parser_id: excel_grid
+- id: md5:49395dabf42e9dfd5d535d7d00cb0586
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -418,51 +328,31 @@
     identity:
       any:
       - 明细下载
-    layout:
-      all:
-      - 账号
-      - 序号
-      - 交易时间
-      - 币种
-      - 借方发生额
-      - 贷方发生额
-      - 余额
-      - 对手方
-      - 对手方账号
-      - 对手方银行
-      - 收款人
-      - 收款账号
-      - 用途
-      - 备注
-      - 凭证号
-      - 摘要
-      - 流水号
-      - 操作员
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易时间
-        - 币种
-        - 借方发生额
-        - 贷方发生额
-        - 余额
-        - 对手方
-        - 对手方账号
-        - 对手方银行
-        - 收款人
-        - 收款账号
-        - 用途
-        - 备注
-        - 凭证号
-        - 摘要
-        - 流水号
-        - 操作员
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:5b26730719b23dcbffac29c334c87e6a
-  parser: current_account_detail_query_excel
+    columns:
+      all:
+        账号: 本方账户
+        序号: null
+        交易时间: 交易时间
+        币种: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+        对手方: null
+        对手方账号: null
+        对手方银行: null
+        收款人: null
+        收款账号: 本方账户
+        用途: 银行备注
+        备注: 银行备注
+        凭证号: null
+        摘要: 银行备注
+        流水号: null
+        操作员: null
+  parser_id: excel_grid
+- id: md5:3cb7f851a70871a6d8cf223a797e2b27
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -470,38 +360,24 @@
     identity:
       any:
       - 活期账户明细查询
-    layout:
-      all:
-      - 交易时间
-      - 摘要
-      - 币种
-      - 收入
-      - 支出
-      - 余额
-      - 对方账户
-      - 对方户名
-      - 对方行行名
-      - 备注
-      - 交易流水号
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 摘要
-        - 币种
-        - 收入
-        - 支出
-        - 余额
-        - 对方账户
-        - 对方户名
-        - 对方行行名
-        - 备注
-        - 交易流水号
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:631f7177ed25173929bd845bfe0ed4a9
-  parser: debit_card_date_range_detail_excel
+    columns:
+      all:
+        交易时间: 交易时间
+        摘要: 银行备注
+        币种: null
+        收入: 收入金额
+        支出: 支出金额
+        余额: 账户余额
+        对方账户: 对手账户
+        对方户名: 对手名称
+        对方行行名: null
+        备注: 银行备注
+        交易流水号: null
+  parser_id: excel_grid
+- id: md5:155991e46e686d77a15cbe77832fabf9
   file_type: excel
   bank: 未识别
   account_type: 个人
@@ -513,35 +389,23 @@
       any:
       - 账户类型
       - 借记卡
-    layout:
+    columns:
       all:
-      - 账号
-      - 账户类型
-      - 借记卡
-      - 日期范围
-      - 顺序号
-      - 交易日期
-      - 交易类型
-      - 存入金额
-      - 取出金额
-      - 余额
-      - 交易对手名称
-      - 交易对手账号
-      - 附言
-    data:
-      all:
-      - same_row_all:
-        - 顺序号
-        - 交易日期
-        - 交易类型
-        - 存入金额
-        - 取出金额
-        - 余额
-        - 交易对手名称
-        - 交易对手账号
-        - 附言
-- id: md5:003931ea6f2f30cc91531b64dc4f3397
-  parser: mybank_corporate_transaction_detail_excel
+        账号: 本方账户
+        账户类型: null
+        借记卡: null
+        日期范围: null
+        顺序号: null
+        交易日期: 交易日期
+        交易类型: 银行备注
+        存入金额: 收入金额
+        取出金额: 支出金额
+        余额: 账户余额
+        交易对手名称: 对手名称
+        交易对手账号: 对手账户
+        附言: 账户方附言
+  parser_id: excel_grid
+- id: md5:4439de424ba8efd1d77c7b9040e9c7ee
   file_type: excel
   bank: 浙江网商银行
   account_type: 对公
@@ -549,44 +413,30 @@
     identity:
       any:
       - 浙江网商银行企业账户交易明细
-    layout:
-      all:
-      - 企业名称
-      - 企业账号
-      - 借方交易笔数
-      - 借方交易金额
-      - 贷方交易笔数
-      - 贷方交易金额
-      - 账务流水号
-      - 提交时间
-      - 交易时间
-      - 交易名称
-      - 借方金额（收）
-      - 贷方金额（支）
-      - 余额
-      - 对方户名
-      - 对方账号
-      - 对方机构
-      - 备注
-    data:
-      all:
-      - same_row_all:
-        - 账务流水号
-        - 提交时间
-        - 交易时间
-        - 交易名称
-        - 借方金额（收）
-        - 贷方金额（支）
-        - 余额
-        - 对方户名
-        - 对方账号
-        - 对方机构
-        - 备注
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:e9752a9dd2668c5e7bf37a860180977c
-  parser: icbc_historydetail_excel
+    columns:
+      all:
+        企业名称: null
+        企业账号: 本方账户
+        借方交易笔数: 支出金额
+        借方交易金额: 支出金额
+        贷方交易笔数: 收入金额
+        贷方交易金额: 收入金额
+        账务流水号: null
+        提交时间: null
+        交易时间: 交易时间
+        交易名称: 银行备注
+        借方金额（收）: 支出金额
+        贷方金额（支）: 收入金额
+        余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方机构: null
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:cdfdabf4ff3865eb06e19799b138a953
   file_type: excel
   bank: 中国工商银行
   account_type: 对公
@@ -594,19 +444,19 @@
     identity:
       any:
       - '[HISTORYDETAIL]'
-    layout:
+    columns:
       all:
-      - 入账日期
-      - 入账时间
-      - 对方账号
-      - 对方单位
-      - 借贷标志
-      - 转入金额
-      - 转出金额
-      - 余额
-      - 本方账号
-- id: md5:b5117bb7a97d273c6a4b1231930dbddd
-  parser: historydetail_debit_credit_excel
+        入账日期: 交易日期
+        入账时间: 交易时间
+        对方账号: 对手账户
+        对方单位: 对手名称
+        借贷标志: 收支方向
+        转入金额: 收入金额
+        转出金额: 支出金额
+        余额: 账户余额
+        本方账号: 本方账户
+  parser_id: excel_grid
+- id: md5:8e7acced3786acbe8889d975b45d9237
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -614,21 +464,6 @@
     identity:
       any:
       - '[HISTORYDETAIL]'
-    layout:
-      all:
-      - 凭证号
-      - 本方账号
-      - 对方账号
-      - 交易时间
-      - 借/贷
-      - 借方发生额
-      - 贷方发生额
-      - 对方行号
-      - 摘要
-      - 用途
-      - 对方单位名称
-      - 余额
-      - 个性化信息
     metadata:
       all:
         creator: Apache POI
@@ -645,8 +480,23 @@
         size_max: 12
         row_max: 2
         col_max: 1
-- id: md5:f8063d9515491f8db2f91c2d31feb475
-  parser: historydetail_transfer_amount_excel
+    columns:
+      all:
+        凭证号: null
+        本方账号: 本方账户
+        对方账号: 对手账户
+        交易时间: 交易时间
+        借/贷: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        对方行号: null
+        摘要: 银行备注
+        用途: 银行备注
+        对方单位名称: 对手名称
+        余额: 账户余额
+        个性化信息: null
+  parser_id: excel_grid
+- id: md5:80cef9ff74ff00bc7456358111a6adf2
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -654,20 +504,6 @@
     identity:
       any:
       - '[HISTORYDETAIL]'
-    layout:
-      all:
-      - 对方账号
-      - 交易时间
-      - 借贷标志
-      - 对方单位
-      - 对方行号
-      - 用途
-      - 摘要
-      - 附言
-      - 余额
-      - 转入金额
-      - 发生额
-      - 转出金额
     metadata:
       all:
         creator: Apache POI
@@ -684,8 +520,22 @@
         size_max: 12
         row_max: 2
         col_max: 1
-- id: md5:5f6832e9ec3389addfd68adea444ae1c
-  parser: historydetail_transfer_in_out_excel
+    columns:
+      all:
+        对方账号: 对手账户
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        对方行号: null
+        用途: 银行备注
+        摘要: 银行备注
+        附言: 账户方附言
+        余额: 账户余额
+        转入金额: 收入金额
+        发生额: 交易金额
+        转出金额: 支出金额
+  parser_id: excel_grid
+- id: md5:39d6c4d498802b40f8a4eef053adfc86
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -693,32 +543,21 @@
     identity:
       any:
       - '[HISTORYDETAIL]'
-    layout:
-      all:
-      - 交易时间
-      - 凭证号
-      - 对方单位
-      - 摘要
-      - 转入金额
-      - 转出金额
-      - 余额
-      - 业务编号
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 凭证号
-        - 对方单位
-        - 摘要
-        - 转入金额
-        - 转出金额
-        - 余额
-        - 业务编号
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:9a99975cd80faa7479b1565fb0fc696d
-  parser: ccb_personal_detail_excel
+    columns:
+      all:
+        交易时间: 交易时间
+        凭证号: null
+        对方单位: 对手名称
+        摘要: 银行备注
+        转入金额: 收入金额
+        转出金额: 支出金额
+        余额: 账户余额
+        业务编号: null
+  parser_id: excel_grid
+- id: md5:64234594676aef35cfeb0968f3774a0c
   file_type: excel
   bank: 中国建设银行
   account_type: 个人
@@ -726,19 +565,19 @@
     identity:
       any:
       - 中国建设银行个人活期账户全部交易明细
-    layout:
+    columns:
       all:
-      - 序号
-      - 摘要
-      - 交易日期
-      - 卡号/账号
-      - 客户名称
-      - 交易金额
-      - 账户余额
-      - 交易地点/附言
-      - 对方账号与户名
-- id: md5:0bcdf4a2db5231199e716177828c4ba4
-  parser: card_detail_download_excel
+        序号: null
+        摘要: 银行备注
+        交易日期: 交易日期
+        卡号/账号: 本方账户
+        客户名称: 本方名称
+        交易金额: 交易金额
+        账户余额: 账户余额
+        交易地点/附言: 账户方附言
+        对方账号与户名: 对手账户
+  parser_id: excel_grid
+- id: md5:4fb218cc43c550d1fffc02e114d1f6f4
   file_type: excel
   bank: 未识别
   account_type: 个人
@@ -746,24 +585,6 @@
     identity:
       any:
       - 明细查询文件下载
-    layout:
-      all:
-      - 卡号
-      - 子账户序号
-      - 子账户类别
-      - 交易日期
-      - 摘要
-      - 交易场所
-      - 交易国家或地区简称
-      - 钞/汇
-      - 交易金额(收入)
-      - 交易金额(支出)
-      - 交易币种
-      - 记账金额(收入)
-      - 记账金额(支出)
-      - 记账币种
-      - 余额
-      - 对方户名
     style:
       all:
       - text: 明细查询文件下载
@@ -774,23 +595,29 @@
         font: 等线
         row_max: 7
         col_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 摘要
-        - 交易场所
-        - 交易金额(收入)
-        - 交易金额(支出)
-        - 记账金额(收入)
-        - 记账金额(支出)
-        - 余额
-        - 对方户名
     date_format:
       any:
       - yyyy-mm-dd
-- id: md5:6a5bd80a746d09a45484b97030b6da52
-  parser: ccb_corporate_detail_excel
+    columns:
+      all:
+        卡号: 本方账户
+        子账户序号: null
+        子账户类别: null
+        交易日期: 交易日期
+        摘要: 银行备注
+        交易场所: null
+        交易国家或地区简称: null
+        钞/汇: null
+        交易金额(收入): 收入金额
+        交易金额(支出): 支出金额
+        交易币种: null
+        记账金额(收入): 收入金额
+        记账金额(支出): 支出金额
+        记账币种: null
+        余额: 账户余额
+        对方户名: 对手名称
+  parser_id: excel_grid
+- id: md5:9efdca93f18ed8b68b21b467f7df2896
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
@@ -799,30 +626,30 @@
       any:
       - 中国建设银行
       - 账户明细编号-交易流水号
-    layout:
+    columns:
       all:
-      - 明细查询结果
-      - 账号
-      - 账户名称
-      - 开户行名称
-      - 交易时间
-      - 借方发生额/元(支取)
-      - 贷方发生额/元(收入)
-      - 余额
-      - 币种
-      - 对方户名
-      - 对方账号
-      - 对方开户机构
-      - 记账日期
-      - 摘要
-      - 备注
-      - 账户明细编号-交易流水号
-      - 企业流水号
-      - 凭证种类
-      - 凭证号
-      - 交易介质编号
-- id: md5:5f02392ca5f443262407ea270258ab77
-  parser: ccb_account_detail_info_excel
+        明细查询结果: null
+        账号: 本方账户
+        账户名称: 本方名称
+        开户行名称: null
+        交易时间: 交易时间
+        借方发生额/元(支取): 支出金额
+        贷方发生额/元(收入): 收入金额
+        余额: 账户余额
+        币种: null
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方开户机构: null
+        记账日期: 交易日期
+        摘要: 银行备注
+        备注: 银行备注
+        账户明细编号-交易流水号: null
+        企业流水号: null
+        凭证种类: null
+        凭证号: null
+        交易介质编号: null
+  parser_id: excel_grid
+- id: md5:d40fde2a2fbe9f999b4d2ff8f69fddb1
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
@@ -837,66 +664,40 @@
         size_min: 7
         size_max: 9
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 账号
-        - 交易时间
-        - 借方发
-        - 贷方发
-        - 余额
-        - 币种
-        - 对方户名
-        - 对方账号
-        - 对方开
-        - 户机构
-        - 记账日期
-        - 摘要
-        - 备注
-        - 账户明
-        - 细编号
-        - 交易流
-        - 水号
-        - 企业流
-        - 水号
-        - 凭证种类
-        - 凭证号
-        - 交易介
     date_format:
       any:
       - yyyymmdd
     identity:
       any:
       - 中国建设银行账户明细信息
-    layout:
+    columns:
       all:
-      - 本方户名：
-      - 查询时间段：
-      - 打印日期：
-      - 账号
-      - 交易时间
-      - 借方发
-      - 贷方发
-      - 余额
-      - 币种
-      - 对方户名
-      - 对方账号
-      - 对方开
-      - 户机构
-      - 记账日期
-      - 摘要
-      - 备注
-      - 账户明
-      - 细编号
-      - 交易流
-      - 水号
-      - 企业流
-      - 水号
-      - 凭证种类
-      - 凭证号
-      - 交易介
-- id: md5:fb12b3a5e591ecffa3f81d54085ea48e
-  parser: ccb_detail_query_download_excel
+        本方户名：: 本方名称
+        查询时间段：: null
+        打印日期：: null
+        账号: 本方账户
+        交易时间: 交易时间
+        借方发: 支出金额
+        贷方发: 收入金额
+        余额: 账户余额
+        币种: null
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方开: null
+        户机构: null
+        记账日期: 交易日期
+        摘要: 银行备注
+        备注: 银行备注
+        账户明: null
+        细编号: null
+        交易流: null
+        水号: null
+        企业流: null
+        凭证种类: null
+        凭证号: null
+        交易介: null
+  parser_id: excel_grid
+- id: md5:18380fd1c071bab330ba5094f2fe27b8
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
@@ -907,110 +708,82 @@
     identity:
       any:
       - 中国建设银行
-    layout:
-      all:
-      - 明细查询结果
-      - 明细查询结果下载
-      - 开户机构
-      - 账户名称
-      - 记账日期
-      - 交易时间
-      - 凭证种类
-      - 凭证号
-      - 发生额/元
-      - 余额/元
-      - 钞汇标志
-      - 对方户名
-      - 对方账号
-      - 摘要
-      - 备注
-      - 账户明细编号-交易流水号
-      - 企业流水号
-      - 本方账号
-      - 本方账户名称
-      - 本方账户开户机构
-    data:
-      all:
-      - same_row_all:
-        - 记账日期
-        - 交易时间
-        - 凭证种类
-        - 凭证号
-        - 发生额/元
-        - 余额/元
-        - 钞汇标志
-        - 对方户名
-        - 对方账号
-        - 摘要
-        - 备注
-        - 账户明细编号-交易流水号
-        - 企业流水号
-        - 本方账号
-        - 本方账户名称
-        - 本方账户开户机构
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:9f87ba8dcb91d4f4640609f355e43f32
-  parser: ccb_corporate_flat_excel
+    columns:
+      all:
+        明细查询结果: null
+        明细查询结果下载: null
+        开户机构: null
+        账户名称: 本方名称
+        记账日期: 交易日期
+        交易时间: 交易时间
+        凭证种类: null
+        凭证号: null
+        发生额/元: 交易金额
+        余额/元: 账户余额
+        钞汇标志: null
+        对方户名: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        备注: 银行备注
+        账户明细编号-交易流水号: null
+        企业流水号: null
+        本方账号: 本方账户
+        本方账户名称: 本方名称
+        本方账户开户机构: 本方账户
+  parser_id: excel_grid
+- id: md5:ab2765b9df96e959209eff662751d3d0
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 账号
-        - 账户名称
-        - 交易时间
-        - 借方发生额（支取）
-        - 贷方发生额（收入）
-        - 账户明细编号-交易流水号
     identity:
       any:
       - 账户明细编号-交易流水号
-    layout:
+    columns:
       all:
-      - 账号
-      - 账户名称
-      - 交易时间
-      - 借方发生额（支取）
-      - 贷方发生额（收入）
-      - 余额
-      - 币种
-      - 对方户名
-      - 对方账号
-      - 对方开户机构
-      - 记账日期
-      - 摘要
-      - 备注
-      - 账户明细编号-交易流水号
-      - 企业流水号
-      - 凭证种类
-      - 凭证号
-      - 个性化信息名称1
-      - 个性化信息名称2
-      - 个性化信息名称3
-      - 个性化信息名称4
-      - 个性化信息名称5
-      - 个性化信息名称6
-      - 个性化信息名称7
-      - 个性化信息名称8
-      - 个性化信息名称9
-      - 个性化信息名称10
-      - 个性化信息1
-      - 个性化信息2
-      - 个性化信息3
-      - 个性化信息4
-      - 个性化信息5
-      - 个性化信息6
-      - 个性化信息7
-      - 个性化信息8
-      - 个性化信息9
-      - 个性化信息10
-      - 交易介质编号
-- id: md5:671df073694c2969f2346545065ae02d
-  parser: corporate_account_statement_excel
+        账号: 本方账户
+        账户名称: 本方名称
+        交易时间: 交易时间
+        借方发生额（支取）: 支出金额
+        贷方发生额（收入）: 收入金额
+        余额: 账户余额
+        币种: null
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方开户机构: null
+        记账日期: 交易日期
+        摘要: 银行备注
+        备注: 银行备注
+        账户明细编号-交易流水号: null
+        企业流水号: null
+        凭证种类: null
+        凭证号: null
+        个性化信息名称1: null
+        个性化信息名称2: null
+        个性化信息名称3: null
+        个性化信息名称4: null
+        个性化信息名称5: null
+        个性化信息名称6: null
+        个性化信息名称7: null
+        个性化信息名称8: null
+        个性化信息名称9: null
+        个性化信息名称10: null
+        个性化信息1: null
+        个性化信息2: null
+        个性化信息3: null
+        个性化信息4: null
+        个性化信息5: null
+        个性化信息6: null
+        个性化信息7: null
+        个性化信息8: null
+        个性化信息9: null
+        个性化信息10: null
+        交易介质编号: null
+  parser_id: excel_grid
+- id: md5:dd4dfb9405be31302010fe2e2757e1d0
   file_type: excel
   bank: 招商银行
   account_type: 对公
@@ -1028,11 +801,6 @@
         size_min: 9
         size_max: 11
         row_max: 6
-    data:
-      all:
-      - same_row_all:
-        - 银行码
-        - '5456'
     date_format:
       any:
       - yyyymmdd
@@ -1040,50 +808,49 @@
       any:
       - 文件类型
       - ACCOUNT
-    layout:
+    columns:
       all:
-      - 账号名称
-      - 银行账号
-      - 查询开始日期
-      - 查询结束日期
-      - 账号
-      - 账号名称
-      - 币种
-      - 交易日
-      - 交易时间
-      - 起息日
-      - 交易类型
-      - 借方金额
-      - 贷方金额
-      - 余额
-      - 摘要
-      - 流水号
-      - 流程实例号
-      - 业务名称
-      - 用途
-      - 业务参考号
-      - 业务摘要
-      - 其它摘要
-      - 收(付)方分行名
-      - 收(付)方名称
-      - 收(付)方账号
-      - 收(付)方开户行行号
-      - 收(付)方开户行名
-      - 收(付)方开户行地址
-      - 母(子)公司账号分行名
-      - 母(子)公司账号
-      - 母(子)公司名称
-      - 信息标志
-      - 有否附件信息
-      - 冲账标志
-      - 扩展摘要
-      - 交易分析码
-      - 票据号
-      - 商务支付订单号
-      - 内部编号
-      - 公司一卡通号
-- id: md5:922463a90b09303efc20800cc6bcc34f
-  parser: headerless_excel
+        账号名称: 本方账户
+        银行账号: 本方账户
+        查询开始日期: null
+        查询结束日期: null
+        账号: 本方账户
+        币种: null
+        交易日: 交易日期
+        交易时间: 交易时间
+        起息日: null
+        交易类型: 银行备注
+        借方金额: 支出金额
+        贷方金额: 收入金额
+        余额: 账户余额
+        摘要: 银行备注
+        流水号: null
+        流程实例号: null
+        业务名称: null
+        用途: 银行备注
+        业务参考号: null
+        业务摘要: 银行备注
+        其它摘要: 银行备注
+        收(付)方分行名: null
+        收(付)方名称: 对手名称
+        收(付)方账号: 本方账户
+        收(付)方开户行行号: null
+        收(付)方开户行名: null
+        收(付)方开户行地址: null
+        母(子)公司账号分行名: 本方账户
+        母(子)公司账号: 本方账户
+        母(子)公司名称: null
+        信息标志: null
+        有否附件信息: null
+        冲账标志: null
+        扩展摘要: 银行备注
+        交易分析码: null
+        票据号: null
+        商务支付订单号: null
+        内部编号: null
+        公司一卡通号: null
+  parser_id: excel_grid
+- id: md5:79074121ad8d14a3f1464983a1256187
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1105,17 +872,17 @@
     identity:
       any:
       - 转账类型
-    layout:
+    columns:
       all:
-      - 交易日期
-      - 交易金额(元)
-      - 对方户名
-      - 对方账号
-      - 转账类型
-      - 账户余额(元)
-      - 附言
-- id: md5:506b4cf8edc5244a37262f3704b61455
-  parser: psbc_debit_history_excel
+        交易日期: 交易日期
+        交易金额(元): 交易金额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        转账类型: null
+        账户余额(元): 账户余额
+        附言: 账户方附言
+  parser_id: excel_grid
+- id: md5:8afbe512c10012139a9b6805a1e4532d
   file_type: excel
   bank: 中国邮政储蓄银行
   account_type: 个人
@@ -1123,24 +890,24 @@
     identity:
       any:
       - 中国邮政储蓄银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 卡号/账号
-      - 开户行名称
-      - 交易时间
-      - 子账号
-      - 储种
-      - 币种
-      - 钞汇
-      - 交易金额
-      - 交易余额
-      - 对方户名
-      - 对方账号
-      - 摘要
-      - 交易渠道
-      - 外部系统流水
-- id: md5:437e553e2b14b6bc8995f7e6962b3a6a
-  parser: jxrcb_transaction_excel
+        卡号/账号: 本方账户
+        开户行名称: null
+        交易时间: 交易时间
+        子账号: 本方账户
+        储种: null
+        币种: null
+        钞汇: null
+        交易金额: 交易金额
+        交易余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        交易渠道: 交易渠道
+        外部系统流水: null
+  parser_id: excel_grid
+- id: md5:b9f0c1fc6e69d0b240d6ed76f52782d6
   file_type: excel
   bank: 江西农商银行
   account_type: 个人
@@ -1151,20 +918,20 @@
       - 江西·农商银行交易流水
       - 江西·农商银行交易明细
       - 农商银行交易明细
-    layout:
+    columns:
       all:
-      - 户
-      - 名
-      - 账
-      - 号
-      - 记账日期
-      - 交易金额(元)
-      - 交易后余额(元)
-      - 交易摘要
-      - 对方户名
-      - 对方账号
-- id: md5:3fadf64d25e300625c69752664ef7f0f
-  parser: jiangxi_rural_commercial_watermarked_excel
+        户: 本方名称
+        名: 本方名称
+        账: 交易日期
+        号: 本方账户
+        记账日期: 交易日期
+        交易金额(元): 交易金额
+        交易后余额(元): 账户余额
+        交易摘要: 银行备注
+        对方户名: 对手名称
+        对方账号: 对手账户
+  parser_id: excel_grid
+- id: md5:7cd5d75c94ad6bcaf7afa9bb3de6a7ba
   file_type: excel
   bank: 江西农商银行
   account_type: 个人
@@ -1178,29 +945,20 @@
         font: SimHei
         size_min: 13
         size_max: 15
-    data:
-      all:
-      - same_row_all:
-        - 微信支付
-        - 微信转账
-        - '1000050201'
-      - same_row_all:
-        - 跨行转出-张从金
-        - 张从金
     date_format:
       any:
       - yyyymmdd
     identity:
       any:
       - 江西·农商银行
-    layout:
+    columns:
       all:
-      - 江西·农商银行
-      - 微信支付
-      - 跨行转出-张从金
-      - 张从金
-- id: md5:10a4a5258baf0a15daaaf6ee94b19c8c
-  parser: cmb_transaction_excel
+        江西·农商银行: null
+        微信支付: null
+        跨行转出-张从金: 支出金额
+        张从金: null
+  parser_id: excel_grid
+- id: md5:dd3805e73618f143a1c11086995468dd
   file_type: excel
   bank: 招商银行
   account_type: 个人
@@ -1209,19 +967,19 @@
       any:
       - 招商银行交易流水
       - Transaction Statement of China Merchants Bank
-    layout:
+    columns:
       all:
-      - 户
-      - 名
-      - 账号
-      - 记账日期
-      - 货币
-      - 交易金额
-      - 联机余额
-      - 交易摘要
-      - 对手信息
-- id: md5:8c082bb670edd40c3038aedd54f98654
-  parser: wechat_bill_excel
+        户: 本方名称
+        名: 本方名称
+        账号: 本方账户
+        记账日期: 交易日期
+        货币: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易摘要: 银行备注
+        对手信息: 对手名称
+  parser_id: excel_grid
+- id: md5:d99fc743b49a5bb0cd43079dde2f6a1e
   file_type: excel
   bank: 微信支付
   account_type: 个人
@@ -1229,26 +987,26 @@
     identity:
       any:
       - 微信支付账单明细
-    layout:
+    columns:
       all:
-      - 微信昵称
-      - 起始时间
-      - 终止时间
-      - 导出类型
-      - 导出时间
-      - 交易时间
-      - 交易类型
-      - 交易对方
-      - 商品
-      - 收/支
-      - 金额(元)
-      - 支付方式
-      - 当前状态
-      - 交易单号
-      - 商户单号
-      - 备注
-- id: md5:5dd37420ea09d3cae818d355cd4339b7
-  parser: wechat_proof_excel
+        微信昵称: null
+        起始时间: null
+        终止时间: null
+        导出类型: null
+        导出时间: null
+        交易时间: 交易时间
+        交易类型: 银行备注
+        交易对方: 对手名称
+        商品: null
+        收/支: 收支方向
+        金额(元): 交易金额
+        支付方式: null
+        当前状态: null
+        交易单号: null
+        商户单号: null
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:48a1a9cde662e1515e3d8f3238934e92
   file_type: excel
   bank: 微信支付
   account_type: 个人
@@ -1256,21 +1014,21 @@
     identity:
       any:
       - 微信支付交易明细证明
-    layout:
+    columns:
       all:
-      - 兹证明
-      - 交易明细对应时间段
-      - 具体交易明细
-      - 交易单号
-      - 交易时间
-      - 交易类型
-      - 收/支/其他
-      - 交易方式
-      - 金额(元)
-      - 交易对方
-      - 商户单号
-- id: md5:37e2db5aede940ca65e7fb88d0a3ccfc
-  parser: alipay_proof_excel
+        兹证明: null
+        交易明细对应时间段: null
+        具体交易明细: null
+        交易单号: null
+        交易时间: 交易时间
+        交易类型: 银行备注
+        收/支/其他: 收支方向
+        交易方式: 交易渠道
+        金额(元): 交易金额
+        交易对方: 对手名称
+        商户单号: null
+  parser_id: excel_grid
+- id: md5:d49bfc9adb939f8ec6504ad2d3db2a7a
   file_type: excel
   bank: 支付宝
   account_type: 个人
@@ -1279,21 +1037,21 @@
       any:
       - 支付宝支付科技有限公司
       - 交易流水证明
-    layout:
+    columns:
       all:
-      - 兹证明
-      - 交易时间段
-      - 币种
-      - 收/支
-      - 交易对方
-      - 商品说明
-      - 收/付款方式
-      - 金额
-      - 交易订单号
-      - 商家订单号
-      - 交易时间
-- id: md5:8ac0ccaeafccf2dcd277ff0ab875d8d0
-  parser: nanchang_rural_commercial_account_query_excel
+        兹证明: null
+        交易时间段: 交易时间
+        币种: null
+        收/支: 收支方向
+        交易对方: 对手名称
+        商品说明: null
+        收/付款方式: null
+        金额: 交易金额
+        交易订单号: null
+        商家订单号: null
+        交易时间: 交易时间
+  parser_id: excel_grid
+- id: md5:a0ee66484055a9e8464401c462c3ef6b
   file_type: excel
   bank: 南昌农村商业银行股份有限公司
   account_type: 未知
@@ -1308,34 +1066,29 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 南昌农村商业银行股份有限公司罗家支行
-        - 行内转账
-        same_row_none:
-        - 超级网银
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:c2c06c237dfa0e516a4709594a22c249
-  parser: jiangxi_lushan_rural_commercial_account_query_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        南昌农村商业银行股份有限公司罗家支行: null
+        行内转账: null
+  parser_id: excel_grid
+- id: md5:d2a01fb2c2ba6778579bfe9e305423fa
   file_type: excel
   bank: 江西庐山农村商业银行
   account_type: 未知
@@ -1350,13 +1103,6 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 江西庐山农村商业银行横塘支行
-        - 行内转账
-        same_row_none:
-        - 超级网银
     date_format:
       any:
       - yyyy-mm-dd
@@ -1364,21 +1110,23 @@
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:6d37398ab968d5df17e67f89735e4904
-  parser: rural_commercial_account_query_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        江西庐山农村商业银行横塘支行: null
+        行内转账: null
+  parser_id: excel_grid
+- id: md5:0d2309ae63a3bd196a3599de12784ab8
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1393,42 +1141,29 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 九江银行股份有限公司
-        - 超级网银来贷
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:201577751af2552c4bc0a46679902de1
-  parser: rural_commercial_super_online_debit_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        九江银行股份有限公司: null
+        超级网银来贷: null
+  parser_id: excel_grid
+- id: md5:81fea4a6ec613799439a03b9c844855b
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1444,41 +1179,28 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 超级网银往贷
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:b7c1febbd5568bb49a81508e4796729c
-  parser: rural_commercial_administrator_account_query_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        超级网银往贷: null
+  parser_id: excel_grid
+- id: md5:f0b9f25ee1a45b1675bc651951e041bf
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1494,41 +1216,28 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 行内转账
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:ad1cc8826ae747aed69643eabd2b7487
-  parser: rural_commercial_administrator_no_range_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        行内转账: null
+  parser_id: excel_grid
+- id: md5:efc11486342b636a8497d14583326214
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1548,39 +1257,26 @@
       - text: 交易日期
         font: 宋体
         row_max: 2
-    data:
-      all:
-      - same_row_all:
-        - 超级网银往贷
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:5d8c3409b87b7fe0a1f27f53c969812a
-  parser: rural_commercial_expedited_transfer_excel
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        超级网银往贷: null
+  parser_id: excel_grid
+- id: md5:8911e3c839ec14c599623c9db49babd6
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1588,7 +1284,7 @@
     metadata:
       all:
         application: BIFF/XLS
-        creator: ""
+        creator: ''
     style:
       all:
       - text: 账户明细查询结果
@@ -1597,41 +1293,28 @@
         size_max: 17
         bold: true
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 加急汇Ｘ
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:a7aed7ca2fd7978fe859cc9a1ee17f8d
-  parser: bank_of_nanjing_transaction_detail_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        加急汇Ｘ: null
+  parser_id: excel_grid
+- id: md5:72891a2921d529e834354d9031fb3a87
   file_type: excel
   bank: 南京银行
   account_type: 未知
@@ -1642,39 +1325,25 @@
     identity:
       any:
       - 南京银行交易明细
-    layout:
-      all:
-      - 交易日期
-      - 摘要
-      - 借方发生额
-      - 贷方发生额
-      - 余额
-      - 凭证序号
-      - 营业机构号
-      - 对方账号
-      - 对方户名
-      - 柜员流水号
-      - 备注信息
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 摘要
-        - 借方发生额
-        - 贷方发生额
-        - 余额
-        - 凭证序号
-        - 营业机构号
-        - 对方账号
-        - 对方户名
-        - 柜员流水号
-        - 备注信息
     date_format:
       any:
       - yyyy-mm-dd
       - yyyy-mm-dd hh:mm:ss
-- id: md5:6c007d1dffdf98bc69a1a1b147765ca9
-  parser: bank_of_jiangsu_corporate_statement_excel
+    columns:
+      all:
+        交易日期: 交易日期
+        摘要: 银行备注
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+        凭证序号: null
+        营业机构号: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        柜员流水号: null
+        备注信息: 银行备注
+  parser_id: excel_grid
+- id: md5:1cec1b0793223c0be2f1f2ed860eb226
   file_type: excel
   bank: 江苏银行
   account_type: 对公
@@ -1685,47 +1354,30 @@
     identity:
       any:
       - 江苏银行对公帐户对帐单
-    layout:
-      all:
-      - 账号
-      - 户名
-      - 江苏银行对公帐户对帐单
-      - 序号
-      - 付款账号
-      - 交易日期
-      - 交易时间
-      - 凭证代号
-      - 借贷标记
-      - 交易金额
-      - 账户余额
-      - 交易柜员
-      - 摘要代码
-      - 对方账号
-      - 对方户名
-      - 币种
-      - 流水号
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 付款账号
-        - 交易日期
-        - 交易时间
-        - 凭证代号
-        - 借贷标记
-        - 交易金额
-        - 账户余额
-        - 交易柜员
-        - 摘要代码
-        - 对方账号
-        - 对方户名
-        - 币种
-        - 流水号
     date_format:
       any:
       - yyyymmdd
-- id: md5:1c1889ffd0b891f07207d4bab9afeec6
-  parser: account_serial_income_expense_excel
+    columns:
+      all:
+        账号: 本方账户
+        户名: 本方名称
+        江苏银行对公帐户对帐单: null
+        序号: null
+        付款账号: 本方账户
+        交易日期: 交易日期
+        交易时间: 交易时间
+        凭证代号: null
+        借贷标记: 收支方向
+        交易金额: 交易金额
+        账户余额: 账户余额
+        交易柜员: null
+        摘要代码: 银行备注
+        对方账号: 对手账户
+        对方户名: 对手名称
+        币种: null
+        流水号: null
+  parser_id: excel_grid
+- id: md5:ed497d178cc98663ced8a9317b842e73
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -1737,44 +1389,27 @@
     identity:
       any:
       - 账户号
-    layout:
-      all:
-      - 账户号
-      - 交易流水号
-      - 交易日期
-      - 交易时间
-      - 对方账户名
-      - 对方账户
-      - 相关信息
-      - 收支
-      - 交易金额
-      - 交易类型
-      - 交易渠道
-      - 账户余额
-      - 币种
-      - 附言
-    data:
-      all:
-      - same_row_all:
-        - 账户号
-        - 交易流水号
-        - 交易日期
-        - 交易时间
-        - 对方账户名
-        - 对方账户
-        - 相关信息
-        - 收支
-        - 交易金额
-        - 交易类型
-        - 交易渠道
-        - 账户余额
-        - 币种
-        - 附言
     date_format:
       any:
       - yyyymmdd
-- id: md5:2d908307fbb17e385e80c69d821ab6e7
-  parser: jiujiang_bank_transaction_detail_excel
+    columns:
+      all:
+        账户号: 本方账户
+        交易流水号: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        对方账户名: 对手名称
+        对方账户: 对手账户
+        相关信息: 银行备注
+        收支: 收支方向
+        交易金额: 交易金额
+        交易类型: 银行备注
+        交易渠道: 交易渠道
+        账户余额: 账户余额
+        币种: null
+        附言: 账户方附言
+  parser_id: excel_grid
+- id: md5:c132146b5648e8ffaf02eaff43edf555
   file_type: excel
   bank: 九江银行
   account_type: 对公
@@ -1782,39 +1417,26 @@
     identity:
       any:
       - 开户银行:九江银行
-    layout:
-      all:
-      - 交易明细清单
-      - '查询账号:'
-      - '账户名称:'
-      - 交易时间
-      - 交易金额
-      - 收入
-      - 支出
-      - 余额
-      - 币种
-      - 对方账号
-      - 对方户名
-      - 摘要
-      - 交易用途
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 交易金额
-        - 收入
-        - 支出
-        - 余额
-        - 币种
-        - 对方账号
-        - 对方户名
-        - 摘要
-        - 交易用途
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:5725ca9efdcfa54020705b534a39edb1
-  parser: jiujiang_bank_wide_transaction_export_excel
+    columns:
+      all:
+        交易明细清单: null
+        '查询账号:': 本方账户
+        '账户名称:': 本方名称
+        交易时间: 交易时间
+        交易金额: 交易金额
+        收入: 收入金额
+        支出: 支出金额
+        余额: 账户余额
+        币种: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        摘要: 银行备注
+        交易用途: 银行备注
+  parser_id: excel_grid
+- id: md5:598c8cbfb4c4fbd925edc592073165ac
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1826,50 +1448,30 @@
     identity:
       any:
       - 交易时间
-    layout:
-      all:
-      - 交易时间
-      - 交易金额
-      - 本方账号
-      - 本方子账号序号
-      - 收入
-      - 支出
-      - 余额
-      - 币种
-      - 对方账号
-      - 对方子账号序号
-      - 对方户名
-      - 对方开户行
-      - 交易流水号
-      - 摘要
-      - 渠道标志
-      - 交易用途
-      - 备注
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 交易金额
-        - 本方账号
-        - 本方子账号序号
-        - 收入
-        - 支出
-        - 余额
-        - 币种
-        - 对方账号
-        - 对方子账号序号
-        - 对方户名
-        - 对方开户行
-        - 交易流水号
-        - 摘要
-        - 渠道标志
-        - 交易用途
-        - 备注
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:17d1eafea12ac7f1bc1041741e54a4dc
-  parser: corporate_query_account_summary_excel
+    columns:
+      all:
+        交易时间: 交易时间
+        交易金额: 交易金额
+        本方账号: 本方账户
+        本方子账号序号: 本方账户
+        收入: 收入金额
+        支出: 支出金额
+        余额: 账户余额
+        币种: null
+        对方账号: 对手账户
+        对方子账号序号: null
+        对方户名: 对手名称
+        对方开户行: null
+        交易流水号: null
+        摘要: 银行备注
+        渠道标志: 交易渠道
+        交易用途: 银行备注
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:4c90504be47d1c88a5cdfcfe7bf6cf07
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -1877,49 +1479,31 @@
     identity:
       any:
       - 查询账号
-    layout:
-      all:
-      - 查询账号
-      - 总笔数
-      - 查询时间范围
-      - 借方发生总笔数
-      - 贷方发生总笔数
-      - 交易流水号
-      - 交易时间
-      - 收入(元)
-      - 支出(元)
-      - 余额(元)
-      - 对方账号
-      - 对方子账号序号
-      - 对方户名
-      - 对方开户行
-      - 摘要
-      - 渠道标志
-      - 交易用途
-      - 备注
-    data:
-      all:
-      - same_row_all:
-        - 交易流水号
-        - 交易时间
-        - 收入(元)
-        - 支出(元)
-        - 余额(元)
-        - 对方账号
-        - 对方子账号序号
-        - 对方户名
-        - 对方开户行
-        - 摘要
-        - 渠道标志
-        - 交易用途
-        - 备注
-        same_row_none:
-        - 交易子账号序号
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:3a11082366c64cf914ef384964f00837
-  parser: jiujiang_bank_corporate_detail_excel
+    columns:
+      all:
+        查询账号: 本方账户
+        总笔数: null
+        查询时间范围: null
+        借方发生总笔数: 支出金额
+        贷方发生总笔数: 收入金额
+        交易流水号: null
+        交易时间: 交易时间
+        收入(元): 收入金额
+        支出(元): 支出金额
+        余额(元): 账户余额
+        对方账号: 对手账户
+        对方子账号序号: null
+        对方户名: 对手名称
+        对方开户行: null
+        摘要: 银行备注
+        渠道标志: 交易渠道
+        交易用途: 银行备注
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:a47bea69829e26ab98b236df20ce455b
   file_type: excel
   bank: 九江银行
   account_type: 对公
@@ -1928,49 +1512,32 @@
       any:
       - 查询账号
       - 九江银行股份有限公司
-    layout:
-      all:
-      - 查询账号
-      - 总笔数
-      - 查询时间范围
-      - 借方发生总笔数
-      - 贷方发生总笔数
-      - 交易流水号
-      - 交易时间
-      - 交易子账号序号
-      - 收入(元)
-      - 支出(元)
-      - 余额(元)
-      - 对方账号
-      - 对方子账号序号
-      - 对方户名
-      - 对方开户行
-      - 摘要
-      - 渠道标志
-      - 交易用途
-      - 备注
-    data:
-      all:
-      - same_row_all:
-        - 交易流水号
-        - 交易时间
-        - 交易子账号序号
-        - 收入(元)
-        - 支出(元)
-        - 余额(元)
-        - 对方账号
-        - 对方子账号序号
-        - 对方户名
-        - 对方开户行
-        - 摘要
-        - 渠道标志
-        - 交易用途
-        - 备注
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:05299adcb3c68f98a8966df5e5a442e9
-  parser: srbank_personal_history_excel
+    columns:
+      all:
+        查询账号: 本方账户
+        总笔数: null
+        查询时间范围: null
+        借方发生总笔数: 支出金额
+        贷方发生总笔数: 收入金额
+        交易流水号: null
+        交易时间: 交易时间
+        交易子账号序号: 本方账户
+        收入(元): 收入金额
+        支出(元): 支出金额
+        余额(元): 账户余额
+        对方账号: 对手账户
+        对方子账号序号: null
+        对方户名: 对手名称
+        对方开户行: null
+        摘要: 银行备注
+        渠道标志: 交易渠道
+        交易用途: 银行备注
+        备注: 银行备注
+  parser_id: excel_grid
+- id: md5:ce0a73b1abee7828dd394f6decf8d16c
   file_type: excel
   bank: 上饶银行
   account_type: 个人
@@ -1978,71 +1545,50 @@
     identity:
       any:
       - 上饶银行历史交易流水
-    layout:
+    columns:
       all:
-      - 户名：
-      - 账号：
-      - 流水日期：
-      - 开户行：
-      - 申请时间：
-      - 序号
-      - 交易日期
-      - 交易时间
-      - 交易金额
-      - 余额
-      - 对方银行卡号
-      - 对方户名
-      - 交易摘要
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易日期
-        - 交易时间
-        - 交易金额
-        - 余额
-        - 对方银行卡号
-        - 对方户名
-- id: md5:cacae7ad74f436d2fb14ed649f2b5306
-  parser: srbank_personal_history_excel
+        户名：: 本方名称
+        账号：: 本方账户
+        流水日期：: null
+        开户行：: null
+        申请时间：: null
+        序号: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        余额: 账户余额
+        对方银行卡号: null
+        对方户名: 对手名称
+        交易摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:acee3c1b1482a332172e80f95abdfb9f
   file_type: excel
   bank: 上饶银行
   account_type: 个人
   fingerprint:
     metadata:
       all:
-        application: ""
+        application: ''
     identity:
       any:
       - 上饶银行历史交易流水
-    layout:
+    columns:
       all:
-      - 户名：
-      - 账号：
-      - 流水日期：
-      - 开户行：
-      - 申请时间：
-      - 序号
-      - 交易日期
-      - 交易时间
-      - 交易金额
-      - 余额
-      - 对方银行卡号
-      - 对方户名
-      - 摘要
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易日期
-        - 交易时间
-        - 交易金额
-        - 余额
-        - 对方银行卡号
-        - 对方户名
-        - 摘要
-- id: md5:9ad0cd5663d3596025e347176f7fa614
-  parser: account_history_detail_excel
+        户名：: 本方名称
+        账号：: 本方账户
+        流水日期：: null
+        开户行：: null
+        申请时间：: null
+        序号: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        余额: 账户余额
+        对方银行卡号: null
+        对方户名: 对手名称
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:78ac9f1789fbdddc6e51bfaaedf92a57
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -2050,34 +1596,24 @@
     identity:
       any:
       - 账户历史明细
-    layout:
-      all:
-      - '账号:'
-      - '户名:'
-      - '币种:'
-      - '起止日期:'
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方开户行
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 收入金额
-        - 支出金额
-        - 账户余额
-        - 对方账号
-        - 对方户名
-        - 对方开户行
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:fe663a28cfd3a85002bd291a337fdda7
-  parser: counterparty_wide_debit_credit_excel
+    columns:
+      all:
+        '账号:': 本方账户
+        '户名:': 本方名称
+        '币种:': null
+        '起止日期:': null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: null
+  parser_id: excel_grid
+- id: md5:c376523d256e4f519d1a34503c4c7217
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -2089,50 +1625,30 @@
     identity:
       any:
       - 序号
-    layout:
-      all:
-      - 序号
-      - 交易时间
-      - 币种
-      - 借方发生额
-      - 贷方发生额
-      - 余额
-      - 对手方
-      - 对手方账号
-      - 对手方银行
-      - 收款人
-      - 收款账号
-      - 用途
-      - 备注
-      - 凭证号
-      - 摘要
-      - 流水号
-      - 操作员
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易时间
-        - 币种
-        - 借方发生额
-        - 贷方发生额
-        - 余额
-        - 对手方
-        - 对手方账号
-        - 对手方银行
-        - 收款人
-        - 收款账号
-        - 用途
-        - 备注
-        - 凭证号
-        - 摘要
-        - 流水号
-        - 操作员
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:e6de7955b9f41253acefd3e73a88f640
-  parser: industrial_bank_transaction_detail_excel
+    columns:
+      all:
+        序号: null
+        交易时间: 交易时间
+        币种: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+        对手方: null
+        对手方账号: null
+        对手方银行: null
+        收款人: null
+        收款账号: 本方账户
+        用途: 银行备注
+        备注: 银行备注
+        凭证号: null
+        摘要: 银行备注
+        流水号: null
+        操作员: null
+  parser_id: excel_grid
+- id: md5:89724cb13246318033be53f045021bef
   file_type: excel
   bank: 兴业银行
   account_type: 个人
@@ -2141,49 +1657,69 @@
       any:
       - 兴业银行交易流水
       - Industrial Bank Transaction Details
-    layout:
-      all:
-      - 户          名
-      - 账号：
-      - 币          种
-      - 账户类型
-      - 交易时间
-      - Transaction Time
-      - 记账日期
-      - Accounting Date
-      - 摘要
-      - Transaction Type
-      - 支/收
-      - 交易金额
-      - Transaction Amount
-      - 账户余额
-      - Account Balance
-      - 对方户名
-      - Counterparty’s
-      - 对方账户/对方银行
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - Transaction Time
-        - 记账日期
-        - Accounting Date
-        - 摘要
-        - Transaction Type
-        - 支/收
-        - 交易金额
-        - Transaction Amount
-        - 账户余额
-        - Account Balance
-        - 对方户名
-        - Counterparty’s
-        - 对方账户/对方银行
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
       - yyyymmdd
-- id: md5:44f1bbdaf3ec7ca70c0d45f204dce63a
-  parser: rural_commercial_laptop_account_query_excel
+    columns:
+      all:
+        户          名: 本方名称
+        账号：: 本方账户
+        币          种: null
+        账户类型: null
+        交易时间: 交易时间
+        Transaction Time: null
+        记账日期: 交易日期
+        Accounting Date: null
+        摘要: 银行备注
+        Transaction Type: null
+        支/收: null
+        交易金额: 交易金额
+        Transaction Amount: null
+        账户余额: 账户余额
+        Account Balance: null
+        对方户名: 对手名称
+        Counterparty’s: null
+        对方账户/对方银行: 对手账户
+  parser_id: excel_grid
+- id: md5:93783dc5cadc47278e89e6fe66b26b0f
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: Laptop
+    style:
+      all:
+      - text: 账户明细查询结果
+        font: 宋体
+        size_min: 15
+        size_max: 17
+        bold: false
+        row_max: 1
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细查询结果
+    columns:
+      all:
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:1a63ea5518f240c74ee0a8cf9fedccf4
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -2199,42 +1735,29 @@
         size_min: 15
         size_max: 17
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 手机银行
-        - 行内转账
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:14c613d816864deba3044181f29ff8ad
-  parser: rural_commercial_biff_super_online_debit_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+        时晓艳: null
+        超级网银往贷: null
+  parser_id: excel_grid
+- id: md5:43d65bd6dce1bba7be1d0ede6e6a1773
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -2242,7 +1765,7 @@
     metadata:
       all:
         application: BIFF/XLS
-        creator: ""
+        creator: ''
     style:
       all:
       - text: 账户明细查询结果
@@ -2251,42 +1774,27 @@
         size_max: 17
         bold: true
         row_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 时晓艳
-        - 超级网银往贷
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 收入金额
-        - 账户余额
-        - 对方账号
-        - 对方名称
-        - 对方行名
-        - 交易渠道
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 账户明细查询结果
-    layout:
+    columns:
       all:
-      - 开始日期
-      - 截止日期
-      - 交易日期
-      - 支出金额
-      - 收入金额
-      - 账户余额
-      - 对方账号
-      - 对方名称
-      - 对方行名
-      - 交易渠道
-      - 摘要
-- id: md5:d7888d7a019cdb7d36990752c3a7de24
-  parser: srbank_corporate_online_detail_excel
+        开始日期: null
+        截止日期: null
+        交易日期: 交易日期
+        支出金额: 支出金额
+        收入金额: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        对方行名: null
+        交易渠道: 交易渠道
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:a37161d5af1592d07dcc59deacb6d742
   file_type: excel
   bank: 上饶银行
   account_type: 对公
@@ -2298,42 +1806,26 @@
     identity:
       any:
       - 交易流水号
-    layout:
-      all:
-      - 序号
-      - 交易流水号
-      - 交易时间
-      - 对方户名
-      - 对方账号
-      - 对方账户开户网点
-      - 支出
-      - 收入
-      - 账户余额
-      - 批次号
-      - 总笔数
-      - 附言
-      - 摘要
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易流水号
-        - 交易时间
-        - 对方户名
-        - 对方账号
-        - 对方账户开户网点
-        - 支出
-        - 收入
-        - 账户余额
-        - 批次号
-        - 总笔数
-        - 附言
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:bb5397eabaefbc3510278e306329999f
-  parser: jiujiang_bank_simple_transaction_export_excel
+    columns:
+      all:
+        序号: null
+        交易流水号: null
+        交易时间: 交易时间
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方账户开户网点: 对手账户
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+        批次号: null
+        总笔数: null
+        附言: 账户方附言
+        摘要: 银行备注
+  parser_id: excel_grid
+- id: md5:a4b28bd1de5449fc9f8ae99878e8e1f5
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -2350,34 +1842,22 @@
         size_max: 10
         row_max: 2
         col_max: 1
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 交易金额
-        - 收入
-        - 支出
-        - 余额
-        - 币种
-        - 对方账号
-        - 对方户名
-        - 摘要
-        - 交易用途
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 交易时间
-    layout:
+    columns:
       all:
-      - 交易时间
-      - 交易金额
-      - 收入
-      - 支出
-      - 余额
-      - 币种
-      - 对方账号
-      - 对方户名
-      - 摘要
-      - 交易用途
+        交易时间: 交易时间
+        交易金额: 交易金额
+        收入: 收入金额
+        支出: 支出金额
+        余额: 账户余额
+        币种: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        摘要: 银行备注
+        交易用途: 银行备注
+  parser_id: excel_grid

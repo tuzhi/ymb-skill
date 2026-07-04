@@ -6,7 +6,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
@@ -17,7 +16,6 @@ from ymb_standardization_core import core  # noqa: E402
 from ymb_standardization_core.parsers.routing.rule_loader import ExcelRouteRule  # noqa: E402
 from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
-
 def load_input_router():
     spec = importlib.util.spec_from_file_location(
         "input_router",
@@ -27,7 +25,6 @@ def load_input_router():
     spec.loader.exec_module(module)
     module.configure_readers(core.read_rows_excel, core.read_rows_csv, core.NotABankStatement)
     return module
-
 
 class InputRouterTests(unittest.TestCase):
     def test_csv_input_is_not_supported_as_raw_statement(self):
@@ -50,7 +47,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "abc_account_detail_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["file_type"], "excel")
         self.assertEqual(result.route_info["bank"], "中国农业银行")
@@ -64,7 +63,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "abc_legacy_account_detail_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "中国农业银行")
         self.assertTrue(result.route_info["style_evidence"])
@@ -78,7 +79,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "account_detail_income_expense_usage_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -92,7 +95,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "hunan_sanxiang_bank_account_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "湖南三湘银行")
         self.assertEqual(route["account_type"], "对公")
@@ -106,7 +111,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "icbc_debit_history_electronic_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国工商银行")
         self.assertEqual(route["account_type"], "个人")
@@ -120,7 +127,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "detail_download_debit_credit_counterparty_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -134,7 +143,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "current_account_detail_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -148,7 +159,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "debit_card_date_range_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "个人")
@@ -162,7 +175,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "mybank_corporate_transaction_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "浙江网商银行")
         self.assertEqual(route["account_type"], "对公")
@@ -173,7 +188,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "historydetail_debit_credit_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -184,7 +201,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "historydetail_transfer_amount_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -197,7 +216,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "historydetail_transfer_in_out_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
 
@@ -212,7 +233,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "boc_hisxls_bilingual_corporate_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "中国银行")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -223,7 +246,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "account_transaction_detail_export_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -239,7 +264,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "account_header_debit_credit_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -252,7 +279,9 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(excel))
 
-        self.assertEqual(result.route_info["parser"], "ccb_corporate_flat_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "中国建设银行")
 
@@ -263,7 +292,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "ccb_account_detail_info_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国建设银行")
         self.assertEqual(route["account_type"], "对公")
@@ -280,7 +311,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "ccb_detail_query_download_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国建设银行")
         self.assertEqual(route["account_type"], "对公")
@@ -294,7 +327,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "bank_of_nanjing_transaction_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "南京银行")
 
@@ -307,7 +342,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "bank_of_jiangsu_corporate_statement_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "江苏银行")
         self.assertEqual(route["account_type"], "对公")
@@ -321,7 +358,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "account_serial_income_expense_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -335,7 +374,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiujiang_bank_corporate_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "九江银行")
         self.assertEqual(route["account_type"], "对公")
@@ -349,7 +390,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "srbank_personal_history_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "上饶银行")
         self.assertEqual(route["account_type"], "个人")
@@ -363,7 +406,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "srbank_corporate_online_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "上饶银行")
         self.assertEqual(route["account_type"], "对公")
@@ -377,7 +422,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "corporate_query_account_summary_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -391,7 +438,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "account_history_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -405,7 +454,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "counterparty_wide_debit_credit_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
@@ -419,7 +470,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "industrial_bank_transaction_detail_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "兴业银行")
         self.assertEqual(route["account_type"], "个人")
@@ -433,7 +486,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_laptop_account_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -447,7 +502,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_biff_super_online_debit_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -461,7 +518,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "srbank_personal_history_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "上饶银行")
         self.assertEqual(route["account_type"], "个人")
@@ -477,16 +536,21 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows("unknown.xlsx")
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "generic_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "unmatched")
         self.assertEqual(result.route_info["file_type"], "excel")
 
-    def test_excel_route_config_uses_fingerprint_for_identity_and_layout(self):
+    def test_excel_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
         rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "excel_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:
+            self.assertNotIn("parser", item)
+            self.assertIn("parser_id", item)
+            self.assertNotIn("column_mapping", item)
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
             fingerprint = item.get("fingerprint") or {}
@@ -494,7 +558,11 @@ class InputRouterTests(unittest.TestCase):
             self.assertNotIn("version", item)
             self.assertEqual(item["id"], fingerprint_md5(fingerprint))
             self.assertIn("identity", fingerprint)
-            self.assertIn("layout", fingerprint)
+            self.assertNotIn("layout", fingerprint)
+            self.assertNotIn("data", fingerprint)
+            columns = fingerprint.get("columns") or {}
+            self.assertIsInstance(columns.get("all"), dict)
+            self.assertTrue(columns.get("all"))
 
     def test_excel_route_without_yaml_fingerprint_falls_back_to_generic(self):
         module = load_input_router()
@@ -503,26 +571,29 @@ class InputRouterTests(unittest.TestCase):
             module.load_excel_route_rules = lambda: [
                 ExcelRouteRule(
                     id="md5:test",
-                    parser="unfingerprinted_excel",
+                    parser_id="excel_grid",
                     file_type="excel",
                     bank="测试银行",
                     account_type="未知",
+                    column_mapping={},
                     identity_any=["测试银行"],
-                    layout_all=["交易时间", "账户余额"],
+                    column_markers=["交易时间", "账户余额"],
                     metadata_all={},
                     style_all=[],
-                    data_all=[],
                     date_format_any=[],
                 )
             ]
 
             route = module.route_excel([["测试银行", "交易时间", "账户余额"]], "Sheet1", context={})
 
-            self.assertEqual(route["parser"], "generic_excel")
+            self.assertNotIn("parser", route)
+
             self.assertEqual(route["parser_id"], "excel_grid")
             self.assertEqual(route["decision"], "unmatched")
             self.assertIn("candidate_fingerprints", route)
-            self.assertEqual(route["candidate_fingerprints"][0]["parser"], "unfingerprinted_excel")
+            self.assertNotIn("parser", route["candidate_fingerprints"][0])
+
+            self.assertEqual(route["candidate_fingerprints"][0]["parser_id"], "excel_grid")
             self.assertEqual(route["candidate_fingerprints"][0]["reason"], "missing_yaml_fingerprint")
         finally:
             module.load_excel_route_rules = original
@@ -536,7 +607,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "headerless_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertTrue(route["metadata_evidence"])
@@ -551,10 +624,12 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "nanchang_rural_commercial_account_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["bank"], "南昌农村商业银行股份有限公司")
         self.assertTrue(route["style_evidence"])
-        self.assertTrue(route["data_evidence"])
+        self.assertIn("交易日期", route["columns_evidence"])
 
     def test_account_query_result_routes_to_jiangxi_lushan_rural_commercial_bank(self):
         module = load_input_router()
@@ -565,10 +640,12 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiangxi_lushan_rural_commercial_account_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["bank"], "江西庐山农村商业银行")
         self.assertTrue(route["style_evidence"])
-        self.assertTrue(route["data_evidence"])
+        self.assertIn("交易日期", route["columns_evidence"])
 
     def test_generic_rural_commercial_account_query_does_not_infer_bank(self):
         module = load_input_router()
@@ -577,17 +654,16 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_account_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
         self.assertTrue(route["style_evidence"])
         self.assertEqual(route["metadata_evidence"]["application"], "BIFF/XLS")
         self.assertEqual(route["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
-        self.assertEqual(
-            route["data_evidence"][0]["same_row_all"],
-            ["九江银行股份有限公司", "超级网银来贷"],
-        )
+        self.assertIn("交易日期", route["columns_evidence"])
 
     def test_rural_commercial_super_online_debit_excel_does_not_infer_bank(self):
         module = load_input_router()
@@ -598,7 +674,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_super_online_debit_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -612,7 +690,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_administrator_account_query_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -626,7 +706,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_administrator_no_range_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -640,7 +722,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "rural_commercial_expedited_transfer_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -654,7 +738,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
 
         self.assertEqual(result.kind, "pdf")
-        self.assertEqual(result.route_info["parser"], "zhejiang_qyrcb_pdf_text")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "pdf_fixed_width")
         self.assertGreater(len(result.rows), 200)
 
     def test_cmb_transaction_pdf_route_matches_local_sample(self):
@@ -669,16 +755,15 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
 
         self.assertEqual(result.kind, "pdf")
-        self.assertEqual(result.route_info["parser"], "cmb_transaction_pdf")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "pdf_text_lines")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "个人")
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "openhtmltopdf.com")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
-        self.assertEqual(
-            result.route_info["data_evidence"][0]["same_row_all"],
-            ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"],
-        )
+        self.assertIn("记账日期", result.route_info["columns_evidence"])
         self.assertGreater(len(result.rows), 10)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
 
@@ -689,16 +774,15 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
 
         self.assertEqual(result.kind, "pdf")
-        self.assertEqual(result.route_info["parser"], "corporate_account_statement_pdf_text")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "pdf_table")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "OpenPDF 1.3.30")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd"])
-        self.assertEqual(
-            result.route_info["data_evidence"][0]["same_row_all"],
-            ["交易日期", "借方(出账)", "贷方(入账)", "余额摘要", "收(付)方名称", "收(付)方账号", "交易类型"],
-        )
+        self.assertIn("交易日期", result.route_info["columns_evidence"])
         self.assertEqual(len(result.rows), 0)
 
     def test_corporate_account_statement_excel_route_matches_openpyxl_sample(self):
@@ -708,7 +792,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "corporate_account_statement_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -725,7 +811,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "card_detail_download_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "个人")
@@ -737,7 +825,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "jiujiang_bank_transaction_detail_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "九江银行")
         self.assertEqual(result.route_info["account_type"], "对公")
@@ -749,17 +839,16 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
 
         self.assertEqual(result.kind, "excel")
-        self.assertEqual(result.route_info["parser"], "jiujiang_bank_simple_transaction_export_excel")
+        self.assertNotIn("parser", result.route_info)
+
+        self.assertEqual(result.route_info["parser_id"], "excel_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
         self.assertEqual(result.route_info["metadata_evidence"]["creator"], "openpyxl")
         self.assertEqual(result.route_info["metadata_evidence"]["last_modified_by"], "陈会开")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
-        self.assertEqual(
-            result.route_info["data_evidence"][0]["same_row_all"],
-            ["交易时间", "交易金额", "收入", "支出", "余额", "币种", "对方账号", "对方户名", "摘要", "交易用途"],
-        )
+        self.assertIn("交易时间", result.route_info["columns_evidence"])
 
     def test_jiujiang_bank_wide_transaction_export_does_not_infer_bank(self):
         module = load_input_router()
@@ -770,7 +859,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiujiang_bank_wide_transaction_export_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
@@ -782,15 +873,14 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiujiang_bank_transaction_statement_pdf")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "pdf_text_lines")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "九江银行")
         self.assertEqual(route["account_type"], "个人")
         self.assertEqual(route["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
-        self.assertEqual(
-            route["data_evidence"][0]["same_row_all"],
-            ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"],
-        )
+        self.assertIn("记账日期", route["columns_evidence"])
         self.assertGreater(len(result.rows), 10)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
 
@@ -803,7 +893,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "cmbc_personal_statement_pdf")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "pdf_text_lines")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国民生银行")
         self.assertEqual(route["account_type"], "个人")
@@ -823,7 +915,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "industrial_bank_transaction_detail_pdf")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "pdf_table")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "兴业银行")
         self.assertEqual(route["account_type"], "个人")
@@ -835,14 +929,13 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "wechat_pay_proof_pdf")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "payment_proof_text")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "微信支付")
         self.assertEqual(route["account_type"], "个人")
-        self.assertEqual(
-            route["data_evidence"][0]["same_row_all"],
-            ["交易单号", "交易时间", "交易类型", "收/支/其他", "交易方式", "金额(元)", "交易对方", "商户单号"],
-        )
+        self.assertIn("交易单号", route["columns_evidence"])
         self.assertGreater(len(result.rows), 1)
 
     def test_jiangxi_rural_commercial_pdf_route_matches_watermarked_export(self):
@@ -852,15 +945,14 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiangxi_rural_commercial_pdf_text")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "pdf_fixed_width")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "个人")
         self.assertEqual(route["date_format_evidence"], ["yyyy-mm-dd"])
-        self.assertEqual(
-            route["data_evidence"][0]["same_row_all"],
-            ["记账日期", "交易金额(元)", "交易后余额(元)", "交易摘要", "对方户名", "对方账号"],
-        )
+        self.assertIn("记账日期", route["columns_evidence"])
 
     def test_jiangxi_rural_commercial_watermarked_excel_route(self):
         module = load_input_router()
@@ -869,7 +961,9 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "jiangxi_rural_commercial_watermarked_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "个人")
@@ -886,12 +980,13 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertEqual(route["parser"], "wechat_proof_excel")
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["parser_id"], "excel_grid")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "微信支付")
         self.assertEqual(route["account_type"], "个人")
         self.assertGreater(len(result.rows), 100)
-
 
 if __name__ == "__main__":
     unittest.main()

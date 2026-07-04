@@ -1,48 +1,29 @@
-- id: md5:58353c34763109d84edee2ece0d4a71f
-  parser: abc_text_pdf
+- id: md5:ab5d413308d9d27f3aa913d772fa3494
   file_type: pdf
   bank: 中国农业银行
   account_type: 个人
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 交易时间
-        - 交易摘要
-        - 交易金额
-        - 本次余额
-        - 对手信息
     identity:
       any:
       - 中国农业银行账户活期交易明细清单
-    layout:
+    columns:
       all:
-      - 账户活期交易明细清单
-      - 交易日期
-      - 交易时间
-      - 交易摘要
-      - 交易金额
-      - 本次余额
-      - 对手信息
-      - 日 志 号
-      - 交易渠道
-      - 交易附言
-- id: md5:f25d1960686525515cc3c5d3eb69ad59
-  parser: jiangxi_rural_commercial_pdf_text
+        账户活期交易明细清单: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易摘要: 银行备注
+        交易金额: 交易金额
+        本次余额: 账户余额
+        对手信息: 对手名称
+        日 志 号: null
+        交易渠道: 交易渠道
+        交易附言: 账户方附言
+  parser_id: pdf_fixed_width
+- id: md5:e833fbf4a2171d66315c5a3bda64711c
   file_type: pdf
   bank: 江西农商银行
   account_type: 个人
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 记账日期
-        - 交易金额(元)
-        - 交易后余额(元)
-        - 交易摘要
-        - 对方户名
-        - 对方账号
     date_format:
       any:
       - yyyy-mm-dd
@@ -50,20 +31,20 @@
       any:
       - 江西·农商银行
       - 江西农商银行
-    layout:
+    columns:
       all:
-      - 江西·农商银行交易流水
-      - 户 名
-      - 账 号
-      - 起止日期
-      - 记账日期
-      - 交易金额(元)
-      - 交易后余额(元)
-      - 交易摘要
-      - 对方户名
-      - 对方账号
-- id: md5:58425245f4c16c81ed5964a98778b11e
-  parser: kasikorn_pdf_text
+        江西·农商银行交易流水: null
+        户 名: 本方名称
+        账 号: 本方账户
+        起止日期: null
+        记账日期: 交易日期
+        交易金额(元): 交易金额
+        交易后余额(元): 账户余额
+        交易摘要: 银行备注
+        对方户名: 对手名称
+        对方账号: 对手账户
+  parser_id: pdf_fixed_width
+- id: md5:37399b38ddd3572cc70fc6f8b9be2900
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
   account_type: 个人
@@ -81,22 +62,22 @@
       - K BIZ
       - AccountMR.
       - Account Number
-    layout:
+    columns:
       all:
-      - K PLUS
-      - K BIZ
-      - AccountMR.
-      - Account Number
-      - Time/
-      - Date
-      - Descriptions
-      - Withdrawal / Deposit
-      - Outstanding Balance
-      - Channel
-      - Details
-      - Eff.Date
-- id: md5:32b7ac56fda503cc1ee7e04d8fa72502
-  parser: zhejiang_qyrcb_pdf_text
+        K PLUS: null
+        K BIZ: null
+        AccountMR.: null
+        Account Number: null
+        Time/: null
+        Date: null
+        Descriptions: null
+        Withdrawal / Deposit: null
+        Outstanding Balance: null
+        Channel: null
+        Details: null
+        Eff.Date: null
+  parser_id: pdf_fixed_width
+- id: md5:69c7df7286e238aef80ae49938fd397a
   file_type: pdf
   bank: 浙江庆元农商银行
   account_type: 个人
@@ -112,57 +93,25 @@
       any:
       - 浙江庆元农商银行
       - 庆元农商银行
-    layout:
+    columns:
       all:
-      - 个人账户交易明细
-      - '户名:'
-      - '账号:'
-      - '开户行:'
-      - '账户种类:'
-      - 交易日期
-      - 币种
-      - 交易摘要
-      - 交易金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方行
-      - 交易渠道
-      - 备注
-- id: md5:7cb3034de2738fc02c5cb79fe9774c97
-  parser: icbc_account_detail_pdf
-  file_type: pdf
-  bank: 中国工商银行
-  account_type: 对公
-  fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 本方账号
-        - 对方户名
-        - 对方账号
-        - 借方发生额
-        - 贷方发生额
-    identity:
-      any:
-      - 中国工商银行账户明细清单
-    layout:
-      all:
-      - 交易时间
-      - 本方账号
-      - 对方户名
-      - 对方账号
-      - 对方账户开户行
-      - 凭证号
-      - 借/贷
-      - 借方发生额
-      - 贷方发生额
-      - 摘要
-      - 用途
-      - 余额
-- id: md5:08a26f3e09a9d43ac4c1169774974b91
-  parser: icbc_account_detail_table_pdf
+        个人账户交易明细: null
+        '户名:': 本方名称
+        '账号:': 本方账户
+        '开户行:': null
+        '账户种类:': null
+        交易日期: 交易日期
+        币种: null
+        交易摘要: 银行备注
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方行: null
+        交易渠道: 交易渠道
+        备注: 银行备注
+  parser_id: pdf_fixed_width
+- id: md5:0488448d0f1d96413a25254a500aab29
   file_type: pdf
   bank: 中国工商银行
   account_type: 对公
@@ -170,22 +119,45 @@
     identity:
       any:
       - 中国工商银行账户明细清单
-    layout:
+    columns:
       all:
-      - 入账日期
-      - 转入金额
-      - 转出金额
-      - 余额
-      - 对方单位
-      - 对方行号
-      - 对方账号
-      - 用途
-      - 本方账号
-      - 对方行名
-      - 摘要
-      - 回单个性化信息
-- id: md5:8e36835cd772122927a767634ae05616
-  parser: icbc_corporate_account_statement_pdf
+        交易时间: 交易时间
+        本方账号: 本方账户
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方账户开户行: 对手账户
+        凭证号: null
+        借/贷: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        摘要: 银行备注
+        用途: 银行备注
+        余额: 账户余额
+  parser_id: pdf_table
+- id: md5:aecf32d3b7fafab4b468106cd8a06d3a
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    columns:
+      all:
+        入账日期: 交易日期
+        转入金额: 收入金额
+        转出金额: 支出金额
+        余额: 账户余额
+        对方单位: 对手名称
+        对方行号: null
+        对方账号: 对手账户
+        用途: 银行备注
+        本方账号: 本方账户
+        对方行名: null
+        摘要: 银行备注
+        回单个性化信息: null
+  parser_id: pdf_table
+- id: md5:84a33d2b19cac75ce0e72118080eb538
   file_type: pdf
   bank: 中国工商银行
   account_type: 对公
@@ -199,53 +171,47 @@
     identity:
       any:
       - 中国工商银行账户明细清单
-    layout:
+    columns:
       all:
-      - 账号：
-      - 本方账号户名
-      - 本方账号开户行
-      - 时间范围
-      - 对方账号
-      - 交易时间
-      - 借贷标志
-      - 对方单位
-      - 用途
-      - 摘要
-      - 附言
-      - 回单个性化信息
-      - 转出金额
-      - 转入金额
-      - 余额
-- id: md5:71d86675ea319d9ed4f09b28b18aab74
-  parser: icbc_debit_history_pdf
+        账号：: 本方账户
+        本方账号户名: 本方名称
+        本方账号开户行: 本方账户
+        时间范围: null
+        对方账号: 对手账户
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        用途: 银行备注
+        摘要: 银行备注
+        附言: 账户方附言
+        回单个性化信息: null
+        转出金额: 支出金额
+        转入金额: 收入金额
+        余额: 账户余额
+  parser_id: pdf_table
+- id: md5:e1b859373a22a0c7fe680fc47c33fe12
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 中国工商银行借记账户历史明细
-        same_row_none:
-        - 电子版
     identity:
       any:
       - 中国工商银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 卡号
-      - 户名
-      - 交易日期
-      - 账号
-      - 储种
-      - 序号
-      - 币种
-      - 钞汇
-      - 摘要
-      - 地区
-      - 收入/支出
-- id: md5:2f09bec3106a41100b3d7bf8d42dde3a
-  parser: icbc_debit_history_electronic_pdf
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        摘要: 银行备注
+        地区: null
+        收入/支出: 收入金额
+  parser_id: pdf_table
+- id: md5:f6e2839cbb6173153037ad740c0be800
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -260,23 +226,23 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 电子版
-      - 卡号
-      - 户名
-      - 交易日期
-      - 账号
-      - 储种
-      - 序号
-      - 币种
-      - 钞汇
-      - 地区
-      - 收入/支出金额
-      - 余额
-      - 渠道
-- id: md5:7229157e2843152ed73e1a0d78798d59
-  parser: icbc_debit_history_electronic_pdf
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+  parser_id: pdf_table
+- id: md5:c32bf342dabb921d88641d06db8b4b54
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -291,21 +257,21 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 电子版
-      - 卡号
-      - 户名
-      - 交易日期
-      - 账号
-      - 储种
-      - 序号
-      - 币种
-      - 钞汇
-      - 地区
-      - 收入/支出金额
-- id: md5:64cc57a27324f122376095ebcec2432b
-  parser: icbc_debit_history_electronic_pdf
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+  parser_id: pdf_table
+- id: md5:90b7f0bdd1ba30c6488303e4c29eeb14
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -320,23 +286,23 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 电子版
-      - 卡号
-      - 户名
-      - 交易日期
-      - 账号
-      - 储种
-      - 序号
-      - 币种
-      - 钞汇
-      - 地区
-      - 收入/支出金额
-      - 余额
-      - 渠道
-- id: md5:51c1335651dc7aae27d1459373076346
-  parser: ccb_personal_detail_pdf
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+  parser_id: pdf_table
+- id: md5:1032385a14897d97067ff9b93def1769
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -344,15 +310,15 @@
     identity:
       any:
       - 中国建设银行个人活期账户全部交易明细
-    layout:
+    columns:
       all:
-      - 卡号/账号
-      - 客户名称
-      - 交易金额
-      - 账户余额
-      - 对方账号与户名
-- id: md5:c8256e75be4c87f4ccd8605f38ca8fbc
-  parser: ccb_corporate_detail_pdf
+        卡号/账号: 本方账户
+        客户名称: 本方名称
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号与户名: 对手账户
+  parser_id: pdf_table
+- id: md5:6db7b0df2ee808ba9fd0c559c836200e
   file_type: pdf
   bank: 中国建设银行
   account_type: 对公
@@ -360,18 +326,18 @@
     identity:
       any:
       - 中国建设银行账户明细信息
-    layout:
+    columns:
       all:
-      - 本方户名
-      - 账号
-      - 交易时
-      - 借方发
-      - 贷方发
-      - 对方户
-      - 对方账
-      - 账户明
-- id: md5:62c3c0eefc04c7b19d5c033dca3af251
-  parser: boc_transaction_detail_pdf
+        本方户名: 本方名称
+        账号: 本方账户
+        交易时: 交易时间
+        借方发: 支出金额
+        贷方发: 收入金额
+        对方户: 对手名称
+        对方账: 对手名称
+        账户明: null
+  parser_id: pdf_table
+- id: md5:d068a4ad8671f8712c47b5a994c218c9
   file_type: pdf
   bank: 中国银行
   account_type: 个人
@@ -379,18 +345,18 @@
     identity:
       any:
       - 中国银行交易流水明细清单
-    layout:
+    columns:
       all:
-      - 借记卡号
-      - 记账日期
-      - 记账时间
-      - 币别
-      - 金额
-      - 余额
-      - 对方账户名
-      - 对方卡号/账号
-- id: md5:103e4901f51fff323cac1feb4ebbf674
-  parser: psbc_history_detail_pdf
+        借记卡号: 本方账户
+        记账日期: 交易日期
+        记账时间: 交易时间
+        币别: null
+        金额: 交易金额
+        余额: 账户余额
+        对方账户名: 对手名称
+        对方卡号/账号: 对手账户
+  parser_id: pdf_table
+- id: md5:957cfc1778ee509bcd6d25b8efa32b3a
   file_type: pdf
   bank: 中国邮政储蓄银行
   account_type: 个人
@@ -399,21 +365,21 @@
       any:
       - 邮储银行历史明细
       - 中国邮政储蓄银行借记账户历史明细
-    layout:
+    columns:
       all:
-      - 交易时间
-      - 子账号
-      - 储种
-      - 币种
-      - 钞汇
-      - 交易金额
-      - 交易余额
-      - 对方户名
-      - 对方账号
-      - 摘要
-      - 交易渠道
-- id: md5:8f742e37b00e5cb31705b5ee781c4c9d
-  parser: abc_account_detail_pdf
+        交易时间: 交易时间
+        子账号: 本方账户
+        储种: null
+        币种: null
+        钞汇: null
+        交易金额: 交易金额
+        交易余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        交易渠道: 交易渠道
+  parser_id: pdf_table
+- id: md5:a91d6f155a0260565303c7969c1ba5ae
   file_type: pdf
   bank: 中国农业银行
   account_type: 对公
@@ -421,20 +387,20 @@
     identity:
       any:
       - 账户明细
-    layout:
+    columns:
       all:
-      - 账号
-      - 户名
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 对方账号
-      - 对方户名
-      - 对方开户行
-      - 摘要
-- id: md5:5de76bbd285d3716cc34ecea49cc0838
-  parser: abc_corporate_account_detail_pdf
+        账号: 本方账户
+        户名: 本方名称
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: null
+        摘要: 银行备注
+  parser_id: pdf_table
+- id: md5:6c0358919ac011286e44822dbcd66c8b
   file_type: pdf
   bank: 中国农业银行
   account_type: 对公
@@ -445,24 +411,24 @@
     identity:
       any:
       - 账户明细
-    layout:
+    columns:
       all:
-      - 账号：
-      - 户名：
-      - 币种：
-      - 起止日期
-      - 交易时间
-      - 收入金额
-      - 支出金额
-      - 账户余额
-      - 交易行名
-      - 对方城市
-      - 对方账号
-      - 对方户名
-      - 交易用途
-      - 会计日期
-- id: md5:9a4a045dc7b745487d34d627393c7c01
-  parser: srbank_transaction_detail_pdf
+        账号：: 本方账户
+        户名：: 本方名称
+        币种：: null
+        起止日期: null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        交易行名: null
+        对方城市: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        交易用途: 银行备注
+        会计日期: 交易日期
+  parser_id: pdf_table
+- id: md5:abe9a2a993c8f00e5c19e8cdb14ee611
   file_type: pdf
   bank: 上饶银行
   account_type: 对公
@@ -479,35 +445,23 @@
         size_max: 25
         top_max: 60
         centered: true
-    data:
-      all:
-      - same_row_all:
-        - 上饶银行
-        same_row_none:
-        - 超网
-        - 小额
-        - 大额
-        - 城银清
-        - 网银
-        - 银联
-        - 支付通道
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 交易明细
-    layout:
+    columns:
       all:
-      - 交易流水号
-      - 交易时间
-      - 对方户名
-      - 对方账户开户网点
-      - 支出
-      - 收入
-      - 账户余额
-- id: md5:a32bfe23cdb22ec2a3b5b8d44855a25e
-  parser: corporate_online_transaction_detail_pdf
+        交易流水号: null
+        交易时间: 交易时间
+        对方户名: 对手名称
+        对方账户开户网点: 对手账户
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+  parser_id: pdf_table
+- id: md5:b175ebd2e387d181fe3c4a5fbdfa998d
   file_type: pdf
   bank: 未识别
   account_type: 对公
@@ -524,44 +478,27 @@
         size_max: 25
         top_max: 60
         centered: true
-    data:
-      all:
-      - same_row_all:
-        - 超网-贷记转出
-      - same_row_all:
-        - 序号
-        - 交易流水号
-        - 交易时间
-        - 对方户名
-        - 对方账号
-        - 对方账户开户网点
-        - 支出
-        - 收入
-        - 账户余额
-        - 批次号
-        - 总笔数
-        - 附言
-        - 摘要
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 交易明细
-    layout:
+    columns:
       all:
-      - 交易流水号
-      - 交易时间
-      - 对方户名
-      - 对方账号
-      - 对方账户开户网点
-      - 支出
-      - 收入
-      - 账户余额
-      - 附言
-      - 摘要
-- id: md5:62241d5bf25ea039790b52d5edb0c533
-  parser: srbank_transaction_detail_pdf
+        交易流水号: null
+        交易时间: 交易时间
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方账户开户网点: 对手账户
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+        附言: 账户方附言
+        摘要: 银行备注
+        超网-贷记转出: 支出金额
+  parser_id: pdf_table
+- id: md5:7f811c14e0a4fdfc0d0efeaf64be0210
   file_type: pdf
   bank: 上饶银行
   account_type: 个人
@@ -574,46 +511,30 @@
         size_max: 21
         top_max: 70
         centered: true
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易日期
-        - 交易时间
-        - 交易金额
-        - 余额
-        - 对方银行
-        - 对方户名
-        - 摘要
-        same_row_none:
-        - 支出
-        - 收入
-        - 账户余额
-        - 流水号
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 上饶银行历史交易流水
-    layout:
+    columns:
       all:
-      - 户名：
-      - 账号：
-      - 流水日期：
-      - 开户行：
-      - 申请时间：
-      - 序号
-      - 交易日期
-      - 交易时间
-      - 交易金额
-      - 余额
-      - 对方银行
-      - 卡号
-      - 对方户名
-      - 摘要
-- id: md5:c5d4f3762aee935d017a5b82b6c6bb0e
-  parser: srbank_corporate_transaction_detail_pdf
+        户名：: 本方名称
+        账号：: 本方账户
+        流水日期：: null
+        开户行：: null
+        申请时间：: null
+        序号: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        余额: 账户余额
+        对方银行: null
+        卡号: 本方账户
+        对方户名: 对手名称
+        摘要: 银行备注
+  parser_id: pdf_table
+- id: md5:c17d8fd6703ef2b8dab16bb0d02d16ef
   file_type: pdf
   bank: 上饶银行
   account_type: 对公
@@ -621,38 +542,25 @@
     identity:
       any:
       - 上饶银行账户交易明细
-    layout:
+    columns:
       all:
-      - 账号：
-      - 户名：
-      - 银行盖章
-      - 打印时间
-      - 操作员号
-      - 序号
-      - 交易时间
-      - 流水号
-      - 对方账号
-      - 对方户名
-      - 支出
-      - 收入
-      - 账户余额
-      - 摘要
-      - 附言
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 交易时间
-        - 流水号
-        - 对方账号
-        - 对方户名
-        - 支出
-        - 收入
-        - 账户余额
-        - 摘要
-        - 附言
-- id: md5:0313446a4971e637471b0cf8732d9818
-  parser: mybank_corporate_transaction_detail_excel
+        账号：: 本方账户
+        户名：: 本方名称
+        银行盖章: null
+        打印时间: null
+        操作员号: null
+        序号: null
+        交易时间: 交易时间
+        流水号: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+        摘要: 银行备注
+        附言: 账户方附言
+  parser_id: pdf_table
+- id: md5:aa3ad86844e3ad1b5b077d765301c287
   file_type: pdf
   bank: 浙江网商银行
   account_type: 对公
@@ -660,42 +568,27 @@
     identity:
       any:
       - 企业账号
-    layout:
+    columns:
       all:
-      - 企业名称
-      - 企业账号
-      - 借方交易笔数
-      - 借方交易金额
-      - 贷方交易笔数
-      - 贷方交易金额
-      - 账务流水号
-      - 提交时间
-      - 交易时间
-      - 交易名称
-      - 借方金额（收）
-      - 贷方金额（支）
-      - 余额
-      - 对方户名
-      - 对方账号
-      - 对方机构
-      - 备注
-    data:
-      all:
-      - same_row_all:
-        - 序号
-        - 账务流水号
-        - 提交时间
-        - 交易时间
-        - 交易名称
-        - 借方金额（收）
-        - 贷方金额（支）
-        - 余额
-        - 对方户名
-        - 对方账号
-        - 对方机构
-        - 备注
-- id: md5:9ca4a1e3e124a0620137ed16ecf6b3c7
-  parser: cmb_transaction_pdf
+        企业名称: null
+        企业账号: 本方账户
+        借方交易笔数: 支出金额
+        借方交易金额: 支出金额
+        贷方交易笔数: 收入金额
+        贷方交易金额: 收入金额
+        账务流水号: null
+        提交时间: null
+        交易时间: 交易时间
+        交易名称: 银行备注
+        借方金额（收）: 支出金额
+        贷方金额（支）: 收入金额
+        余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方机构: null
+        备注: 银行备注
+  parser_id: pdf_table
+- id: md5:336aced4f33ef27ad250e418e5b5eb18
   file_type: pdf
   bank: 招商银行
   account_type: 个人
@@ -703,15 +596,6 @@
     metadata:
       all:
         Producer: openhtmltopdf.com
-    data:
-      all:
-      - same_row_all:
-        - 记账日期
-        - 货币
-        - 交易金额
-        - 联机余额
-        - 交易摘要
-        - 对手信息
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -719,18 +603,18 @@
       any:
       - 招商银行交易流水
       - Transaction Statement of China Merchants Bank
-    layout:
+    columns:
       all:
-      - 户 名
-      - 账号
-      - 记账日期
-      - 货币
-      - 交易金额
-      - 联机余额
-      - 交易摘要
-      - 对手信息
-- id: md5:05aa9e0b4f374fb4e51712da57762434
-  parser: industrial_bank_transaction_detail_pdf
+        户 名: 本方名称
+        账号: 本方账户
+        记账日期: 交易日期
+        货币: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易摘要: 银行备注
+        对手信息: 对手名称
+  parser_id: pdf_text_lines
+- id: md5:fe8aa1a88dca8739966109a8ef23a10e
   file_type: pdf
   bank: 兴业银行
   account_type: 个人
@@ -739,34 +623,26 @@
       any:
       - 兴业银行交易流水
       - Industrial Bank Transaction Details
-    layout:
-      all:
-      - 交易时间
-      - Transaction Time
-      - 记账日期
-      - Accounting Date
-      - 摘要
-      - Transaction Type
-      - 交易金额
-      - Transaction Amount
-      - 账户余额
-      - Account Balance
-      - 对方户名
-      - Counterparty’s
-      - 对方账户/对方银行
-    data:
-      all:
-      - same_row_all:
-        - Transaction Time
-        - Accounting Date
-        - Transaction Type
-        - Transaction Amount
-        - Account Balance
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:e21957b74777c6587ba66bed7a3adf47
-  parser: industrial_bank_transaction_detail_pdf
+    columns:
+      all:
+        交易时间: 交易时间
+        Transaction Time: null
+        记账日期: 交易日期
+        Accounting Date: null
+        摘要: 银行备注
+        Transaction Type: null
+        交易金额: 交易金额
+        Transaction Amount: null
+        账户余额: 账户余额
+        Account Balance: null
+        对方户名: 对手名称
+        Counterparty’s: null
+        对方账户/对方银行: 对手账户
+  parser_id: pdf_table
+- id: md5:a70735a0cf8fd249d144458896f7346c
   file_type: pdf
   bank: 兴业银行
   account_type: 个人
@@ -774,29 +650,21 @@
     identity:
       any:
       - 兴业银⾏交易流⽔
-    layout:
-      all:
-      - Bank Transaction Details
-      - Transaction Time
-      - Accounting Date
-      - Transaction Type
-      - Transaction Amount
-      - Account Balance
-      - Counterparty’s
-      - Counterparty’s Account No.
-    data:
-      all:
-      - same_row_all:
-        - Transaction Time
-        - Accounting Date
-        - Transaction Type
-        - Transaction Amount
-        - Account Balance
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:8da682129dd526c298de9b95e27f0570
-  parser: corporate_account_statement_pdf_text
+    columns:
+      all:
+        Bank Transaction Details: null
+        Transaction Time: null
+        Accounting Date: null
+        Transaction Type: null
+        Transaction Amount: null
+        Account Balance: null
+        Counterparty’s: null
+        Counterparty’s Account No.: null
+  parser_id: pdf_table
+- id: md5:0288eb600b69c2019ecf5ba7c11b422f
   file_type: pdf
   bank: 未识别
   account_type: 对公
@@ -811,27 +679,17 @@
       any:
       - 用户所属公司
       - 记录数
-    layout:
+    columns:
       all:
-      - 交易日期
-      - 借方(出账)
-      - 贷方(入账)
-      - 余额摘要
-      - 收(付)方名称
-      - 收(付)方账号
-      - 交易类型
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 借方(出账)
-        - 贷方(入账)
-        - 余额摘要
-        - 收(付)方名称
-        - 收(付)方账号
-        - 交易类型
-- id: md5:cf9a296fd7e85d9e2040b7e0dfaffe68
-  parser: jiujiang_bank_transaction_statement_pdf
+        交易日期: 交易日期
+        借方(出账): 支出金额
+        贷方(入账): 收入金额
+        余额摘要: 账户余额
+        收(付)方名称: 对手名称
+        收(付)方账号: 本方账户
+        交易类型: 银行备注
+  parser_id: pdf_table
+- id: md5:0818218cb218b9bdb699770e6a65e6dd
   file_type: pdf
   bank: 九江银行
   account_type: 个人
@@ -844,15 +702,6 @@
         size_max: 11
         top_max: 40
         centered: true
-    data:
-      all:
-      - same_row_all:
-        - 记账日期
-        - 货币
-        - 交易金额
-        - 联机余额
-        - 交易摘要
-        - 对手信息
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -860,25 +709,25 @@
       any:
       - 九江银行交易流水
       - Transaction Statement of Bank of JiuJiang
-    layout:
+    columns:
       all:
-      - '合同ID号:'
-      - '版本: V2'
-      - 九江银行交易流水
-      - Transaction Statement of Bank of JiuJiang
-      - '姓名:'
-      - '账号:'
-      - '账户类型:'
-      - '开户行:'
-      - '申请时间:'
-      - 记账日期
-      - 货币
-      - 交易金额
-      - 联机余额
-      - 交易摘要
-      - 对手信息
-- id: md5:d83fe0b286cc78568a2138784fa98697
-  parser: corporate_online_detail_table_pdf
+        '合同ID号:': null
+        '版本: V2': null
+        九江银行交易流水: null
+        Transaction Statement of Bank of JiuJiang: null
+        '姓名:': null
+        '账号:': 本方账户
+        '账户类型:': null
+        '开户行:': null
+        '申请时间:': null
+        记账日期: 交易日期
+        货币: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易摘要: 银行备注
+        对手信息: 对手名称
+  parser_id: pdf_text_lines
+- id: md5:fcbe39d694aa34cf564500f187aa8137
   file_type: pdf
   bank: 未识别
   account_type: 对公
@@ -886,33 +735,20 @@
     identity:
       any:
       - 企业网上银行--账户管理/明细查询
-    layout:
+    columns:
       all:
-      - 交易时间
-      - 转出金额
-      - 转入金额
-      - 币种
-      - 余额
-      - 对方单位
-      - 对方账号
-      - 摘要
-      - 操作
-      - 详细信息
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 转出金额
-        - 转入金额
-        - 币种
-        - 余额
-        - 对方单位
-        - 对方账号
-        - 摘要
-        - 操作
-        - 详细信息
-- id: md5:acd013011a0c04b398b28dfc5194da0b
-  parser: jiujiang_bank_corporate_detail_pdf
+        交易时间: 交易时间
+        转出金额: 支出金额
+        转入金额: 收入金额
+        币种: null
+        余额: 账户余额
+        对方单位: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        操作: null
+        详细信息: null
+  parser_id: pdf_table
+- id: md5:cdccd6123047eb2b26165e7e19d4e205
   file_type: pdf
   bank: 九江银行
   account_type: 对公
@@ -921,33 +757,22 @@
       any:
       - 开户银行:九江银行
       - 开户银行:九江银行股份有限公司
-    layout:
+    columns:
       all:
-      - 交易明细清单
-      - '查询账号:'
-      - '账户名称:'
-      - '交易时间范围:'
-      - 交易时间
-      - 收入(元)
-      - 支出(元)
-      - 余额(元)
-      - 对方账号
-      - 对方户名
-      - 摘要
-      - 交易用途
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 收入(元)
-        - 支出(元)
-        - 余额(元)
-        - 对方账号
-        - 对方户名
-        - 摘要
-        - 交易用途
-- id: md5:7f03a1e79923c4a3eb1931780c937192
-  parser: electronic_transaction_proof_pdf
+        交易明细清单: null
+        '查询账号:': 本方账户
+        '账户名称:': 本方名称
+        '交易时间范围:': 交易时间
+        交易时间: 交易时间
+        收入(元): 收入金额
+        支出(元): 支出金额
+        余额(元): 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        摘要: 银行备注
+        交易用途: 银行备注
+  parser_id: pdf_table
+- id: md5:ae05becb79352db902ea07365adcc6fa
   file_type: pdf
   bank: 中国光大银行
   account_type: 未知
@@ -956,41 +781,25 @@
       any:
       - 中国光大银行账户明细查询清单
       - Transaction Statement of China Everbright Bank
-    layout:
-      all:
-      - 交易日期
-      - 支出金额
-      - 存入金额
-      - 账户余额
-      - 对手信息
-      - 摘要
-      - Trans Date
-      - Trans Amt Dr
-      - Trans Amt Cr
-      - Account Balance
-      - Payment Receipt Account Information
-      - Abstract
-    data:
-      all:
-      - same_row_all:
-        - 交易日期
-        - 支出金额
-        - 存入金额
-        - 账户余额
-        - 对手信息
-        - 摘要
-      - same_row_all:
-        - Trans Date
-        - Trans Amt Dr
-        - Trans Amt Cr
-        - Account Balance
-        - Payment Receipt Account Information
-        - Abstract
     date_format:
       any:
       - yyyy-mm-dd
-- id: md5:d81ec57be6bc5ad3f491d3ca0e1d4a2d
-  parser: corporate_debit_credit_timestamp_pdf
+    columns:
+      all:
+        交易日期: 交易日期
+        支出金额: 支出金额
+        存入金额: 收入金额
+        账户余额: 账户余额
+        对手信息: 对手名称
+        摘要: 银行备注
+        Trans Date: null
+        Trans Amt Dr: null
+        Trans Amt Cr: null
+        Account Balance: null
+        Payment Receipt Account Information: null
+        Abstract: null
+  parser_id: pdf_table
+- id: md5:faa7f06d9f76df95dee8e82cb190016f
   file_type: pdf
   bank: 未识别
   account_type: 未知
@@ -998,32 +807,21 @@
     identity:
       any:
       - 时间戳
-    layout:
-      all:
-      - 交易时间
-      - 借贷标志
-      - 对方单位
-      - 摘要
-      - 转出金额
-      - 转入金额
-      - 余额
-      - 时间戳
-    data:
-      all:
-      - same_row_all:
-        - 交易时间
-        - 借贷标志
-        - 对方单位
-        - 摘要
-        - 转出金额
-        - 转入金额
-        - 余额
-        - 时间戳
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
-- id: md5:b9169959fa2a9175804219594af10115
-  parser: cmbc_personal_statement_pdf
+    columns:
+      all:
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        摘要: 银行备注
+        转出金额: 支出金额
+        转入金额: 收入金额
+        余额: 账户余额
+        时间戳: null
+  parser_id: pdf_table
+- id: md5:831325d33aa7b01f10771881ffc3ae76
   file_type: pdf
   bank: 中国民生银行
   account_type: 个人
@@ -1031,17 +829,17 @@
     identity:
       any:
       - 个人账户对账单
-    layout:
+    columns:
       all:
-      - 中国民生银行
-      - 客户姓名
-      - 客户账号
-      - 交易时间
-      - 交易金额
-      - 账户余额
-      - 对方户名/账号
-- id: md5:f980add8b9a7659278a0859856150da9
-  parser: fengcheng_shunyin_village_bank_pdf
+        中国民生银行: null
+        客户姓名: null
+        客户账号: 本方账户
+        交易时间: 交易时间
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方户名/账号: 对手名称
+  parser_id: pdf_text_lines
+- id: md5:099d6dd5362e8052b2b079fac6ebf6e0
   file_type: pdf
   bank: 丰城顺银村镇银行
   account_type: 个人
@@ -1049,16 +847,16 @@
     identity:
       any:
       - 丰城顺银村镇银行股份有限公司
-    layout:
+    columns:
       all:
-      - 账户/卡明细信息
-      - 账号/卡号
-      - 户名
-      - 交易时间
-      - 存入/支取
-      - 交易后余额
-- id: md5:ebb5eb17ed13249fcc7a0306e04bd22e
-  parser: jiangxi_yumin_bank_pdf
+        账户/卡明细信息: null
+        账号/卡号: 本方账户
+        户名: 本方名称
+        交易时间: 交易时间
+        存入/支取: 交易金额
+        交易后余额: 账户余额
+  parser_id: pdf_table
+- id: md5:19c8a8f7513adce0f0ad32a5c0b05154
   file_type: pdf
   bank: 江西裕民银行
   account_type: 个人
@@ -1067,49 +865,38 @@
       any:
       - 江西裕民银行交易流水
       - 江西裕民银行交易流水
-    layout:
+    columns:
       all:
-      - 客户姓名
-      - 账号
-      - 交易日期
-      - 交易金额(元)
-      - 账户余额(元)
-      - 对方户名
-- id: md5:e2ee17dbcbcd36d7cf8885732c76f783
-  parser: wechat_pay_proof_pdf
+        客户姓名: null
+        账号: 本方账户
+        交易日期: null
+        交易金额(元): 交易金额
+        账户余额(元): 账户余额
+        对方户名: 对手名称
+  parser_id: pdf_fixed_width
+- id: md5:48a1a9cde662e1515e3d8f3238934e92
   file_type: pdf
   bank: 微信支付
   account_type: 个人
   fingerprint:
-    data:
-      all:
-      - same_row_all:
-        - 交易单号
-        - 交易时间
-        - 交易类型
-        - 收/支/其他
-        - 交易方式
-        - 金额(元)
-        - 交易对方
-        - 商户单号
     identity:
       any:
       - 微信支付交易明细证明
-    layout:
+    columns:
       all:
-      - 兹证明
-      - 交易明细对应时间段
-      - 具体交易明细
-      - 交易单号
-      - 交易时间
-      - 交易类型
-      - 收/支/其他
-      - 交易方式
-      - 金额(元)
-      - 交易对方
-      - 商户单号
-- id: md5:b813e7faf777a5ec1020e091ca4ecff0
-  parser: wechat_pay_proof_pdf
+        兹证明: null
+        交易明细对应时间段: null
+        具体交易明细: null
+        交易单号: null
+        交易时间: 交易时间
+        交易类型: 银行备注
+        收/支/其他: 收支方向
+        交易方式: 交易渠道
+        金额(元): 交易金额
+        交易对方: 对手名称
+        商户单号: null
+  parser_id: payment_proof_text
+- id: md5:13cbd1af07e92414229d298a67bcf533
   file_type: pdf
   bank: 微信支付
   account_type: 个人
@@ -1117,36 +904,27 @@
     metadata:
       all:
         Creator: WPS 表格
-    data:
-      all:
-      - same_row_all:
-        - 交易单号
-        - 交易时间
-        - 交易类型
-        - 收/支/其他
-        - 交易方式
-        - 金额(元)
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
     identity:
       any:
       - 微信支付交易明细证明
-    layout:
+    columns:
       all:
-      - 兹证明
-      - 交易明细对应时间段
-      - 具体交易明细
-      - 交易单号
-      - 交易时间
-      - 交易类型
-      - 收/支/其他
-      - 交易方式
-      - 金额(元)
-      - 交易对方
-      - 商户单号
-- id: md5:2ac1e0212e064b2d8a2673f695897259
-  parser: alipay_proof_pdf
+        兹证明: null
+        交易明细对应时间段: null
+        具体交易明细: null
+        交易单号: null
+        交易时间: 交易时间
+        交易类型: 银行备注
+        收/支/其他: 收支方向
+        交易方式: 交易渠道
+        金额(元): 交易金额
+        交易对方: 对手名称
+        商户单号: null
+  parser_id: payment_proof_text
+- id: md5:e66751a430991d09abee5bcfd16232b1
   file_type: pdf
   bank: 支付宝
   account_type: 个人
@@ -1155,8 +933,9 @@
       any:
       - 支付宝支付科技有限公司
       - 交易流水证明
-    layout:
+    columns:
       all:
-      - 兹证明
-      - 交易时间段
-      - 币种
+        兹证明: null
+        交易时间段: 交易时间
+        币种: null
+  parser_id: payment_proof_text

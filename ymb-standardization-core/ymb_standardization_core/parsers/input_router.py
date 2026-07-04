@@ -13,7 +13,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.parsers.router import read_pdf_rows
-from ymb_standardization_core.parsers.routing.rule_loader import infer_parser_id, load_excel_route_rules
+from ymb_standardization_core.parsers.routing.rule_loader import load_excel_route_rules
 
 
 @dataclass
@@ -45,34 +45,57 @@ def _excel_candidate(rule, match):
     return {
         "id": rule.id,
         "fingerprint_id": rule.id,
-        "parser": rule.parser,
-        "parser_id": rule.parser_id or infer_parser_id(rule.parser, rule.file_type),
+        "parser_id": rule.parser_id,
         "decision": "matched",
         "file_type": rule.file_type,
         "bank": rule.bank,
         "account_type": rule.account_type,
+        "column_mapping": rule.column_mapping,
         "identity_evidence": match["identity_evidence"],
-        "layout_evidence": match["layout_evidence"],
+        "columns_evidence": match["columns_evidence"],
         "metadata_evidence": match.get("metadata_evidence", {}),
         "style_evidence": match.get("style_evidence", []),
-        "data_evidence": match.get("data_evidence", []),
         "date_format_evidence": match.get("date_format_evidence", []),
     }
 
 
 def _excel_fallback(sheet, candidate_fingerprints=None):
     return {
-        "parser": "generic_excel",
         "parser_id": "excel_grid",
         "decision": "unmatched",
         "file_type": "excel",
         "fingerprint_id": "",
         "bank": "",
         "account_type": "",
+        "column_mapping": {},
         "identity_evidence": [],
-        "layout_evidence": [sheet],
+        "columns_evidence": [sheet],
         "candidate_fingerprints": candidate_fingerprints or [],
     }
+
+
+def _choose_specific_candidate(candidates):
+    if not candidates:
+        return None
+    def score(item):
+        return (
+            len(item.get("columns_evidence", []))
+            + len(item.get("metadata_evidence", {})) * 2
+            + len(item.get("style_evidence", []))
+            + len(item.get("date_format_evidence", []))
+        )
+
+    by_score = sorted(candidates, key=score, reverse=True)
+    if len(by_score) == 1:
+        return by_score[0]
+    if score(by_score[0]) > score(by_score[1]):
+        return by_score[0]
+
+    identified = [item for item in candidates if item.get("bank") and item.get("bank") != "未识别"]
+    unidentified = [item for item in candidates if not item.get("bank") or item.get("bank") == "未识别"]
+    if len(identified) == 1 and unidentified:
+        return identified[0]
+    return None
 
 
 def route_excel(rows, sheet, context=None):
@@ -89,12 +112,15 @@ def route_excel(rows, sheet, context=None):
         return candidates[0]
     if not candidates:
         return _excel_fallback(sheet, candidate_fingerprints=candidate_fingerprints)
+    specific = _choose_specific_candidate(candidates)
+    if specific:
+        return specific
     return {
-        "parser": "ambiguous_router_match",
         "parser_id": "none",
         "decision": "ambiguous",
         "file_type": "excel",
         "fingerprint_id": "",
+        "column_mapping": {},
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints,
     }

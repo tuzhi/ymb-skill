@@ -41,7 +41,9 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
 
         result = router.route_pdf(text, 0, 1)
 
-        self.assertEqual(result["parser"], "generic_pdf_text_unmatched")
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "unmatched")
+        self.assertEqual(result["parser_id"], "none")
 
     def test_local_grzd_pdf_uses_zhejiang_qyrcb_text_parser(self):
         pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
@@ -56,13 +58,14 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
                 rows = list(csv.DictReader(f))
 
         image = mapping["文件画像"]
-        self.assertEqual(image["parser"], "zhejiang_qyrcb_pdf_text")
+        self.assertNotIn("parser", image)
+        self.assertEqual(image["parser_id"], "pdf_fixed_width")
         self.assertEqual(image["decision"], "matched")
         self.assertTrue(image["fingerprint_id"].startswith("md5:"))
         self.assertEqual(image["file_type"], "pdf")
         self.assertEqual(image["bank"], "浙江庆元农商银行")
         self.assertIn("庆元农商银行", image["identity_evidence"])
-        self.assertIn("个人账户交易明细", image["layout_evidence"])
+        self.assertIn("个人账户交易明细", image["columns_evidence"])
         self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "李先根")

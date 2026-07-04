@@ -926,12 +926,17 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             bank_name = infer_bank(fname)
             if bank_name:
                 bank_infer_source = "文件名"
-    if not bank_name and route_info.get("parser") == "jiangxi_rural_commercial_pdf_text":
+    if not bank_name and route_info.get("fingerprint_id") == "md5:f25d1960686525515cc3c5d3eb69ad59":
         bank_name = "农村商业银行"
         bank_infer_source = "router"
 
     # ---- 列 -> 标准字段 映射 ----
     overrides = overrides or {}
+    route_column_mapping = {
+        _norm(src): dst
+        for src, dst in (route_info.get("column_mapping") or {}).items()
+        if src and dst
+    }
     col_to_field = {}      # 列索引 -> 标准字段
     field_to_cols = {}     # 标准字段 -> [列索引...]
     mapping_detail = {}    # 标准字段 -> {原始字段, 置信度, 说明}
@@ -945,6 +950,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             field = overrides[col]
         elif _norm(idx) in overrides:
             field = overrides[_norm(idx)]
+        elif _norm(col) in route_column_mapping:
+            field = route_column_mapping[_norm(col)]
         else:
             field = match_field(col)
         if not field:
@@ -1237,21 +1244,21 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "整体置信度": overall_conf,
             "本方名称": acct["本方名称"],
             "本方账户": acct["本方账户"],
-            "parser": route_info.get("parser", ""),
             "parser_id": route_info.get("parser_id", ""),
             "decision": route_info.get("decision", ""),
             "fingerprint_id": route_info.get("fingerprint_id", route_info.get("id", "")),
             "file_type": route_info.get("file_type", file_kind),
             "bank": route_info.get("bank", ""),
             "account_type": route_info.get("account_type", ""),
+            "column_mapping": route_info.get("column_mapping", {}),
             "identity_evidence": route_info.get("identity_evidence", []),
-            "layout_evidence": route_info.get("layout_evidence", []),
+            "columns_evidence": route_info.get("columns_evidence", []),
             "ocr_supported": False,
             "ocr_used": False,
         },
         "预处理方案": [
-            {"步骤": "输入路由", "处理动作": f"使用 parser={route_info.get('parser', 'unknown')}",
-             "处理原因": "按文件类型/银行/模板/抽取模式选择确定性解析器",
+            {"步骤": "输入路由", "处理动作": f"使用 parser_id={route_info.get('parser_id', 'unknown')}",
+             "处理原因": "按文件类型、fingerprint 和抽取模式选择确定性 rows 读取策略",
              "影响范围": "文件读取与字段初始结构"},
             {"步骤": "表头定位", "处理动作": f"识别第 {header_idx} 行为表头（0-based）",
              "处理原因": "原始文件含标题/账户信息抬头", "影响范围": "全表"},
@@ -1272,7 +1279,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         "人工复核事项": review_items,
         "标准化统计": {"交易笔数": len(std_records), "金额结构": amount_mode,
                     "丢弃噪声行": dropped_noise, "行序整理策略": order_strategy},
-        "判断依据": f"路由 parser={route_info.get('parser', 'unknown')}；"
+        "判断依据": f"路由 fingerprint_id={route_info.get('fingerprint_id', '')}；"
+                    f"parser_id={route_info.get('parser_id', 'unknown')}；"
                     f"基于表头同义词匹配命中 {hits} 列；金额结构判为「{amount_mode}」；"
                     f"账户类型线索：{account_type}。摘要/附言按不可信输入仅作辅助。",
     }
