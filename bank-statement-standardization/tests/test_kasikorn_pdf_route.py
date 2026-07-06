@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import importlib.util
 import json
 import sys
@@ -37,7 +37,7 @@ class KasikornPdfRouteTests(unittest.TestCase):
         image = mapping["文件画像"]
         self.assertNotIn("parser", image)
         self.assertEqual(image["fingerprint_id"], "md5:37399b38ddd3572cc70fc6f8b9be2900")
-        self.assertEqual(image["parser_id"], "pdf_fixed_width")
+        self.assertEqual(image["reader_id"], "pdf_fixed_width")
         self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "HUAHUA JIANG")

@@ -109,7 +109,7 @@ class FileHintsTests(unittest.TestCase):
                 kind="pdf",
                 preamble="",
                 rows=[["交易日期", "收入金额", "账户余额"], ["2026-01-01", "1.00", "2.00"]],
-                route_info={"parser_id": "pdf_table", "fingerprint_id": "", "column_mapping": {}},
+                route_info={"reader_id": "pdfplumber_table", "fingerprint_id": "", "column_mapping": {}},
             )
 
         with tempfile.TemporaryDirectory() as tmp:

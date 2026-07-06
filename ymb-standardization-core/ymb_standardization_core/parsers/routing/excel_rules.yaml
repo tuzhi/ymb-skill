@@ -18,7 +18,7 @@
         对方户名: 对手名称
         对方开户行: null
         摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:64f43069b1537d001356c35b3f96ff3f
   file_type: excel
   bank: 中国农业银行
@@ -59,7 +59,7 @@
         对方户名: 对手名称
         对方开户行: null
         摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:123baf3afa5c24b1a775396d23e5a246
   file_type: excel
   bank: 中国农业银行
@@ -80,7 +80,7 @@
         日 志  号: null
         交易渠道: 交易渠道
         交易附言: 账户方附言
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:c7c83e9f3740ba3a9b6992e6f9bd75ae
   file_type: excel
   bank: 中国农业银行
@@ -102,7 +102,7 @@
         交易类型: 银行备注
         交易用途: 银行备注
         交易摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:80c960dd889647481791d4f4a22a9481
   file_type: excel
   bank: 中国银行
@@ -145,7 +145,7 @@
         交易流水号[ Transaction reference number ]: null
         名义付款人开户行行号[ Opening bank number of nominal payer ]: null
         名义收款人名称[ Name of nominal payee ]: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:3ffb58ecb2fb3217b992a3fad6049fe5
   file_type: excel
   bank: 未识别
@@ -180,7 +180,7 @@
         交易渠道: 交易渠道
         摘要: 银行备注
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:59cd5796389f547d334e8c2e939dd45b
   file_type: excel
   bank: 未识别
@@ -217,7 +217,7 @@
         借方发生额: 支出金额
         贷方发生额: 收入金额
         余额: 账户余额
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:d63bd9e802734b3117ff743fab1711ea
   file_type: excel
   bank: 未识别
@@ -253,7 +253,7 @@
         对方户名: 对手名称
         对方开户行: null
         交易用途: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:54d482f1bb6fb6bc4f80787d078dd9c0
   file_type: excel
   bank: 湖南三湘银行
@@ -289,7 +289,7 @@
         对方户名: 对手名称
         对方账号: 对手账户
         用途: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:7697b00a861bee4b02b2298ef2acdfd0
   file_type: excel
   bank: 中国工商银行
@@ -319,7 +319,7 @@
         对方户名: 对手名称
         对方账号: 对手账户
         渠道: 交易渠道
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:49395dabf42e9dfd5d535d7d00cb0586
   file_type: excel
   bank: 未识别
@@ -351,7 +351,7 @@
         摘要: 银行备注
         流水号: null
         操作员: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:3cb7f851a70871a6d8cf223a797e2b27
   file_type: excel
   bank: 未识别
@@ -376,7 +376,7 @@
         对方行行名: null
         备注: 银行备注
         交易流水号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:155991e46e686d77a15cbe77832fabf9
   file_type: excel
   bank: 未识别
@@ -404,7 +404,7 @@
         交易对手名称: 对手名称
         交易对手账号: 对手账户
         附言: 账户方附言
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:4439de424ba8efd1d77c7b9040e9c7ee
   file_type: excel
   bank: 浙江网商银行
@@ -435,7 +435,7 @@
         对方账号: 对手账户
         对方机构: null
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:cdfdabf4ff3865eb06e19799b138a953
   file_type: excel
   bank: 中国工商银行
@@ -455,7 +455,7 @@
         转出金额: 支出金额
         余额: 账户余额
         本方账号: 本方账户
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:8e7acced3786acbe8889d975b45d9237
   file_type: excel
   bank: 未识别
@@ -495,7 +495,7 @@
         对方单位名称: 对手名称
         余额: 账户余额
         个性化信息: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:80cef9ff74ff00bc7456358111a6adf2
   file_type: excel
   bank: 未识别
@@ -534,7 +534,7 @@
         转入金额: 收入金额
         发生额: 交易金额
         转出金额: 支出金额
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:39d6c4d498802b40f8a4eef053adfc86
   file_type: excel
   bank: 未识别
@@ -556,7 +556,7 @@
         转出金额: 支出金额
         余额: 账户余额
         业务编号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:64234594676aef35cfeb0968f3774a0c
   file_type: excel
   bank: 中国建设银行
@@ -576,7 +576,7 @@
         账户余额: 账户余额
         交易地点/附言: 账户方附言
         对方账号与户名: 对手账户
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:4fb218cc43c550d1fffc02e114d1f6f4
   file_type: excel
   bank: 未识别
@@ -616,7 +616,7 @@
         记账币种: null
         余额: 账户余额
         对方户名: 对手名称
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:9efdca93f18ed8b68b21b467f7df2896
   file_type: excel
   bank: 中国建设银行
@@ -648,7 +648,7 @@
         凭证种类: null
         凭证号: null
         交易介质编号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:d40fde2a2fbe9f999b4d2ff8f69fddb1
   file_type: excel
   bank: 中国建设银行
@@ -696,7 +696,7 @@
         凭证种类: null
         凭证号: null
         交易介: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:18380fd1c071bab330ba5094f2fe27b8
   file_type: excel
   bank: 中国建设银行
@@ -733,7 +733,7 @@
         本方账号: 本方账户
         本方账户名称: 本方名称
         本方账户开户机构: 本方账户
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:ab2765b9df96e959209eff662751d3d0
   file_type: excel
   bank: 中国建设银行
@@ -782,7 +782,7 @@
         个性化信息9: null
         个性化信息10: null
         交易介质编号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:dd4dfb9405be31302010fe2e2757e1d0
   file_type: excel
   bank: 招商银行
@@ -849,7 +849,7 @@
         商务支付订单号: null
         内部编号: null
         公司一卡通号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:79074121ad8d14a3f1464983a1256187
   file_type: excel
   bank: 未识别
@@ -881,7 +881,7 @@
         转账类型: null
         账户余额(元): 账户余额
         附言: 账户方附言
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:8afbe512c10012139a9b6805a1e4532d
   file_type: excel
   bank: 中国邮政储蓄银行
@@ -906,7 +906,7 @@
         摘要: 银行备注
         交易渠道: 交易渠道
         外部系统流水: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:b9f0c1fc6e69d0b240d6ed76f52782d6
   file_type: excel
   bank: 江西农商银行
@@ -930,34 +930,7 @@
         交易摘要: 银行备注
         对方户名: 对手名称
         对方账号: 对手账户
-  parser_id: excel_grid
-- id: md5:7cd5d75c94ad6bcaf7afa9bb3de6a7ba
-  file_type: excel
-  bank: 江西农商银行
-  account_type: 个人
-  fingerprint:
-    metadata:
-      all:
-        creator: openpyxl
-    style:
-      all:
-      - text: 江西·农商银行
-        font: SimHei
-        size_min: 13
-        size_max: 15
-    date_format:
-      any:
-      - yyyymmdd
-    identity:
-      any:
-      - 江西·农商银行
-    columns:
-      all:
-        江西·农商银行: null
-        微信支付: null
-        跨行转出-张从金: 支出金额
-        张从金: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:dd3805e73618f143a1c11086995468dd
   file_type: excel
   bank: 招商银行
@@ -978,7 +951,7 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:d99fc743b49a5bb0cd43079dde2f6a1e
   file_type: excel
   bank: 微信支付
@@ -1005,7 +978,7 @@
         交易单号: null
         商户单号: null
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:48a1a9cde662e1515e3d8f3238934e92
   file_type: excel
   bank: 微信支付
@@ -1027,7 +1000,7 @@
         金额(元): 交易金额
         交易对方: 对手名称
         商户单号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:d49bfc9adb939f8ec6504ad2d3db2a7a
   file_type: excel
   bank: 支付宝
@@ -1050,83 +1023,8 @@
         交易订单号: null
         商家订单号: null
         交易时间: 交易时间
-  parser_id: excel_grid
-- id: md5:a0ee66484055a9e8464401c462c3ef6b
-  file_type: excel
-  bank: 南昌农村商业银行股份有限公司
-  account_type: 未知
-  fingerprint:
-    metadata:
-      all:
-        application: BIFF/XLS
-    style:
-      all:
-      - text: 账户明细查询结果
-        font: 宋体
-        size_min: 15
-        size_max: 17
-        row_max: 1
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 账户明细查询结果
-    columns:
-      all:
-        开始日期: null
-        截止日期: null
-        交易日期: 交易日期
-        支出金额: 支出金额
-        收入金额: 收入金额
-        账户余额: 账户余额
-        对方账号: 对手账户
-        对方名称: 对手名称
-        对方行名: null
-        交易渠道: 交易渠道
-        摘要: 银行备注
-        南昌农村商业银行股份有限公司罗家支行: null
-        行内转账: null
-  parser_id: excel_grid
-- id: md5:d2a01fb2c2ba6778579bfe9e305423fa
-  file_type: excel
-  bank: 江西庐山农村商业银行
-  account_type: 未知
-  fingerprint:
-    metadata:
-      all:
-        application: BIFF/XLS
-    style:
-      all:
-      - text: 账户明细查询结果
-        font: 宋体
-        size_min: 15
-        size_max: 17
-        row_max: 1
-    date_format:
-      any:
-      - yyyy-mm-dd
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 账户明细查询结果
-    columns:
-      all:
-        开始日期: null
-        截止日期: null
-        交易日期: 交易日期
-        支出金额: 支出金额
-        收入金额: 收入金额
-        账户余额: 账户余额
-        对方账号: 对手账户
-        对方名称: 对手名称
-        对方行名: null
-        交易渠道: 交易渠道
-        摘要: 银行备注
-        江西庐山农村商业银行横塘支行: null
-        行内转账: null
-  parser_id: excel_grid
-- id: md5:0d2309ae63a3bd196a3599de12784ab8
+  reader_id: openpyxl_grid
+- id: md5:9be155059373e554cb37926292304f2d
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1160,10 +1058,8 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-        九江银行股份有限公司: null
-        超级网银来贷: null
-  parser_id: excel_grid
-- id: md5:81fea4a6ec613799439a03b9c844855b
+  reader_id: openpyxl_grid
+- id: md5:7bcf8c473982401fb994f27978e9b14d
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1198,9 +1094,8 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-        超级网银往贷: null
-  parser_id: excel_grid
-- id: md5:f0b9f25ee1a45b1675bc651951e041bf
+  reader_id: openpyxl_grid
+- id: md5:ba05eb8ff8fe5a2cd5612a5678b6f0c4
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1235,9 +1130,8 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-        行内转账: null
-  parser_id: excel_grid
-- id: md5:efc11486342b636a8497d14583326214
+  reader_id: openpyxl_grid
+- id: md5:a10e81963b6aa4448f3758206649a4dd
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -1274,8 +1168,7 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-        超级网银往贷: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:8911e3c839ec14c599623c9db49babd6
   file_type: excel
   bank: 未识别
@@ -1313,7 +1206,7 @@
         交易渠道: 交易渠道
         摘要: 银行备注
         加急汇Ｘ: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:72891a2921d529e834354d9031fb3a87
   file_type: excel
   bank: 南京银行
@@ -1342,7 +1235,7 @@
         对方户名: 对手名称
         柜员流水号: null
         备注信息: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:1cec1b0793223c0be2f1f2ed860eb226
   file_type: excel
   bank: 江苏银行
@@ -1376,7 +1269,7 @@
         对方户名: 对手名称
         币种: null
         流水号: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:ed497d178cc98663ced8a9317b842e73
   file_type: excel
   bank: 未识别
@@ -1408,7 +1301,7 @@
         账户余额: 账户余额
         币种: null
         附言: 账户方附言
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:c132146b5648e8ffaf02eaff43edf555
   file_type: excel
   bank: 九江银行
@@ -1435,7 +1328,7 @@
         对方户名: 对手名称
         摘要: 银行备注
         交易用途: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:598c8cbfb4c4fbd925edc592073165ac
   file_type: excel
   bank: 未识别
@@ -1470,7 +1363,7 @@
         渠道标志: 交易渠道
         交易用途: 银行备注
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:4c90504be47d1c88a5cdfcfe7bf6cf07
   file_type: excel
   bank: 未识别
@@ -1502,7 +1395,7 @@
         渠道标志: 交易渠道
         交易用途: 银行备注
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:a47bea69829e26ab98b236df20ce455b
   file_type: excel
   bank: 九江银行
@@ -1536,7 +1429,7 @@
         渠道标志: 交易渠道
         交易用途: 银行备注
         备注: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:ce0a73b1abee7828dd394f6decf8d16c
   file_type: excel
   bank: 上饶银行
@@ -1560,7 +1453,7 @@
         对方银行卡号: null
         对方户名: 对手名称
         交易摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:acee3c1b1482a332172e80f95abdfb9f
   file_type: excel
   bank: 上饶银行
@@ -1587,7 +1480,7 @@
         对方银行卡号: null
         对方户名: 对手名称
         摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:78ac9f1789fbdddc6e51bfaaedf92a57
   file_type: excel
   bank: 未识别
@@ -1612,7 +1505,7 @@
         对方账号: 对手账户
         对方户名: 对手名称
         对方开户行: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:c376523d256e4f519d1a34503c4c7217
   file_type: excel
   bank: 未识别
@@ -1647,7 +1540,7 @@
         摘要: 银行备注
         流水号: null
         操作员: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:89724cb13246318033be53f045021bef
   file_type: excel
   bank: 兴业银行
@@ -1681,7 +1574,7 @@
         对方户名: 对手名称
         Counterparty’s: null
         对方账户/对方银行: 对手账户
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:93783dc5cadc47278e89e6fe66b26b0f
   file_type: excel
   bank: 未识别
@@ -1718,45 +1611,7 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-  parser_id: excel_grid
-- id: md5:1a63ea5518f240c74ee0a8cf9fedccf4
-  file_type: excel
-  bank: 未识别
-  account_type: 未知
-  fingerprint:
-    metadata:
-      all:
-        application: BIFF/XLS
-        creator: Laptop
-    style:
-      all:
-      - text: 账户明细查询结果
-        font: 宋体
-        size_min: 15
-        size_max: 17
-        row_max: 1
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 账户明细查询结果
-    columns:
-      all:
-        开始日期: null
-        截止日期: null
-        交易日期: 交易日期
-        支出金额: 支出金额
-        收入金额: 收入金额
-        账户余额: 账户余额
-        对方账号: 对手账户
-        对方名称: 对手名称
-        对方行名: null
-        交易渠道: 交易渠道
-        摘要: 银行备注
-        时晓艳: null
-        超级网银往贷: null
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:43d65bd6dce1bba7be1d0ede6e6a1773
   file_type: excel
   bank: 未识别
@@ -1793,7 +1648,7 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:a37161d5af1592d07dcc59deacb6d742
   file_type: excel
   bank: 上饶银行
@@ -1824,7 +1679,7 @@
         总笔数: null
         附言: 账户方附言
         摘要: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid
 - id: md5:a4b28bd1de5449fc9f8ae99878e8e1f5
   file_type: excel
   bank: 未识别
@@ -1860,4 +1715,4 @@
         对方户名: 对手名称
         摘要: 银行备注
         交易用途: 银行备注
-  parser_id: excel_grid
+  reader_id: openpyxl_grid

@@ -1,4 +1,5 @@
 import importlib.util
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -22,6 +23,52 @@ package_deliverable = load_module("package_deliverable", PACKAGE_DELIVERABLE)
 
 
 class PackageDeliverableWorkbookTest(unittest.TestCase):
+    def test_duplicate_stem_standardized_artifacts_keep_source_extension(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            csv_path = work / "同名流水__standardized.csv"
+            json_path = work / "同名流水__mapping.json"
+            csv_path.write_text("来源文件名\n同名流水.pdf\n", encoding="utf-8-sig")
+            json_path.write_text("{}", encoding="utf-8")
+
+            renamed_csv, renamed_json = package_deliverable._rename_duplicate_stem_artifacts(
+                Path(tmp) / "同名流水.pdf",
+                csv_path,
+                json_path,
+                {"同名流水"},
+            )
+
+            self.assertEqual(Path(renamed_csv).name, "同名流水__pdf__standardized.csv")
+            self.assertEqual(Path(renamed_json).name, "同名流水__pdf__mapping.json")
+            self.assertFalse(csv_path.exists())
+            self.assertFalse(json_path.exists())
+            self.assertTrue(Path(renamed_csv).exists())
+            self.assertTrue(Path(renamed_json).exists())
+
+    def test_folder_mode_recursively_collects_candidate_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            branch = root / "新余分公司"
+            branch.mkdir()
+            pdf = branch / "2025年10-12月-2.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n")
+            ignored = branch / "说明.docx"
+            ignored.write_bytes(b"not a statement")
+
+            args = SimpleNamespace(
+                subject=None,
+                folder=str(root),
+                client="潘荣平消防设备",
+                account_type=None,
+            )
+
+            subjects, skipped = package_deliverable.gather_subjects(args)
+
+            self.assertEqual(subjects[0][0], "潘荣平消防设备")
+            self.assertEqual(subjects[0][1], [(str(pdf), None)])
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0][0], "说明.docx")
+
     def test_build_workbook_styles_without_reloading_saved_xlsx(self):
         tagged = pd.DataFrame([{
             "交易唯一编号": "tx-1",

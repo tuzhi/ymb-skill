@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import importlib.util
 import json
 import sys
@@ -43,7 +43,7 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
 
         self.assertNotIn("parser", result)
         self.assertEqual(result["decision"], "unmatched")
-        self.assertEqual(result["parser_id"], "none")
+        self.assertEqual(result["reader_id"], "none")
 
     def test_local_grzd_pdf_uses_zhejiang_qyrcb_text_parser(self):
         pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
@@ -59,7 +59,7 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertNotIn("parser", image)
-        self.assertEqual(image["parser_id"], "pdf_fixed_width")
+        self.assertEqual(image["reader_id"], "pdf_fixed_width")
         self.assertEqual(image["decision"], "matched")
         self.assertTrue(image["fingerprint_id"].startswith("md5:"))
         self.assertEqual(image["file_type"], "pdf")

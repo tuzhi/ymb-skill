@@ -1244,7 +1244,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "整体置信度": overall_conf,
             "本方名称": acct["本方名称"],
             "本方账户": acct["本方账户"],
-            "parser_id": route_info.get("parser_id", ""),
+            "reader_id": route_info.get("reader_id", ""),
             "decision": route_info.get("decision", ""),
             "fingerprint_id": route_info.get("fingerprint_id", route_info.get("id", "")),
             "file_type": route_info.get("file_type", file_kind),
@@ -1257,7 +1257,9 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "ocr_used": False,
         },
         "预处理方案": [
-            {"步骤": "输入路由", "处理动作": f"使用 parser_id={route_info.get('parser_id', 'unknown')}",
+            {"步骤": "输入路由", "处理动作": (
+                f"使用 reader_id={route_info.get('reader_id', 'unknown')}"
+            ),
              "处理原因": "按文件类型、fingerprint 和抽取模式选择确定性 rows 读取策略",
              "影响范围": "文件读取与字段初始结构"},
             {"步骤": "表头定位", "处理动作": f"识别第 {header_idx} 行为表头（0-based）",
@@ -1280,7 +1282,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         "标准化统计": {"交易笔数": len(std_records), "金额结构": amount_mode,
                     "丢弃噪声行": dropped_noise, "行序整理策略": order_strategy},
         "判断依据": f"路由 fingerprint_id={route_info.get('fingerprint_id', '')}；"
-                    f"parser_id={route_info.get('parser_id', 'unknown')}；"
+                    f"reader_id={route_info.get('reader_id', 'unknown')}；"
                     f"基于表头同义词匹配命中 {hits} 列；金额结构判为「{amount_mode}」；"
                     f"账户类型线索：{account_type}。摘要/附言按不可信输入仅作辅助。",
     }

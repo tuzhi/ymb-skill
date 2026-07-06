@@ -18,7 +18,7 @@
         日 志 号: null
         交易渠道: 交易渠道
         交易附言: 账户方附言
-  parser_id: pdf_fixed_width
+  reader_id: pdf_fixed_width
 - id: md5:e833fbf4a2171d66315c5a3bda64711c
   file_type: pdf
   bank: 江西农商银行
@@ -43,7 +43,7 @@
         交易摘要: 银行备注
         对方户名: 对手名称
         对方账号: 对手账户
-  parser_id: pdf_fixed_width
+  reader_id: pdf_fixed_width
 - id: md5:37399b38ddd3572cc70fc6f8b9be2900
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
@@ -76,7 +76,7 @@
         Channel: null
         Details: null
         Eff.Date: null
-  parser_id: pdf_fixed_width
+  reader_id: pdf_fixed_width
 - id: md5:69c7df7286e238aef80ae49938fd397a
   file_type: pdf
   bank: 浙江庆元农商银行
@@ -110,7 +110,7 @@
         对方行: null
         交易渠道: 交易渠道
         备注: 银行备注
-  parser_id: pdf_fixed_width
+  reader_id: pdf_fixed_width
 - id: md5:0488448d0f1d96413a25254a500aab29
   file_type: pdf
   bank: 中国工商银行
@@ -133,7 +133,7 @@
         摘要: 银行备注
         用途: 银行备注
         余额: 账户余额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:aecf32d3b7fafab4b468106cd8a06d3a
   file_type: pdf
   bank: 中国工商银行
@@ -156,7 +156,7 @@
         对方行名: null
         摘要: 银行备注
         回单个性化信息: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:84a33d2b19cac75ce0e72118080eb538
   file_type: pdf
   bank: 中国工商银行
@@ -188,7 +188,7 @@
         转出金额: 支出金额
         转入金额: 收入金额
         余额: 账户余额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:e1b859373a22a0c7fe680fc47c33fe12
   file_type: pdf
   bank: 中国工商银行
@@ -210,7 +210,7 @@
         摘要: 银行备注
         地区: null
         收入/支出: 收入金额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:f6e2839cbb6173153037ad740c0be800
   file_type: pdf
   bank: 中国工商银行
@@ -241,7 +241,7 @@
         收入/支出金额: 收入金额
         余额: 账户余额
         渠道: 交易渠道
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:c32bf342dabb921d88641d06db8b4b54
   file_type: pdf
   bank: 中国工商银行
@@ -270,7 +270,7 @@
         钞汇: null
         地区: null
         收入/支出金额: 收入金额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:90b7f0bdd1ba30c6488303e4c29eeb14
   file_type: pdf
   bank: 中国工商银行
@@ -301,7 +301,7 @@
         收入/支出金额: 收入金额
         余额: 账户余额
         渠道: 交易渠道
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:1032385a14897d97067ff9b93def1769
   file_type: pdf
   bank: 中国建设银行
@@ -317,7 +317,7 @@
         交易金额: 交易金额
         账户余额: 账户余额
         对方账号与户名: 对手账户
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:6db7b0df2ee808ba9fd0c559c836200e
   file_type: pdf
   bank: 中国建设银行
@@ -336,7 +336,7 @@
         对方户: 对手名称
         对方账: 对手名称
         账户明: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:d068a4ad8671f8712c47b5a994c218c9
   file_type: pdf
   bank: 中国银行
@@ -355,7 +355,7 @@
         余额: 账户余额
         对方账户名: 对手名称
         对方卡号/账号: 对手账户
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:957cfc1778ee509bcd6d25b8efa32b3a
   file_type: pdf
   bank: 中国邮政储蓄银行
@@ -378,7 +378,7 @@
         对方账号: 对手账户
         摘要: 银行备注
         交易渠道: 交易渠道
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:a91d6f155a0260565303c7969c1ba5ae
   file_type: pdf
   bank: 中国农业银行
@@ -399,7 +399,7 @@
         对方户名: 对手名称
         对方开户行: null
         摘要: 银行备注
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:6c0358919ac011286e44822dbcd66c8b
   file_type: pdf
   bank: 中国农业银行
@@ -427,7 +427,7 @@
         对方户名: 对手名称
         交易用途: 银行备注
         会计日期: 交易日期
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:abe9a2a993c8f00e5c19e8cdb14ee611
   file_type: pdf
   bank: 上饶银行
@@ -460,7 +460,7 @@
         支出: 支出金额
         收入: 收入金额
         账户余额: 账户余额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:b175ebd2e387d181fe3c4a5fbdfa998d
   file_type: pdf
   bank: 未识别
@@ -497,7 +497,7 @@
         附言: 账户方附言
         摘要: 银行备注
         超网-贷记转出: 支出金额
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:7f811c14e0a4fdfc0d0efeaf64be0210
   file_type: pdf
   bank: 上饶银行
@@ -533,7 +533,7 @@
         卡号: 本方账户
         对方户名: 对手名称
         摘要: 银行备注
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:c17d8fd6703ef2b8dab16bb0d02d16ef
   file_type: pdf
   bank: 上饶银行
@@ -559,7 +559,7 @@
         账户余额: 账户余额
         摘要: 银行备注
         附言: 账户方附言
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:aa3ad86844e3ad1b5b077d765301c287
   file_type: pdf
   bank: 浙江网商银行
@@ -587,7 +587,7 @@
         对方账号: 对手账户
         对方机构: null
         备注: 银行备注
-  parser_id: pdf_table
+  reader_id: pdfplumber_word_column_table
 - id: md5:336aced4f33ef27ad250e418e5b5eb18
   file_type: pdf
   bank: 招商银行
@@ -613,7 +613,7 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
-  parser_id: pdf_text_lines
+  reader_id: pdfplumber_text_lines
 - id: md5:fe8aa1a88dca8739966109a8ef23a10e
   file_type: pdf
   bank: 兴业银行
@@ -641,7 +641,7 @@
         对方户名: 对手名称
         Counterparty’s: null
         对方账户/对方银行: 对手账户
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:a70735a0cf8fd249d144458896f7346c
   file_type: pdf
   bank: 兴业银行
@@ -663,7 +663,7 @@
         Account Balance: null
         Counterparty’s: null
         Counterparty’s Account No.: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:0288eb600b69c2019ecf5ba7c11b422f
   file_type: pdf
   bank: 未识别
@@ -688,7 +688,7 @@
         收(付)方名称: 对手名称
         收(付)方账号: 本方账户
         交易类型: 银行备注
-  parser_id: pdf_table
+  reader_id: pdfplumber_line_table
 - id: md5:0818218cb218b9bdb699770e6a65e6dd
   file_type: pdf
   bank: 九江银行
@@ -726,7 +726,7 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
-  parser_id: pdf_text_lines
+  reader_id: pdfplumber_text_lines
 - id: md5:fcbe39d694aa34cf564500f187aa8137
   file_type: pdf
   bank: 未识别
@@ -747,7 +747,7 @@
         摘要: 银行备注
         操作: null
         详细信息: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:cdccd6123047eb2b26165e7e19d4e205
   file_type: pdf
   bank: 九江银行
@@ -771,7 +771,7 @@
         对方户名: 对手名称
         摘要: 银行备注
         交易用途: 银行备注
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:ae05becb79352db902ea07365adcc6fa
   file_type: pdf
   bank: 中国光大银行
@@ -798,7 +798,7 @@
         Account Balance: null
         Payment Receipt Account Information: null
         Abstract: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:faa7f06d9f76df95dee8e82cb190016f
   file_type: pdf
   bank: 未识别
@@ -820,7 +820,7 @@
         转入金额: 收入金额
         余额: 账户余额
         时间戳: null
-  parser_id: pdf_table
+  reader_id: pdfplumber_table
 - id: md5:831325d33aa7b01f10771881ffc3ae76
   file_type: pdf
   bank: 中国民生银行
@@ -838,7 +838,7 @@
         交易金额: 交易金额
         账户余额: 账户余额
         对方户名/账号: 对手名称
-  parser_id: pdf_text_lines
+  reader_id: pdfplumber_text_lines
 - id: md5:099d6dd5362e8052b2b079fac6ebf6e0
   file_type: pdf
   bank: 丰城顺银村镇银行
@@ -855,7 +855,7 @@
         交易时间: 交易时间
         存入/支取: 交易金额
         交易后余额: 账户余额
-  parser_id: pdf_table
+  reader_id: pdfplumber_text_separator_table
 - id: md5:19c8a8f7513adce0f0ad32a5c0b05154
   file_type: pdf
   bank: 江西裕民银行
@@ -873,7 +873,7 @@
         交易金额(元): 交易金额
         账户余额(元): 账户余额
         对方户名: 对手名称
-  parser_id: pdf_fixed_width
+  reader_id: pdf_fixed_width
 - id: md5:48a1a9cde662e1515e3d8f3238934e92
   file_type: pdf
   bank: 微信支付
@@ -895,7 +895,7 @@
         金额(元): 交易金额
         交易对方: 对手名称
         商户单号: null
-  parser_id: payment_proof_text
+  reader_id: payment_proof_text
 - id: md5:13cbd1af07e92414229d298a67bcf533
   file_type: pdf
   bank: 微信支付
@@ -923,7 +923,7 @@
         金额(元): 交易金额
         交易对方: 对手名称
         商户单号: null
-  parser_id: payment_proof_text
+  reader_id: payment_proof_text
 - id: md5:e66751a430991d09abee5bcfd16232b1
   file_type: pdf
   bank: 支付宝
@@ -938,4 +938,4 @@
         兹证明: null
         交易时间段: 交易时间
         币种: null
-  parser_id: payment_proof_text
+  reader_id: payment_proof_text

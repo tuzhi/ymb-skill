@@ -51,6 +51,14 @@ STD_ORDER = ["交易唯一编号", "客户名称", "主体名称", "账户类型
              "来源文件名", "来源行号"]
 
 
+def _folder_files(path):
+    files = []
+    for root, _, names in os.walk(path):
+        for name in names:
+            files.append(os.path.join(root, name))
+    return sorted(files)
+
+
 def gather_subjects(args):
     """返回 ([(主体名, [(文件, 类型), ...]), ...], 跳过清单[(文件名, 原因)])。
     目录会经 S.screen_files 初筛：跳过图片/Word 等非流水格式与流水线产物（原因记入跳过清单）。"""
@@ -62,7 +70,7 @@ def gather_subjects(args):
             path = parts[1]
             ctype = parts[2] if len(parts) > 2 else None
             if os.path.isdir(path):
-                files, sk = S.screen_files(sorted(glob.glob(os.path.join(path, "*"))))
+                files, sk = S.screen_files(_folder_files(path))
                 skipped += sk
             elif os.path.isfile(path):
                 files = [path]   # 显式单文件：尊重用户，交给 standardize 进一步判定是否流水
@@ -70,7 +78,7 @@ def gather_subjects(args):
                 files = []
             subjects.append((name, [(f, ctype) for f in files]))
     else:
-        files, sk = S.screen_files(sorted(glob.glob(os.path.join(args.folder, "*"))))
+        files, sk = S.screen_files(_folder_files(args.folder))
         skipped += sk
         # 单文件夹：主体名暂用客户名（本方名称由 standardize 自动嗅探/按行填充区分各主体）
         subjects.append((args.client, [(f, args.account_type) for f in files]))
@@ -372,6 +380,57 @@ def _infer_unique_client_name(work):
     return _joined_short_client_name_candidates(ranked)
 
 
+def _duplicate_source_stems(subjects):
+    counts = {}
+    for _subj, files in subjects:
+        for f, _ctype in files:
+            stem = os.path.splitext(os.path.basename(f))[0]
+            counts[stem] = counts.get(stem, 0) + 1
+    return {stem for stem, count in counts.items() if count > 1}
+
+
+def _source_extension_slug(source_path):
+    ext = os.path.splitext(os.path.basename(str(source_path)))[1].lower().lstrip(".")
+    slug = re.sub(r"[^a-z0-9]+", "_", ext).strip("_")
+    return slug or "file"
+
+
+def _next_available_artifact_path(path):
+    path = os.fspath(path)
+    if not os.path.exists(path):
+        return path
+    base, ext = os.path.splitext(path)
+    index = 2
+    while True:
+        candidate = f"{base}_{index}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        index += 1
+
+
+def _rename_duplicate_stem_artifacts(source_path, csv_path, json_path, duplicate_stems):
+    source_path = os.fspath(source_path)
+    csv_path = os.fspath(csv_path)
+    json_path = os.fspath(json_path) if json_path else None
+    stem = os.path.splitext(os.path.basename(source_path))[0]
+    if stem not in duplicate_stems:
+        return csv_path, json_path
+
+    suffix = _source_extension_slug(source_path)
+    csv_target = _next_available_artifact_path(
+        os.path.join(os.path.dirname(csv_path), f"{stem}__{suffix}__standardized.csv")
+    )
+    os.replace(csv_path, csv_target)
+
+    json_target = None
+    if json_path and os.path.exists(json_path):
+        json_target = _next_available_artifact_path(
+            os.path.join(os.path.dirname(json_path), f"{stem}__{suffix}__mapping.json")
+        )
+        os.replace(json_path, json_target)
+    return csv_target, json_target
+
+
 def run(client, args):
     import shutil
     out_dir = args.out_dir or os.getcwd()
@@ -382,6 +441,7 @@ def run(client, args):
     os.makedirs(work, exist_ok=True)
 
     subjects, skipped = gather_subjects(args)
+    duplicate_stems = _duplicate_source_stems(subjects)
     print(f"=== 客户「{client}」：{len(subjects)} 个主体 ===")
 
     # 阶段一：逐文件标准化。customer 默认仅作户名缺失兜底，保留文件中可识别的真实户名。
@@ -391,9 +451,12 @@ def run(client, args):
             try:
                 # 多主体时用主体名作为本方名称兜底；单文件夹时不强制，交给嗅探/按行填充
                 cust = subj if args.subject else (args.client if args.folder and len(subjects) == 1 and args.force_name else None)
-                csv_path, _, rep = S.standardize(
+                csv_path, json_path, rep = S.standardize(
                     f, out_dir=work, customer=cust, account_type=ctype,
                     force_customer=args.force_name)
+                csv_path, json_path = _rename_duplicate_stem_artifacts(
+                    f, csv_path, json_path, duplicate_stems
+                )
                 n_files += 1
                 st = rep["标准化统计"]
                 print(f"  [OK] [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")

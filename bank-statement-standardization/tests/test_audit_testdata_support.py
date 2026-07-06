@@ -18,6 +18,33 @@ def load_module():
 
 
 class AuditTestdataSupportTests(unittest.TestCase):
+    def test_match_original_file_uses_duplicate_artifact_extension_marker(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "testdata"
+            client_dir = root / "程旭"
+            client_dir.mkdir(parents=True)
+            pdf = client_dir / "鼎信网商银行2025.1.1-2025.7.31交易明细.pdf"
+            xlsx = client_dir / "鼎信网商银行2025.1.1-2025.7.31交易明细.xlsx"
+            pdf.write_bytes(b"%PDF-1.4\n")
+            xlsx.write_text("xlsx", encoding="utf-8")
+            work = Path(tmp) / "_package_work" / "047_程旭" / "_工作区" / "程旭"
+            work.mkdir(parents=True)
+            csv_path = work / "鼎信网商银行2025.1.1-2025.7.31交易明细__pdf__standardized.csv"
+            csv_path.write_text("交易时间\n", encoding="utf-8-sig")
+            files_by_client_and_name = {
+                ("程旭", pdf.name): pdf,
+                ("程旭", xlsx.name): xlsx,
+            }
+
+            matched = module._match_original_file(
+                csv_path,
+                root,
+                files_by_client_and_name,
+            )
+
+        self.assertEqual(matched, pdf)
+
     def test_iter_statement_files_skips_generated_outputs(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:
@@ -90,7 +117,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
             "router类": "md5:69c7df7286e238aef80ae49938fd397a",
-            "parser_id": "pdf_fixed_width",
+            "reader_id": "pdf_fixed_width",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
             "测试日期": "2026-06-17",
@@ -114,8 +141,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[header.index("账户类型(YAML)")], "个人")
         self.assertEqual(first_row[header.index("router类")], "md5:69c7df7286e238aef80ae49938fd397a")
         self.assertNotIn("命中parser", header)
-        self.assertIn("parser_id", header)
-        self.assertEqual(first_row[header.index("parser_id")], "pdf_fixed_width")
+        self.assertIn("reader_id", header)
+        self.assertEqual(first_row[header.index("reader_id")], "pdf_fixed_width")
         self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
         self.assertIn("创建时间≈修改时间", header)
         self.assertIn("创建人=修改人", header)
@@ -300,7 +327,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/a.xlsx",
                 "router类": "md5:strict",
-                "parser_id": "excel_grid",
+                "reader_id": "openpyxl_grid",
                 "YAML指纹": "元数据:application",
                 "测试结果": "PASS",
             },
@@ -311,7 +338,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/b.xlsx",
                 "router类": "md5:strict",
-                "parser_id": "excel_grid",
+                "reader_id": "openpyxl_grid",
                 "YAML指纹": "元数据:application",
                 "测试结果": "FAIL",
             },
@@ -322,7 +349,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 "版本": "1.0",
                 "文件路径": "客户A/c.pdf",
                 "router类": "md5:other",
-                "parser_id": "pdf_table",
+                "reader_id": "pdfplumber_table",
                 "YAML指纹": "数据:1",
                 "测试结果": "PASS",
             },

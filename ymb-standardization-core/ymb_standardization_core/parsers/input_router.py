@@ -45,7 +45,7 @@ def _excel_candidate(rule, match):
     return {
         "id": rule.id,
         "fingerprint_id": rule.id,
-        "parser_id": rule.parser_id,
+        "reader_id": rule.reader_id,
         "decision": "matched",
         "file_type": rule.file_type,
         "bank": rule.bank,
@@ -61,7 +61,7 @@ def _excel_candidate(rule, match):
 
 def _excel_fallback(sheet, candidate_fingerprints=None):
     return {
-        "parser_id": "excel_grid",
+        "reader_id": "openpyxl_grid",
         "decision": "unmatched",
         "file_type": "excel",
         "fingerprint_id": "",
@@ -116,7 +116,7 @@ def route_excel(rows, sheet, context=None):
     if specific:
         return specific
     return {
-        "parser_id": "none",
+        "reader_id": "none",
         "decision": "ambiguous",
         "file_type": "excel",
         "fingerprint_id": "",

@@ -1,4 +1,4 @@
-﻿import importlib.util
+import importlib.util
 import sys
 import unittest
 from pathlib import Path
@@ -24,6 +24,127 @@ from ymb_standardization_core.parsers.routing.rule_loader import PdfRouteRule  #
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_pdfplumber_table_rows_can_use_pdfplumber_line_table_reader(self):
+        path = (
+            ROOT / "testdata" / "斑马商业对公流水"
+            / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
+        )
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
+        self.assertEqual(route_info["fingerprint_id"], "md5:0288eb600b69c2019ecf5ba7c11b422f")
+        self.assertEqual(rows[0], [
+            "交易日期",
+            "借方(出账)",
+            "贷方(入账)",
+            "余额",
+            "摘要",
+            "收(付)方名称",
+            "收(付)方账号",
+            "交易类型",
+        ])
+        self.assertEqual(len(rows) - 1, 1377)
+        self.assertEqual(rows[1][0], "2025-01-15 17:42:45")
+        self.assertEqual(rows[1][1], "1,564.14")
+        self.assertEqual(rows[1][3], "411.64")
+
+    def test_pdfplumber_line_table_reader_does_not_call_default_extract_tables(self):
+        path = (
+            ROOT / "testdata" / "斑马商业对公流水"
+            / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
+        )
+        original = router._extract_pdf_tables_default
+        try:
+            router._extract_pdf_tables_default = lambda _pdf: (_ for _ in ()).throw(
+                AssertionError("pdfplumber_line_table must not call extract_tables()")
+            )
+
+            _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+            self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
+            self.assertEqual(len(rows) - 1, 1377)
+        finally:
+            router._extract_pdf_tables_default = original
+
+    def test_pdfplumber_text_separator_table_reader_groups_multiline_rows(self):
+        path = (
+            ROOT / "testdata" / "罗美英"
+            / "交易明细记录SHLSMX20260602415882_1.pdf"
+        )
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_text_separator_table")
+        self.assertEqual(route_info["fingerprint_id"], "md5:099d6dd5362e8052b2b079fac6ebf6e0")
+        self.assertEqual(rows[0], [
+            "交易时间",
+            "存入/支取",
+            "对方账号",
+            "对方户名",
+            "对方行",
+            "交易后余额",
+            "交易渠道",
+            "摘要",
+            "备注",
+        ])
+        self.assertGreater(len(rows), 100)
+        self.assertEqual(rows[1], [
+            "2025-06-04 09:29:38",
+            "-30870.00",
+            "62284823286 64065375",
+            "朱小平",
+            "中国农业银行股份 有限公司",
+            "1525858.00",
+            "核心渠道",
+            "转帐",
+            "２０２５０６０２货款",
+        ])
+
+    def test_pdfplumber_word_column_table_reader_groups_words_by_serial_number(self):
+        cases = [
+            (
+                "程旭/江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.pdf",
+                1088,
+                ["1", "202501011112 052015470049 0932671", "2025-01-01 00:01:52"],
+            ),
+            (
+                "程旭/鼎信网商银行2025.1.1-2025.7.31交易明细.pdf",
+                1402,
+                ["1", "202501011112 052015690008 7157781", "2025-01-01 00:01:52"],
+            ),
+            (
+                "程旭/鼎信网商银行2025.8.1-2025.12.31交易明细.pdf",
+                2371,
+                ["1", "202508011112 052015690042 6641531", "2025-08-01 00:01:52"],
+            ),
+        ]
+
+        for relative_path, expected_rows, expected_prefix in cases:
+            with self.subTest(relative_path=relative_path):
+                path = ROOT / "testdata" / relative_path
+
+                _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+                self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+                self.assertEqual(route_info["fingerprint_id"], "md5:aa3ad86844e3ad1b5b077d765301c287")
+                self.assertEqual(rows[0], [
+                    "序号",
+                    "账务流水号",
+                    "提交时间",
+                    "交易时间",
+                    "交易名称",
+                    "借方金额（收）",
+                    "贷方金额（支）",
+                    "余额",
+                    "对方户名",
+                    "对方账号",
+                    "对方机构",
+                    "备注",
+                ])
+                self.assertEqual(len(rows) - 1, expected_rows)
+                self.assertEqual(rows[1][:3], expected_prefix)
+
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
 
@@ -55,7 +176,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         for item in items:
             self.assertNotIn("parser", item)
-            self.assertIn("parser_id", item)
+            self.assertIn("reader_id", item)
             self.assertNotIn("column_mapping", item)
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
@@ -79,7 +200,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["parser_id"], "payment_proof_text")
+        self.assertEqual(result["reader_id"], "payment_proof_text")
         self.assertEqual(result["column_mapping"]["交易时间"], "交易时间")
         self.assertEqual(result["column_mapping"]["金额(元)"], "交易金额")
         self.assertTrue(result["fingerprint_id"].startswith("md5:"))
@@ -125,7 +246,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         self.assertNotIn("parser", result)
         self.assertEqual(result["decision"], "unmatched")
-        self.assertEqual(result["parser_id"], "none")
+        self.assertEqual(result["reader_id"], "none")
 
     def test_specialized_route_without_yaml_fingerprint_falls_back_to_generic(self):
         original = router.load_pdf_route_rules
@@ -133,7 +254,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             router.load_pdf_route_rules = lambda: [
                 PdfRouteRule(
                     id="md5:test",
-                    parser_id="pdf_table",
+                                        reader_id="pdfplumber_table",
                     file_type="pdf",
                     bank="测试银行",
                     account_type="未知",
@@ -150,9 +271,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
             self.assertNotIn("parser", result)
             self.assertEqual(result["decision"], "unmatched")
-            self.assertEqual(result["parser_id"], "none")
+            self.assertEqual(result["reader_id"], "none")
             self.assertIn("candidate_fingerprints", result)
-            self.assertEqual(result["candidate_fingerprints"][0]["parser_id"], "pdf_table")
+            self.assertEqual(result["candidate_fingerprints"][0]["reader_id"], "pdfplumber_table")
             self.assertEqual(result["candidate_fingerprints"][0]["reason"], "missing_yaml_fingerprint")
         finally:
             router.load_pdf_route_rules = original
@@ -163,7 +284,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for parser_name in ("first_pdf", "second_pdf"):
             rules.append(PdfRouteRule(
                 id=f"md5:{parser_name}",
-                parser_id="pdf_table",
+                                reader_id="pdfplumber_table",
                 file_type="pdf",
                 bank="测试银行",
                 account_type="未知",
@@ -182,7 +303,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             result = router.route_pdf("测试银行 交易时间 账户余额", 0, 1, context=context)
 
             self.assertNotIn("parser", result)
-            self.assertEqual(result["parser_id"], "none")
+            self.assertEqual(result["reader_id"], "none")
             self.assertEqual(result["decision"], "ambiguous")
             self.assertEqual([c["fingerprint_id"] for c in result["candidates"]], ["md5:first_pdf", "md5:second_pdf"])
         finally:
@@ -218,7 +339,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         self.assertNotIn("parser", result)
         self.assertEqual(result["decision"], "unmatched")
-        self.assertEqual(result["parser_id"], "none")
+        self.assertEqual(result["reader_id"], "none")
         self.assertEqual(result["decision"], "unmatched")
 
     def test_table_pdf_routes_to_specialized_icbc_parser(self):
@@ -376,7 +497,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         )
         self.assertNotIn("parser", corporate_result)
         self.assertEqual(corporate_result["decision"], "unmatched")
-        self.assertEqual(corporate_result["parser_id"], "pdf_table")
+        self.assertEqual(corporate_result["reader_id"], "pdfplumber_table")
 
     def test_icbc_debit_history_electronic_pdf_route(self):
         text = (

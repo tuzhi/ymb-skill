@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import importlib.util
 import json
 import sys
@@ -62,7 +62,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
 
         self.assertNotIn("parser", result)
         self.assertEqual(result["decision"], "unmatched")
-        self.assertEqual(result["parser_id"], "none")
+        self.assertEqual(result["reader_id"], "none")
 
     def test_watermarked_text_line_is_parsed(self):
         # 江西农商 PDF 文本层会把水印字插入数字 token，解析器必须先清理再定位日期/金额。

@@ -10,7 +10,7 @@ import yaml
 @dataclass(frozen=True)
 class RouteRule:
     id: str
-    parser_id: str
+    reader_id: str
     file_type: str
     bank: str
     account_type: str
@@ -76,7 +76,7 @@ class RouteRule:
         return {
             "id": self.id,
             "fingerprint_id": self.id,
-            "parser_id": self.parser_id,
+            "reader_id": self.reader_id,
             "bank": self.bank,
             "file_type": self.file_type,
             "reason": reason,
@@ -265,15 +265,15 @@ def _rule_id(item, fingerprint):
     return rule_id
 
 
-def _parser_id(item, default_file_type):
-    parser_id = str(item.get("parser_id") or "").strip()
-    if parser_id:
-        return parser_id
+def _reader_id(item, default_file_type):
+    reader_id = str(item.get("reader_id") or "").strip()
+    if reader_id:
+        return reader_id
     file_type = item.get("file_type", default_file_type)
-    if file_type == "excel":
-        return "excel_grid"
     if file_type == "pdf":
-        return "pdf_table"
+        return "pdfplumber_table"
+    if file_type == "excel":
+        return "openpyxl_grid"
     return "none"
 
 
@@ -307,7 +307,7 @@ def load_pdf_route_rules():
         fingerprint = item.get("fingerprint", {})
         rules.append(PdfRouteRule(
             id=_rule_id(item, fingerprint),
-            parser_id=_parser_id(item, "pdf"),
+            reader_id=_reader_id(item, "pdf"),
             file_type=item.get("file_type", "pdf"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
@@ -328,7 +328,7 @@ def load_excel_route_rules():
         fingerprint = item.get("fingerprint", {})
         rules.append(ExcelRouteRule(
             id=_rule_id(item, fingerprint),
-            parser_id=_parser_id(item, "excel"),
+            reader_id=_reader_id(item, "excel"),
             file_type=item.get("file_type", "excel"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),

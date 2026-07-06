@@ -54,7 +54,7 @@ MATRIX_COLUMNS = [
     "版本",
     "文件路径",
     "router类",
-    "parser_id",
+    "reader_id",
     "YAML指纹",
     "测试类",
     "测试日期",
@@ -337,7 +337,7 @@ def yaml_account_type(fingerprint_id):
 def support_matrix_fingerprint_id(fingerprint_id):
     """支持矩阵展示模板身份：必须来自 YAML 顶层 id。
 
-    id 是 fingerprint 节点规范化后的 md5；parser_id 只表示读取策略。
+    id 是 fingerprint 节点规范化后的 md5；reader_id 只表示读取策略。
     """
     if not fingerprint_id:
         return ""
@@ -417,7 +417,7 @@ def _new_record_and_baseline(path, root, today):
         "版本": "",
         "文件路径": relative_path,
         "router类": "",
-        "parser_id": "",
+        "reader_id": "",
         "YAML指纹": "",
         "测试类": "",
         "测试日期": today,
@@ -456,7 +456,7 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
         "账户类型(YAML)": yaml_account_type(fingerprint_id),
         "版本": template,
         "router类": fingerprint_id,
-        "parser_id": image.get("parser_id") or "",
+        "reader_id": image.get("reader_id") or "",
         "YAML指纹": yaml_fingerprint_summary(fingerprint_id),
         "测试类": test_class_for_fingerprint(fingerprint_id),
         "测试结果": "PASS",
@@ -471,7 +471,7 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
             "bank": record["银行"],
             "yaml_account_type": record["账户类型(YAML)"],
             "fingerprint_id": fingerprint_id,
-            "parser_id": record["parser_id"],
+            "reader_id": record["reader_id"],
             "template": record["版本"],
             "yaml_fingerprint": record["YAML指纹"],
             "created_modified_check": record["创建时间≈修改时间"],
@@ -524,7 +524,7 @@ def write_xlsx(path, rows):
         "版本": 28,
         "文件路径": 72,
         "router类": 32,
-        "parser_id": 24,
+        "reader_id": 28,
         "YAML指纹": 48,
         "测试类": 34,
         "测试日期": 14,
@@ -612,6 +612,15 @@ def _client_name_from_package_artifact(path):
     return match.group(1) if match else package_dir_name
 
 
+def _artifact_source_stem_and_suffix(csv_path):
+    stem = Path(csv_path).name.removesuffix("__standardized.csv")
+    for suffix in ("pdf", "xlsx", "xls", "xlsm"):
+        marker = f"__{suffix}"
+        if stem.endswith(marker):
+            return stem[:-len(marker)], suffix
+    return stem, ""
+
+
 def _match_original_file(csv_path, testdata_root, files_by_client_and_name):
     client = _client_name_from_package_artifact(csv_path)
     source = _source_filename_from_standardized_csv(csv_path)
@@ -619,10 +628,12 @@ def _match_original_file(csv_path, testdata_root, files_by_client_and_name):
         match = files_by_client_and_name.get((client, source))
         if match:
             return match
-    stem = Path(csv_path).name.removesuffix("__standardized.csv")
+    stem, suffix = _artifact_source_stem_and_suffix(csv_path)
     candidates = [
         path for (candidate_client, _name), path in files_by_client_and_name.items()
-        if candidate_client == client and path.stem == stem
+        if candidate_client == client
+        and path.stem == stem
+        and (not suffix or path.suffix.lower() == f".{suffix}")
     ]
     return candidates[0] if len(candidates) == 1 else None
 
