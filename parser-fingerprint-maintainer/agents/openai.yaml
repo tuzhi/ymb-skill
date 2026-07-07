@@ -1,0 +1,4 @@
+interface:
+  display_name: "Parser Fingerprint Maintainer"
+  short_description: "Maintain parser fingerprints against YAML and support_matrix"
+  default_prompt: "Inspect a bank statement file against parser fingerprints"
