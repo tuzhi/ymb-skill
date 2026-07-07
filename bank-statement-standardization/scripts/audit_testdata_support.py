@@ -35,7 +35,7 @@ if str(CORE_PACKAGE) not in sys.path:
 
 from ymb_standardization_core import core as standardize_core  # noqa: E402
 from ymb_standardization_core.file_hints import load_file_hints, load_file_hints_for_path  # noqa: E402
-from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".pdf"}
@@ -163,7 +163,7 @@ def metadata_checks(path, hints_root=None):
         if ext in {".xlsx", ".xlsm"}:
             import openpyxl
 
-            from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+            from ymb_standardization_core.readers.input_router import _maybe_decrypted_office_file
 
             with _maybe_decrypted_office_file(str(path), open_password=open_password) as source:
                 wb = openpyxl.load_workbook(source, read_only=True, data_only=True)
@@ -175,7 +175,7 @@ def metadata_checks(path, hints_root=None):
         if ext == ".xls":
             import xlrd
 
-            from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+            from ymb_standardization_core.readers.input_router import _maybe_decrypted_office_file
 
             with _maybe_decrypted_office_file(str(path), open_password=open_password) as source:
                 book = xlrd.open_workbook(source, on_demand=True)
@@ -185,7 +185,7 @@ def metadata_checks(path, hints_root=None):
                 "创建人=修改人": "是（XLS 仅提供创建人:%s，按一致处理）" % creator if creator else "是（XLS 未提供创建人/修改人，按一致处理）",
             }
         if ext == ".pdf":
-            from ymb_standardization_core.parsers.router import _open_pdf
+            from ymb_standardization_core.readers.router import _open_pdf
 
             with _open_pdf(path, open_password=open_password) as pdf:
                 metadata = pdf.metadata or {}
@@ -231,7 +231,7 @@ def test_class_for_fingerprint(fingerprint_id):
 def _load_route_rule_index():
     rules = {}
     for name in ("excel_rules.yaml", "pdf_rules.yaml"):
-        path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / name
+        path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / name
         try:
             items = yaml.safe_load(path.read_text(encoding="utf-8")) or []
         except Exception:

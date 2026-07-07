@@ -13,13 +13,13 @@ if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
 from ymb_standardization_core import core  # noqa: E402
-from ymb_standardization_core.parsers.routing.rule_loader import ExcelRouteRule  # noqa: E402
-from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import ExcelRouteRule  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
 def load_input_router():
     spec = importlib.util.spec_from_file_location(
         "input_router",
-        CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "input_router.py",
+        CORE_PACKAGE / "ymb_standardization_core" / "readers" / "input_router.py",
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -544,7 +544,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["file_type"], "excel")
 
     def test_excel_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "excel_rules.yaml"
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "excel_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:
@@ -950,6 +950,24 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["account_type"], "个人")
         self.assertIn("交易单号", route["columns_evidence"])
         self.assertGreater(len(result.rows), 1)
+
+    def test_alipay_proof_pdf_route_matches_real_statement(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "徐育发" / "支付宝交易明细(20250501-20260430).pdf"
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+
+        self.assertNotIn("parser", route)
+
+        self.assertEqual(route["reader_id"], "payment_proof_text")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["bank"], "支付宝")
+        self.assertEqual(route["account_type"], "个人")
+        self.assertIn("收/支", route["columns_evidence"])
+        self.assertGreater(len(result.rows), 1)
+        self.assertEqual(result.rows[0], ["收/支", "交易对方", "商品说明", "收/付款方式", "金额", "交易订单号", "商家订单号", "交易时间"])
+        self.assertRegex(result.rows[1][7], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
 
     def test_jiangxi_rural_commercial_pdf_route_matches_watermarked_export(self):
         module = load_input_router()

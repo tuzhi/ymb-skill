@@ -14,13 +14,13 @@ if str(CORE_PACKAGE) not in sys.path:
 
 ROUTER_SPEC = importlib.util.spec_from_file_location(
     "router",
-    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "router.py")
+    CORE_PACKAGE / "ymb_standardization_core" / "readers" / "router.py")
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 
-from ymb_standardization_core.parsers.routing.rule_loader import fingerprint_md5  # noqa: E402
-from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
-from ymb_standardization_core.parsers.routing.rule_loader import PdfRouteRule  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  # noqa: E402
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
@@ -171,7 +171,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertIn(marker, by_id["md5:48a1a9cde662e1515e3d8f3238934e92"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "routing" / "pdf_rules.yaml"
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "pdf_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:
@@ -480,7 +480,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf("\n".join(lines), 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:abe9a2a993c8f00e5c19e8cdb14ee611', 'md5:7f811c14e0a4fdfc0d0efeaf64be0210'})
+        self.assertEqual(result["fingerprint_id"], "md5:7f811c14e0a4fdfc0d0efeaf64be0210")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "个人")
@@ -596,10 +596,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_industrial_bank_transaction_detail_pdf_route(self):
         text = (
-            "兴业银行交易流水 Industrial Bank Transaction Details 户 名 账号 币 种 账户类型 "
-            "交易时间 Transaction Time 记账日期 Accounting Date 摘要 Transaction Type "
-            "交易金额 Transaction Amount 账户余额 Account Balance 对方户名 Counterparty’s "
-            "对方账户/对方银行 Counterparty’s Account No./Counterparty’s Account Bank"
+            "兴业银⾏交易流⽔ Bank Transaction Details Transaction Time Accounting Date "
+            "Transaction Type Transaction Amount Account Balance Counterparty’s "
+            "Counterparty’s Account No."
         )
         context = {
             "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
@@ -610,7 +609,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:fe8aa1a88dca8739966109a8ef23a10e', 'md5:a70735a0cf8fd249d144458896f7346c'})
+        self.assertEqual(result["fingerprint_id"], "md5:a70735a0cf8fd249d144458896f7346c")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")

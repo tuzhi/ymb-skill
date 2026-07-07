@@ -22,7 +22,7 @@ SPEC.loader.exec_module(standardize)
 
 ROUTER_SPEC = importlib.util.spec_from_file_location(
     "router",
-    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "router.py")
+    CORE_PACKAGE / "ymb_standardization_core" / "readers" / "router.py")
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 

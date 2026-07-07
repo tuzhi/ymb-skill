@@ -12,8 +12,8 @@ import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 
-from ymb_standardization_core.parsers.router import read_pdf_rows
-from ymb_standardization_core.parsers.routing.rule_loader import load_excel_route_rules
+from ymb_standardization_core.readers.router import read_pdf_rows
+from ymb_standardization_core.readers.routing.rule_loader import load_excel_route_rules
 
 
 @dataclass

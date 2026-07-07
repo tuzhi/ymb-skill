@@ -189,28 +189,6 @@
         转入金额: 收入金额
         余额: 账户余额
   reader_id: pdfplumber_table
-- id: md5:e1b859373a22a0c7fe680fc47c33fe12
-  file_type: pdf
-  bank: 中国工商银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 中国工商银行借记账户历史明细
-    columns:
-      all:
-        卡号: 本方账户
-        户名: 本方名称
-        交易日期: 交易日期
-        账号: 本方账户
-        储种: null
-        序号: null
-        币种: null
-        钞汇: null
-        摘要: 银行备注
-        地区: null
-        收入/支出: 收入金额
-  reader_id: pdfplumber_table
 - id: md5:f6e2839cbb6173153037ad740c0be800
   file_type: pdf
   bank: 中国工商银行
@@ -379,27 +357,6 @@
         摘要: 银行备注
         交易渠道: 交易渠道
   reader_id: pdfplumber_table
-- id: md5:a91d6f155a0260565303c7969c1ba5ae
-  file_type: pdf
-  bank: 中国农业银行
-  account_type: 对公
-  fingerprint:
-    identity:
-      any:
-      - 账户明细
-    columns:
-      all:
-        账号: 本方账户
-        户名: 本方名称
-        交易时间: 交易时间
-        收入金额: 收入金额
-        支出金额: 支出金额
-        账户余额: 账户余额
-        对方账号: 对手账户
-        对方户名: 对手名称
-        对方开户行: null
-        摘要: 银行备注
-  reader_id: pdfplumber_table
 - id: md5:6c0358919ac011286e44822dbcd66c8b
   file_type: pdf
   bank: 中国农业银行
@@ -427,39 +384,6 @@
         对方户名: 对手名称
         交易用途: 银行备注
         会计日期: 交易日期
-  reader_id: pdfplumber_table
-- id: md5:abe9a2a993c8f00e5c19e8cdb14ee611
-  file_type: pdf
-  bank: 上饶银行
-  account_type: 对公
-  fingerprint:
-    metadata:
-      all:
-        Creator: JasperReports (testReport)
-        Producer: iText 2.1.7 by 1T3XT
-    style:
-      all:
-      - text: 交易明细
-        font: STSong-Light
-        size_min: 23
-        size_max: 25
-        top_max: 60
-        centered: true
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 交易明细
-    columns:
-      all:
-        交易流水号: null
-        交易时间: 交易时间
-        对方户名: 对手名称
-        对方账户开户网点: 对手账户
-        支出: 支出金额
-        收入: 收入金额
-        账户余额: 账户余额
   reader_id: pdfplumber_table
 - id: md5:b175ebd2e387d181fe3c4a5fbdfa998d
   file_type: pdf
@@ -614,34 +538,6 @@
         交易摘要: 银行备注
         对手信息: 对手名称
   reader_id: pdfplumber_text_lines
-- id: md5:fe8aa1a88dca8739966109a8ef23a10e
-  file_type: pdf
-  bank: 兴业银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 兴业银行交易流水
-      - Industrial Bank Transaction Details
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    columns:
-      all:
-        交易时间: 交易时间
-        Transaction Time: null
-        记账日期: 交易日期
-        Accounting Date: null
-        摘要: 银行备注
-        Transaction Type: null
-        交易金额: 交易金额
-        Transaction Amount: null
-        账户余额: 账户余额
-        Account Balance: null
-        对方户名: 对手名称
-        Counterparty’s: null
-        对方账户/对方银行: 对手账户
-  reader_id: pdfplumber_table
 - id: md5:a70735a0cf8fd249d144458896f7346c
   file_type: pdf
   bank: 兴业银行
@@ -924,7 +820,7 @@
         交易对方: 对手名称
         商户单号: null
   reader_id: payment_proof_text
-- id: md5:e66751a430991d09abee5bcfd16232b1
+- id: md5:cf70380d7ed3124ebddb69119e9c8d36
   file_type: pdf
   bank: 支付宝
   account_type: 个人
@@ -938,4 +834,12 @@
         兹证明: null
         交易时间段: 交易时间
         币种: null
+        收/支: 收支方向
+        交易对方: 对手名称
+        商品说明: 银行备注
+        收/付款方式: 交易渠道
+        金额: 交易金额
+        交易订单号: null
+        商家订单号: null
+        交易时间: 交易时间
   reader_id: payment_proof_text

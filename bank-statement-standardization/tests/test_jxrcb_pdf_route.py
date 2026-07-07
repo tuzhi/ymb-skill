@@ -21,13 +21,13 @@ SPEC.loader.exec_module(standardize)
 
 PARSER_SPEC = importlib.util.spec_from_file_location(
     "jxrcb_pdf_text",
-    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "jxrcb_pdf_text.py")
+    CORE_PACKAGE / "ymb_standardization_core" / "readers" / "jxrcb_pdf_text.py")
 jxrcb_pdf_text = importlib.util.module_from_spec(PARSER_SPEC)
 PARSER_SPEC.loader.exec_module(jxrcb_pdf_text)
 
 ROUTER_SPEC = importlib.util.spec_from_file_location(
     "router",
-    CORE_PACKAGE / "ymb_standardization_core" / "parsers" / "router.py")
+    CORE_PACKAGE / "ymb_standardization_core" / "readers" / "router.py")
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 

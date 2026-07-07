@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare one file with support_matrix peers for a parser fingerprint."""
+"""Compare one file with support_matrix peers for a reader fingerprint."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ def _add_core_path(repo_root: Path) -> None:
 
 
 def _load_support_rows(matrix_path: Path) -> list[dict]:
+    if not matrix_path.exists():
+        return []
     from openpyxl import load_workbook
 
     wb = load_workbook(matrix_path, read_only=True, data_only=True)
@@ -38,7 +40,7 @@ def _load_support_rows(matrix_path: Path) -> list[dict]:
 def _read_rows(repo_root: Path, path: Path):
     _add_core_path(repo_root)
     from ymb_standardization_core import core
-    from ymb_standardization_core.parsers import input_router
+    from ymb_standardization_core.readers import input_router
 
     input_router.configure_readers(core.read_rows_excel, core.read_rows_csv, core.NotABankStatement)
     result = input_router.read_rows(str(path))
@@ -127,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 
     report = {
         "file": _relative(file_path, repo_root),
-        "parser": args.parser,
+        "fingerprint_id": args.fingerprint_id,
         "target": {
             "kind": kind,
             "route_info": route_info,

@@ -1,6 +1,6 @@
 ---
 name: parser-fingerprint-maintainer
-description: "当维护银行流水 parser fingerprint、检查 Excel/PDF 是否命中 ymb-standardization-core YAML 规则、处理 unmatched 或 ambiguous 路由、对比 support_matrix.xlsx 样本、或新增保守指纹且不能过度声明银行身份时使用。"
+description: "当维护银行流水 reader fingerprint、检查 Excel/PDF 是否命中 ymb-standardization-core YAML 规则、处理 unmatched 或 ambiguous 路由、对比 support_matrix.xlsx 样本、或新增保守指纹且不能过度声明银行身份时使用。"
 ---
 
 # Parser Fingerprint Maintainer
@@ -16,7 +16,7 @@ description: "当维护银行流水 parser fingerprint、检查 Excel/PDF 是否
 - 对比 `support_matrix.xlsx` 中同一 fingerprint 的历史样本
 - 新增或收窄 `excel_rules.yaml` / `pdf_rules.yaml`
 - 判断某个 fingerprint 是否过宽、过窄，或错误声明了银行身份
-- 维护 `reader_id`、列到标准字段的映射、支持矩阵中的 parser 命中结果
+- 维护 `reader_id`、列到标准字段的映射、支持矩阵中的 reader 命中结果
 
 ## 核心规则
 

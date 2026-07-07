@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect one bank-statement file against parser fingerprint YAML.
+"""Inspect one bank-statement file against reader fingerprint YAML.
 
 This script is intentionally read-only: it does not edit YAML or support_matrix.
 """
@@ -44,7 +44,7 @@ def _load_support_rows(matrix_path: Path) -> list[dict]:
 def _read_result(repo_root: Path, file_path: Path):
     _add_core_path(repo_root)
     from ymb_standardization_core import core
-    from ymb_standardization_core.parsers.input_router import ReadResult
+    from ymb_standardization_core.readers.input_router import ReadResult
 
     kind, preamble, rows, route_info = core.read_rows(str(file_path))
     return ReadResult(kind=kind, preamble=preamble, rows=rows, route_info=route_info)
@@ -134,7 +134,7 @@ def _recommendation(route_info: dict, peers: list[dict]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Inspect a file against parser fingerprint YAML")
+    parser = argparse.ArgumentParser(description="Inspect a file against reader fingerprint YAML")
     parser.add_argument("--repo-root", default=".", help="Repository root containing ymb-standardization-core")
     parser.add_argument("--file", required=True, help="Target Excel/PDF file")
     parser.add_argument(

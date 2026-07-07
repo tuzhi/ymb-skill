@@ -1,10 +1,11 @@
-from ymb_standardization_core.parsers.abc_text_pdf import read_abc_text_pdf
-from ymb_standardization_core.parsers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
-from ymb_standardization_core.parsers.jxrcb_pdf_text import read_jxrcb_text_pdf
-from ymb_standardization_core.parsers.kasikorn_pdf_text import read_kasikorn_text_pdf
-from ymb_standardization_core.parsers.routing.rule_loader import load_pdf_route_rules
-from ymb_standardization_core.parsers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
-from ymb_standardization_core.parsers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
+from ymb_standardization_core.readers.alipay_proof_pdf import read_alipay_proof_pdf
+from ymb_standardization_core.readers.abc_text_pdf import read_abc_text_pdf
+from ymb_standardization_core.readers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
+from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
+from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
+from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
+from ymb_standardization_core.readers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
+from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 ABC_TEXT_PDF_FINGERPRINTS = {"md5:ab5d413308d9d27f3aa913d772fa3494"}
 JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
@@ -15,6 +16,7 @@ WECHAT_PAY_PROOF_PDF_FINGERPRINTS = {
     "md5:48a1a9cde662e1515e3d8f3238934e92",
     "md5:13cbd1af07e92414229d298a67bcf533",
 }
+ALIPAY_PROOF_PDF_FINGERPRINTS = {"md5:cf70380d7ed3124ebddb69119e9c8d36"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
@@ -716,7 +718,7 @@ def _open_pdf(path, open_password=None):
 
 
 def read_pdf_rows(path, open_password=None):
-    """读取 PDF 并按路由选择专属 parser 或通用表格 parser。
+    """读取 PDF 并按路由选择专属 reader 或通用表格 reader。
 
     返回 (preamble, rows, route_info)。preamble 供标准化层继续嗅探户名/账号。
     """
@@ -744,6 +746,9 @@ def read_pdf_rows(path, open_password=None):
             return preamble, rows, route_info
         if fingerprint_id in WECHAT_PAY_PROOF_PDF_FINGERPRINTS:
             preamble, rows = read_wechat_pay_proof_pdf(pdf)
+            return preamble, rows, route_info
+        if fingerprint_id in ALIPAY_PROOF_PDF_FINGERPRINTS:
+            preamble, rows = read_alipay_proof_pdf(pdf)
             return preamble, rows, route_info
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""))
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:

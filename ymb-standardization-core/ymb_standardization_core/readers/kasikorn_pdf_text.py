@@ -1,4 +1,4 @@
-"""Kasikorn Bank（开泰银行）英文文本版 PDF parser。"""
+"""Kasikorn Bank（开泰银行）英文文本版 PDF reader。"""
 
 import re
 from datetime import datetime

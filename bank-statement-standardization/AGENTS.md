@@ -30,7 +30,7 @@ Obsidian vault 根路径以 Codex 全局配置为准；本文件只维护 vault 
 - 项目本有venv虚环境
 - 共享标准化内核位于 `ymb-standardization-core/`。
 - Skill 封装位于 `bank-statement-standardization/`。
-- PDF/Excel 输入识别优先放在 shared core 的 parser/router/input 层。
+- PDF/Excel 输入识别优先放在 shared core 的 reader/router/input 层。
 - `testdata/` 为测试数据目录。
 - `scripts/package_skill.py` 为打包脚本。
 - 代码注释优先中文说明。

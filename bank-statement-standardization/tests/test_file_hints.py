@@ -98,7 +98,7 @@ class FileHintsTests(unittest.TestCase):
 
     def test_core_read_rows_loads_open_password_from_nearest_file_hints(self):
         from ymb_standardization_core import core
-        from ymb_standardization_core.parsers import input_router
+        from ymb_standardization_core.readers import input_router
 
         captured = []
         original_read_rows = input_router.read_rows

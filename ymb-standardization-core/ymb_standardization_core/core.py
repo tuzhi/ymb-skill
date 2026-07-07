@@ -398,7 +398,7 @@ def parse_datetime(date_part, time_part):
 # ---- 原始文件读取（统一成 list[list]） ----------------------------------------
 def read_rows_excel(path, open_password=None):
     """返回 (sheet名, rows:list[list])。取第一个有数据的 sheet。"""
-    from ymb_standardization_core.parsers.input_router import _maybe_decrypted_office_file
+    from ymb_standardization_core.readers.input_router import _maybe_decrypted_office_file
 
     with _maybe_decrypted_office_file(path, open_password=open_password) as source:
         try:
@@ -526,8 +526,8 @@ def read_rows_csv(path):
 
 
 def read_rows_pdf(path):
-    """用标准化输入路由读取 PDF，命中专属模板时交给对应 parser。"""
-    from ymb_standardization_core.parsers.router import read_pdf_rows
+    """用标准化输入路由读取 PDF，命中专属模板时交给对应 reader。"""
+    from ymb_standardization_core.readers.router import read_pdf_rows
 
     return read_pdf_rows(path)
 
@@ -535,7 +535,7 @@ def read_rows_pdf(path):
 def read_rows(path):
     """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
     from ymb_standardization_core.file_hints import load_file_hints_for_path
-    from ymb_standardization_core.parsers import input_router
+    from ymb_standardization_core.readers import input_router
 
     file_hints = load_file_hints_for_path(path)
     hints = file_hints.for_file(path)
@@ -619,7 +619,7 @@ _CARD_BIN_BANK_NAMES = None
 
 
 def _routing_dir():
-    return os.path.join(os.path.dirname(__file__), "parsers", "routing")
+    return os.path.join(os.path.dirname(__file__), "readers", "routing")
 
 
 def load_card_bin_bank_names():
