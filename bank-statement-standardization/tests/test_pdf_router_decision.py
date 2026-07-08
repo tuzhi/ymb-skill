@@ -127,7 +127,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
                 self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
-                self.assertEqual(route_info["fingerprint_id"], "md5:aa3ad86844e3ad1b5b077d765301c287")
+                self.assertEqual(route_info["fingerprint_id"], "md5:afe2263442bc5b4e71148582aaacce44")
+                self.assertEqual(rows[0], route_info["reader_headers"])
                 self.assertEqual(rows[0], [
                     "序号",
                     "账务流水号",
@@ -642,7 +643,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:aa3ad86844e3ad1b5b077d765301c287'})
+        self.assertIn(result["fingerprint_id"], {'md5:afe2263442bc5b4e71148582aaacce44'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")

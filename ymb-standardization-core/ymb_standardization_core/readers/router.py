@@ -1,4 +1,3 @@
-from ymb_standardization_core.readers.alipay_proof_pdf import read_alipay_proof_pdf
 from ymb_standardization_core.readers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.readers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
@@ -11,7 +10,6 @@ JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
 JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS = {"md5:19c8a8f7513adce0f0ad32a5c0b05154"}
-ALIPAY_PROOF_PDF_FINGERPRINTS = {"md5:7b8550aa0fb09fbf645f59b6f720c917"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
@@ -32,6 +30,8 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
+        "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
+        "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
         "style_evidence": route_evidence.get("style_evidence", []) if route_evidence else [],
         "date_format_evidence": route_evidence.get("date_format_evidence", []) if route_evidence else [],
@@ -123,6 +123,8 @@ def route_pdf(text, table_row_count, page_count, context=None):
             identity_evidence=match["identity_evidence"],
             columns_evidence=match["columns_evidence"],
             route_evidence={
+                "reader_header_candidates": rule.column_markers,
+                "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
                 "date_format_evidence": match.get("date_format_evidence", []),
@@ -146,11 +148,16 @@ def _extract_pdf_tables(pdf):
     return _extract_pdf_tables_from_horizontal_lines(pdf)
 
 
-def _extract_pdf_rows_by_reader(pdf, reader_id):
+def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
+    route_info = route_info or {}
     if reader_id == "pdfplumber_text_separator_table":
         return _extract_pdf_text_separator_table_rows(pdf)
     if reader_id == "pdfplumber_word_column_table":
-        return _extract_pdf_word_column_table_rows(pdf)
+        return _extract_pdf_word_column_table_rows(
+            pdf,
+            route_info.get("reader_header_candidates") or [],
+            route_info.get("row_anchor") or {},
+        )
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf)
     if reader_id == "pdfplumber_table":
@@ -247,22 +254,6 @@ def _extract_pdf_tables_from_horizontal_lines(pdf):
     return all_rows
 
 
-WORD_COLUMN_TABLE_HEADERS = [
-    "序号",
-    "账务流水号",
-    "提交时间",
-    "交易时间",
-    "交易名称",
-    "借方金额（收）",
-    "贷方金额（支）",
-    "余额",
-    "对方户名",
-    "对方账号",
-    "对方机构",
-    "备注",
-]
-
-
 def _group_words_by_top(words):
     groups = {}
     for word in words:
@@ -271,8 +262,9 @@ def _group_words_by_top(words):
     return groups
 
 
-def _word_column_header(words):
-    header_set = set(WORD_COLUMN_TABLE_HEADERS)
+def _word_column_header(words, candidate_headers):
+    candidate_headers = [str(header).strip() for header in candidate_headers if str(header).strip()]
+    header_set = set(candidate_headers)
     best = None
     for top, group in _group_words_by_top(words).items():
         by_text = {}
@@ -280,19 +272,20 @@ def _word_column_header(words):
             text = str(word.get("text") or "").strip()
             if text in header_set and text not in by_text:
                 by_text[text] = word
-        if len(by_text) < 8:
+        if len(by_text) < 3:
             continue
         if best is None or len(by_text) > len(best[1]):
             best = (top, by_text)
     if not best:
-        return None, None
+        return None, None, None
     top, by_text = best
-    if not all(header in by_text for header in ("序号", "账务流水号", "交易时间", "余额", "备注")):
-        return None, None
-    starts = [float(by_text[header].get("x0", 0)) for header in WORD_COLUMN_TABLE_HEADERS]
+    headers = [header for header in candidate_headers if header in by_text]
+    starts = [float(by_text[header].get("x0", 0)) for header in headers]
     if starts != sorted(starts):
-        return None, None
-    return top, starts
+        pairs = sorted(zip(headers, starts), key=lambda item: item[1])
+        headers = [header for header, _start in pairs]
+        starts = [start for _header, start in pairs]
+    return top, headers, starts
 
 
 def _word_column_boundaries(page_width, starts):
@@ -306,37 +299,74 @@ def _word_column_index(x, boundaries):
     return None
 
 
-def _is_word_column_row_anchor(word, serial_x):
+def _is_word_column_row_anchor(word, anchor_x, anchor_header, row_anchor=None):
     import re
 
     text = str(word.get("text") or "").strip()
     x0 = float(word.get("x0", 0))
-    return serial_x - 10 <= x0 <= serial_x + 20 and re.fullmatch(r"\d{1,6}", text)
+    if not (anchor_x - 10 <= x0 <= anchor_x + 20):
+        return False
+    anchor_values = {
+        str(value).strip()
+        for value in (row_anchor or {}).get("values", [])
+        if str(value).strip()
+    }
+    if anchor_values:
+        return text in anchor_values
+    if "序号" in str(anchor_header):
+        return bool(re.fullmatch(r"\d{1,6}", text))
+    return bool(text)
 
 
-def _extract_pdf_word_column_table_rows(pdf):
+def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None):
     """Recover visual tables whose text words have stable column coordinates."""
-    all_rows = [WORD_COLUMN_TABLE_HEADERS]
+    all_rows = []
+    output_headers = None
+    output_starts = None
+    row_anchor = row_anchor or {}
     for page in pdf.pages:
         words = page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False)
-        header_top, starts = _word_column_header(words)
-        if starts is None:
+        header_top, page_headers, page_starts = _word_column_header(words, candidate_headers)
+        if page_starts is not None:
+            headers = page_headers
+            starts = page_starts
+            body_top_min = header_top + 5
+        elif output_headers is not None and output_starts is not None:
+            headers = output_headers
+            starts = output_starts
+            body_top_min = 0
+        else:
             continue
+        anchor_column = str(row_anchor.get("column") or "").strip()
+        anchor_index = headers.index(anchor_column) if anchor_column in headers else 0
+        if output_headers is None:
+            output_headers = headers
+            output_starts = starts
+            all_rows.append(headers)
+        elif headers != output_headers:
+            continue
+        else:
+            output_starts = starts
         boundaries = _word_column_boundaries(page.width, starts)
         body_words = [
             word for word in words
-            if float(word.get("top", 0)) > header_top + 5
+            if float(word.get("top", 0)) > body_top_min
             and not str(word.get("text") or "").startswith("第")
         ]
         anchors = sorted(
             (float(word.get("top", 0)), word)
             for word in body_words
-            if _is_word_column_row_anchor(word, starts[0])
+            if _is_word_column_row_anchor(
+                word,
+                starts[anchor_index],
+                headers[anchor_index],
+                row_anchor,
+            )
         )
         for index, (anchor_top, _word) in enumerate(anchors):
-            start_top = (anchors[index - 1][0] + anchor_top) / 2 if index else header_top + 5
+            start_top = (anchors[index - 1][0] + anchor_top) / 2 if index else body_top_min
             end_top = (anchor_top + anchors[index + 1][0]) / 2 if index + 1 < len(anchors) else page.height - 25
-            cells = [[] for _ in WORD_COLUMN_TABLE_HEADERS]
+            cells = [[] for _ in headers]
             for word in body_words:
                 top = float(word.get("top", 0))
                 if not (start_top <= top < end_top):
@@ -346,9 +376,64 @@ def _extract_pdf_word_column_table_rows(pdf):
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
             row = [" ".join(text for _top, _x0, text in sorted(cell)).strip() for cell in cells]
-            if row and row[0].isdigit():
+            if row and row[0]:
                 all_rows.append(row)
     return all_rows if len(all_rows) > 1 else []
+
+
+def _clean_payment_cell(value):
+    return " ".join(str(value or "").split()).strip()
+
+
+def _clean_payment_order_id(value):
+    return "".join(str(value or "").split()).strip()
+
+
+def _annotate_payment_order_state(rows):
+    if not rows:
+        return rows
+    headers = [_clean_payment_cell(header) for header in rows[0]]
+    required = {"收/支", "交易订单号", "商家订单号"}
+    if not required.issubset(set(headers)):
+        return rows
+
+    direction_index = headers.index("收/支")
+    trade_order_index = headers.index("交易订单号")
+    merchant_order_index = headers.index("商家订单号")
+    normal_orders = set()
+    normalized_rows = [headers]
+
+    for row in rows[1:]:
+        cells = list(row) + [""] * max(0, len(headers) - len(row))
+        cells = cells[:len(headers)]
+        merchant_order = _clean_payment_order_id(cells[merchant_order_index])
+        direction = _clean_payment_cell(cells[direction_index])
+        if merchant_order and direction in {"收入", "支出"}:
+            normal_orders.add(merchant_order)
+        normalized_rows.append(cells)
+
+    output = [headers]
+    for cells in normalized_rows[1:]:
+        merchant_order = _clean_payment_order_id(cells[merchant_order_index])
+        trade_order = _clean_payment_order_id(cells[trade_order_index])
+        direction = _clean_payment_cell(cells[direction_index])
+        parts = []
+        if merchant_order:
+            parts.append(f"支付宝商家订单号={merchant_order}")
+        if trade_order:
+            parts.append(f"支付宝交易订单号={trade_order}")
+        if direction.startswith("不计"):
+            if merchant_order and merchant_order in normal_orders:
+                parts.append("支付宝订单状态=取消/退款关联")
+            elif merchant_order:
+                parts.append("支付宝订单状态=平台订单未配对不计收支")
+            else:
+                parts.append("支付宝订单状态=不计收支无商家订单号")
+        if parts:
+            cells = list(cells)
+            cells[merchant_order_index] = "；".join(parts)
+        output.append(cells)
+    return output
 
 
 TEXT_SEPARATOR_TABLE_HEADER = [
@@ -739,10 +824,10 @@ def read_pdf_rows(path, open_password=None):
         if fingerprint_id in ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
             return preamble, rows, route_info
-        if fingerprint_id in ALIPAY_PROOF_PDF_FINGERPRINTS:
-            preamble, rows = read_alipay_proof_pdf(pdf)
-            return preamble, rows, route_info
-        table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""))
+        table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
+        table_rows = _annotate_payment_order_state(table_rows)
+        if route_info.get("reader_id") == "pdfplumber_word_column_table" and table_rows:
+            route_info = {**route_info, "reader_headers": table_rows[0]}
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
             rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])
             return preamble or "", rows, route_info

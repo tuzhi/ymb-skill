@@ -960,7 +960,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertNotIn("parser", route)
 
-        self.assertEqual(route["reader_id"], "payment_proof_text")
+        self.assertEqual(route["reader_id"], "pdfplumber_word_column_table")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "支付宝")
         self.assertEqual(route["account_type"], "个人")
@@ -968,6 +968,17 @@ class InputRouterTests(unittest.TestCase):
         self.assertGreater(len(result.rows), 1)
         self.assertEqual(result.rows[0], ["收/支", "交易对方", "商品说明", "收/付款方式", "金额", "交易订单号", "商家订单号", "交易时间"])
         self.assertRegex(result.rows[1][7], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+        self.assertIn("支付宝商家订单号=", result.rows[1][6])
+        self.assertIn("支付宝交易订单号=", result.rows[1][6])
+
+    def test_alipay_word_column_reader_continues_pages_without_repeated_header(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "吕建光" / "支付宝交易明细(20250701-20260630).pdf"
+
+        result = module.read_rows(str(pdf))
+
+        self.assertEqual(result.route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertGreater(len(result.rows), 1000)
 
     def test_jiangxi_rural_commercial_pdf_route_matches_watermarked_export(self):
         module = load_input_router()

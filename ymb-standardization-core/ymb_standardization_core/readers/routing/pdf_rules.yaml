@@ -484,7 +484,7 @@
         摘要: 银行备注
         附言: 账户方附言
   reader_id: pdfplumber_table
-- id: md5:aa3ad86844e3ad1b5b077d765301c287
+- id: md5:afe2263442bc5b4e71148582aaacce44
   file_type: pdf
   bank: 浙江网商银行
   account_type: 对公
@@ -500,6 +500,7 @@
         借方交易金额: 支出金额
         贷方交易笔数: 收入金额
         贷方交易金额: 收入金额
+        序号: null
         账务流水号: null
         提交时间: null
         交易时间: 交易时间
@@ -792,7 +793,7 @@
         交易对方: 对手名称
         商户单号: null
   reader_id: pdfplumber_table
-- id: md5:7b8550aa0fb09fbf645f59b6f720c917
+- id: md5:6ff5c74e874af5159f4934d97ce035f8
   file_type: pdf
   bank: 支付宝
   account_type: 个人
@@ -814,4 +815,10 @@
         交易订单号: null
         商家订单号: 账户方附言
         交易时间: 交易时间
-  reader_id: payment_proof_text
+    row_anchor:
+      column: 收/支
+      values:
+      - 收入
+      - 支出
+      - 不计
+  reader_id: pdfplumber_word_column_table

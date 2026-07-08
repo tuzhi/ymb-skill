@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from pathlib import Path
@@ -20,6 +20,7 @@ class RouteRule:
     metadata_all: dict
     style_all: list
     date_format_any: list
+    row_anchor: dict = field(default_factory=dict)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -317,6 +318,7 @@ def load_pdf_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            row_anchor=fingerprint.get("row_anchor", {}),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -338,6 +340,7 @@ def load_excel_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            row_anchor=fingerprint.get("row_anchor", {}),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
