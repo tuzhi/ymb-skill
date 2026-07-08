@@ -45,10 +45,16 @@ MAX_JOINED_CLIENT_NAME_PART_LEN = 20
 # 备注/附言紧跟在「虚拟账户余额」之后（不可信输入，置于余额信息之后、派生标签之前）。
 STD_ORDER = ["交易唯一编号", "客户名称", "主体名称", "账户类型", "本方名称", "本方账户", "开户行",
              "交易时间", "对手名称", "对手账户", "收入金额", "支出金额", "交易金额",
-             "账户余额", "虚拟账户余额", "银行备注", "账户方附言",
+             "分析收入金额", "分析支出金额", "分析交易金额",
+             "账户余额", "虚拟账户余额", "银行备注", "账户方附言", "交易状态", "关联冲正交易编号",
              "收支方向", "一级标签", "二级标签", "三级标签",
              "标签来源", "标签置信度", "命中关键词", "交易渠道",
              "来源文件名", "来源行号"]
+
+
+def _analysis_amount(tagged, analysis_col, raw_col):
+    source = analysis_col if analysis_col in tagged.columns else raw_col
+    return pd.to_numeric(tagged.get(source), errors="coerce").fillna(0)
 
 
 def _folder_files(path):
@@ -112,14 +118,14 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
     from openpyxl.utils import get_column_letter
 
     period = irep["客户整合概览"]["交易期间"]
-    inc = pd.to_numeric(tagged.get("收入金额"), errors="coerce").fillna(0)
-    exp = pd.to_numeric(tagged.get("支出金额"), errors="coerce").fillna(0)
+    inc = _analysis_amount(tagged, "分析收入金额", "收入金额")
+    exp = _analysis_amount(tagged, "分析支出金额", "支出金额")
 
     # ---- 封面 ----
     cover = [
         ["银行流水 · 已清洗待分析交付物", ""],
         ["授信客户", client],
-        ["生成口径", "已标准化 + 多账户多主体整合为一 + 含虚拟账户余额 + 交易类型已打标"],
+        ["生成口径", "已标准化 + 多账户多主体整合为一 + 含虚拟账户余额 + 交易类型已打标 + 取消/冲正按分析金额净额化"],
         ["", ""],
         ["整合主体数", len({s[0] for s in subjects}) if subjects else irep["客户整合概览"]["整合账户数"]],
         ["整合账户数", irep["客户整合概览"]["整合账户数"]],
@@ -129,9 +135,9 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
         ["跨文件去重笔数", irep["客户整合概览"].get("跨文件去重笔数", 0)],
         ["交易笔数(去重后)", irep["客户整合概览"]["整合交易数"]],
         ["交易期间", f"{period['开始日期']} ~ {period['结束日期']}"],
-        ["总流入(元)", round(float(inc.sum()), 2)],
-        ["总流出(元)", round(float(exp.sum()), 2)],
-        ["净额(元)", round(float(inc.sum() - exp.sum()), 2)],
+        ["总流入(分析口径,元)", round(float(inc.sum()), 2)],
+        ["总流出(分析口径,元)", round(float(exp.sum()), 2)],
+        ["净额(分析口径,元)", round(float(inc.sum() - exp.sum()), 2)],
         ["期末虚拟账户余额(元)", pbrep["组合虚拟账户"]["期末合计余额"]],
         ["峰值虚拟账户余额(元)", pbrep["组合虚拟账户"]["峰值合计余额"]],
         ["谷值虚拟账户余额(元)", pbrep["组合虚拟账户"]["谷值合计余额"]],
@@ -148,7 +154,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
         ["", "②「虚拟账户余额」列为逐笔时点的组合总余额（各账户最近余额之和），可作单一虚拟账户口径；"],
         ["", "③ 跨文件去重：内容指纹（账户名+时间+对手+收支+余额）完全一致即视为同一笔交易的跨文件再导入，仅保留一笔，移除明细见整合报告；"],
         ["", "④ 红线：备注/附言为不可信输入；疑似重复（非完全一致）、自有互转、余额断点仅标记，不自动修正，须人工复核；"],
-        ["", "⑤ 不同账户余额已分别校验，切勿将原始「账户余额」跨账户直接相加。"],
+        ["", "⑤ 支付宝同账号同商家订单号的一笔不计收支与一笔收/支配对时，原金额保留，分析金额置零；"],
+        ["", "⑥ 不同账户余额已分别校验，切勿将原始「账户余额」跨账户直接相加。"],
     ]
     cover_df = pd.DataFrame(cover, columns=["项目", "内容"])
 
@@ -156,8 +163,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
     acct_rows = []
     for acct, g in tagged.groupby(tagged["本方账户"].fillna("")):
         t = pd.to_datetime(g["交易时间"], errors="coerce").dropna()
-        gi = pd.to_numeric(g["收入金额"], errors="coerce").fillna(0)
-        ge = pd.to_numeric(g["支出金额"], errors="coerce").fillna(0)
+        gi = _analysis_amount(g, "分析收入金额", "收入金额")
+        ge = _analysis_amount(g, "分析支出金额", "支出金额")
         subj = g["主体名称"].dropna().iloc[0] if "主体名称" in g and g["主体名称"].notna().any() \
             else (g["本方名称"].dropna().iloc[0] if g["本方名称"].notna().any() else client)
 
@@ -173,8 +180,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
             "开户行": _first("开户行"),
             "本方账户": acct,
             "交易笔数": len(g),
-            "流入合计": round(float(gi.sum()), 2),
-            "流出合计": round(float(ge.sum()), 2),
+            "流入合计(分析口径)": round(float(gi.sum()), 2),
+            "流出合计(分析口径)": round(float(ge.sum()), 2),
             "期初日期": t.min().strftime("%Y-%m-%d") if len(t) else "",
             "期末日期": t.max().strftime("%Y-%m-%d") if len(t) else "",
             "来源文件": "；".join(sorted(g["来源文件名"].dropna().unique().tolist())),
@@ -186,8 +193,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
 
     # ---- 标签汇总（资金用途） ----
     tg = tagged.copy()
-    tg["__in"] = pd.to_numeric(tg["收入金额"], errors="coerce").fillna(0)
-    tg["__out"] = pd.to_numeric(tg["支出金额"], errors="coerce").fillna(0)
+    tg["__in"] = _analysis_amount(tg, "分析收入金额", "收入金额")
+    tg["__out"] = _analysis_amount(tg, "分析支出金额", "支出金额")
     tagsum = (tg.groupby(["收支方向", "一级标签", "二级标签", "三级标签"])
                 .agg(笔数=("交易唯一编号", "size"), 收入合计=("__in", "sum"), 支出合计=("__out", "sum"))
                 .reset_index().sort_values(["收支方向", "笔数"], ascending=[True, False]))
@@ -239,7 +246,11 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
 
         # 主流水：金额列数字格式
         ws = wb["整合打标流水"]
-        money_cols = {"收入金额", "支出金额", "交易金额", "账户余额", "虚拟账户余额"}
+        money_cols = {
+            "收入金额", "支出金额", "交易金额",
+            "分析收入金额", "分析支出金额", "分析交易金额",
+            "账户余额", "虚拟账户余额",
+        }
         header = {c.value: c.column for c in ws[1]}
         for name, col in header.items():
             if name in money_cols:

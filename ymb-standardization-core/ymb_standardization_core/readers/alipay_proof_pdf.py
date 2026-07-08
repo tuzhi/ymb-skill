@@ -79,6 +79,45 @@ def _row_values(row):
     return [_clean(row.get(column, "")) for column in HEADER]
 
 
+def _annotate_order_state(rows):
+    """Put Alipay order tracing information into the merchant-order cell.
+
+    The standard schema has no dedicated Alipay order-id fields. Keeping this
+    information in the source column lets YAML map it to 账户方附言 without
+    changing the delivery workbook schema.
+    """
+    if len(rows) <= 1:
+        return rows
+
+    normal_merchant_orders = {
+        row[6]
+        for row in rows[1:]
+        if len(row) >= 7 and row[0] in {"收入", "支出"} and row[6]
+    }
+    annotated = [rows[0]]
+    for row in rows[1:]:
+        if len(row) < len(HEADER):
+            annotated.append(row)
+            continue
+        direction, order_id, merchant_order = row[0], row[5], row[6]
+        parts = []
+        if direction == "不计收支":
+            if merchant_order and merchant_order in normal_merchant_orders:
+                parts.append("支付宝订单状态=取消/退款关联")
+            elif merchant_order:
+                parts.append("支付宝订单状态=平台订单未配对不计收支")
+            else:
+                parts.append("支付宝订单状态=不计收支无商家订单号")
+        if merchant_order:
+            parts.append(f"支付宝商家订单号={merchant_order}")
+        if order_id:
+            parts.append(f"支付宝交易订单号={order_id}")
+        row = list(row)
+        row[6] = "；".join(parts)
+        annotated.append(row)
+    return annotated
+
+
 def read_alipay_proof_pdf(pdf):
     """解析支付宝交易流水证明 PDF。"""
     rows = [HEADER]
@@ -107,4 +146,5 @@ def read_alipay_proof_pdf(pdf):
     if current:
         rows.append(_row_values(current))
 
+    rows = _annotate_order_state(rows)
     return "\n".join(preamble), rows if len(rows) > 1 else []

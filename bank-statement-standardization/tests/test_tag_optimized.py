@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from tag import direction_of, direction_series, load_rules, match
+from tag import _apply_alipay_order_reversals, direction_of, direction_series, load_rules, match
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,6 +152,233 @@ class TagOptimizedTest(unittest.TestCase):
             self.assertEqual(rule["L2"], "自有资金调拨")
             self.assertEqual(rule["L3"], "类现金余额产品调拨")
             self.assertEqual(hit_field, "银行备注")
+
+    def test_alipay_cancel_pair_zeroes_analysis_amounts_and_tags_refund(self):
+        df = pd.DataFrame([
+            {
+                "交易唯一编号": "TX-original",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "95新联想拯救者",
+                "账户方附言": "支付宝商家订单号=T200P1；支付宝交易订单号=ORDER1",
+                "收入金额": "",
+                "支出金额": "8200.00",
+                "收支方向": "支出",
+                "一级标签": "经营类",
+                "二级标签": "主营业务",
+                "三级标签": "采购支出",
+                "标签来源": "规则库",
+                "标签置信度": "0.72",
+                "命中规则编号": "R",
+                "命中关键词": "订单",
+                "命中字段": "账户方附言",
+            },
+            {
+                "交易唯一编号": "TX-cancel",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "退款-95新联想拯救者",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=T200P1；支付宝交易订单号=ORDER1_T200P1",
+                "收入金额": "",
+                "支出金额": "",
+                "收支方向": "未知",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+        ])
+
+        summary = _apply_alipay_order_reversals(df)
+
+        self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 1, "冲正记录数": 1})
+        self.assertEqual(df.loc[0, "支出金额"], "8200.00")
+        self.assertEqual(df.loc[0, "分析支出金额"], 0)
+        self.assertEqual(df.loc[1, "分析支出金额"], 0)
+        self.assertEqual(df.loc[0, "交易状态"], "被取消")
+        self.assertEqual(df.loc[1, "交易状态"], "取消")
+        self.assertEqual(df.loc[0, "关联冲正交易编号"], "TX-cancel")
+        self.assertEqual(df.loc[1, "关联冲正交易编号"], "TX-original")
+        self.assertEqual(df.loc[1, "二级标签"], "退款交易")
+        self.assertEqual(df.loc[1, "三级标签"], "退款支出")
+        self.assertEqual(df.loc[1, "标签来源"], "支付宝订单配对")
+
+    def test_alipay_cancel_pair_allows_multiple_cancel_rows_for_one_order(self):
+        df = pd.DataFrame([
+            {
+                "交易唯一编号": "TX-original",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "代付",
+                "账户方附言": "支付宝商家订单号=M1；支付宝交易订单号=M1",
+                "收入金额": "",
+                "支出金额": "6054.90",
+                "收支方向": "支出",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他支出",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+            {
+                "交易唯一编号": "TX-cancel-1",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "退款-代付",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=R1",
+                "收入金额": "",
+                "支出金额": "",
+                "收支方向": "未知",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+            {
+                "交易唯一编号": "TX-cancel-2",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "退款-代付",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=R2",
+                "收入金额": "",
+                "支出金额": "",
+                "收支方向": "未知",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+        ])
+
+        summary = _apply_alipay_order_reversals(df)
+
+        self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 1, "冲正记录数": 2})
+        self.assertEqual(df.loc[0, "交易状态"], "被取消")
+        self.assertEqual(df.loc[0, "关联冲正交易编号"], "TX-cancel-1；TX-cancel-2")
+        self.assertEqual(df.loc[1, "关联冲正交易编号"], "TX-original")
+        self.assertEqual(df.loc[2, "关联冲正交易编号"], "TX-original")
+        self.assertEqual(df.loc[0, "分析支出金额"], 0)
+        self.assertEqual(df.loc[1, "三级标签"], "退款支出")
+        self.assertEqual(df.loc[2, "三级标签"], "退款支出")
+
+    def test_alipay_cancel_pair_allows_one_cancel_row_for_multiple_same_direction_orders(self):
+        df = pd.DataFrame([
+            {
+                "交易唯一编号": "TX-original-1",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "订单支付",
+                "账户方附言": "支付宝商家订单号=M2；支付宝交易订单号=O1",
+                "收入金额": "",
+                "支出金额": "100.00",
+                "收支方向": "支出",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他支出",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+            {
+                "交易唯一编号": "TX-original-2",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "订单支付",
+                "账户方附言": "支付宝商家订单号=M2；支付宝交易订单号=O2",
+                "收入金额": "",
+                "支出金额": "200.00",
+                "收支方向": "支出",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他支出",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+            {
+                "交易唯一编号": "TX-cancel",
+                "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf",
+                "银行备注": "退款-订单支付",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M2；支付宝交易订单号=R",
+                "收入金额": "",
+                "支出金额": "",
+                "收支方向": "未知",
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": "其他",
+                "标签来源": "兜底",
+                "标签置信度": "0.3",
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            },
+        ])
+
+        summary = _apply_alipay_order_reversals(df)
+
+        self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 2, "冲正记录数": 1})
+        self.assertEqual(df.loc[0, "交易状态"], "被取消")
+        self.assertEqual(df.loc[1, "交易状态"], "被取消")
+        self.assertEqual(df.loc[2, "交易状态"], "取消")
+        self.assertEqual(df.loc[2, "关联冲正交易编号"], "TX-original-1；TX-original-2")
+        self.assertEqual(df.loc[0, "分析支出金额"], 0)
+        self.assertEqual(df.loc[1, "分析支出金额"], 0)
+        self.assertEqual(df.loc[2, "三级标签"], "退款支出")
+
+    def test_technical_alipay_order_ids_do_not_match_order_keyword_rules(self):
+        rules = pd.DataFrame([
+            {
+                "规则编号": "R001",
+                "适用方向": "支出",
+                "依据字段": "账户方附言",
+                "匹配方式": "包含",
+                "关键词": "订单",
+                "排除关键词": "",
+                "对手名称含": "",
+                "一级标签": "经营类",
+                "二级标签": "主营业务",
+                "三级标签": "采购支出",
+                "优先级": "900",
+                "备注": "",
+            },
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rules.csv"
+            rules.to_csv(path, index=False, encoding="utf-8-sig")
+
+            buckets = load_rules(path)
+
+        row = pd.Series({
+            "对手名称": "",
+            "银行备注": "",
+            "账户方附言": "支付宝商家订单号=T200P1；支付宝交易订单号=ORDER1",
+            "收入金额": "",
+            "支出金额": "100",
+        })
+        rule, hit_field = match(row, "支出", buckets)
+
+        self.assertIsNone(rule)
+        self.assertIsNone(hit_field)
 
 
 if __name__ == "__main__":

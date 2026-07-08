@@ -42,6 +42,10 @@ SCOPE = {
 # 命中字段可信度（对手户名最可信；备注/附言为不可信输入，置信下调）
 FIELD_CONF = {"对手名称": 0.9, "银行备注": 0.78, "账户方附言": 0.72, "摘要或备注": 0.78}
 
+ALIPAY_ORDER_RE = re.compile(r"支付宝(?:商家|交易)订单号=[^；;]+")
+ALIPAY_STATUS_RE = re.compile(r"支付宝订单状态=[^；;]+")
+ALIPAY_MERCHANT_ORDER_RE = re.compile(r"支付宝商家订单号=([^；;]+)")
+
 
 def _compile_keyword_pattern(rules):
     """把同组关键词编译成字面量正则；只用于粗筛，最终仍按规则顺序确认。"""
@@ -156,12 +160,34 @@ def _match_rule_in_group(group, fields, text, opp):
     return None, None
 
 
+def _strip_technical_memo(text):
+    """Remove machine-readable Alipay tracing text before keyword tagging."""
+    text = ALIPAY_ORDER_RE.sub("", str(text or ""))
+    text = ALIPAY_STATUS_RE.sub("", text)
+    text = re.sub(r"[；;]+", "；", text).strip("；; ")
+    return text
+
+
+def _extract_alipay_merchant_order(text):
+    m = ALIPAY_MERCHANT_ORDER_RE.search(str(text or ""))
+    return m.group(1).strip() if m else ""
+
+
+def _is_alipay_rows(df):
+    text = pd.Series("", index=df.index, dtype=object)
+    for col in ("开户行", "来源文件名", "交易渠道", "账户方附言"):
+        if col in df.columns:
+            text = text + df[col].astype(str)
+    return text.str.contains("支付宝", regex=False, na=False)
+
+
 def match(row, direction, buckets):
     """单遍按优先级匹配（方向桶 + 通用桶已分别按优先级降序）。返回 (rule, 命中字段)。"""
     fields = {f: str(row.get(f, "") or "") for f in ("对手名称", "银行备注", "账户方附言")}
     for f in fields:
         if fields[f].lower() == "nan":
             fields[f] = ""
+    fields["账户方附言"] = _strip_technical_memo(fields["账户方附言"])
     opp = fields["对手名称"]
 
     groups = buckets.get("__groups__", {}).get(direction)
@@ -199,6 +225,97 @@ def match(row, direction, buckets):
     return None, None
 
 
+def _money_series(df, column):
+    return pd.to_numeric(df.get(column, pd.Series(index=df.index, dtype=object)), errors="coerce").fillna(0)
+
+
+def _set_analysis_amounts(out_df):
+    inc = _money_series(out_df, "收入金额")
+    exp = _money_series(out_df, "支出金额")
+    out_df["分析收入金额"] = inc
+    out_df["分析支出金额"] = exp
+    out_df["分析交易金额"] = (inc - exp).round(2)
+    out_df["交易状态"] = "正常"
+    out_df["关联冲正交易编号"] = ""
+
+
+def _apply_alipay_order_reversals(out_df):
+    """Pair Alipay no-income/no-expense cancellation rows with their order row.
+
+    The raw transaction rows are kept for traceability. Analysis amount columns
+    are zeroed for the paired order and cancellation rows so downstream summaries
+    can use the business-effective amount without overwriting original amounts.
+    """
+    if out_df.empty or "账户方附言" not in out_df.columns:
+        _set_analysis_amounts(out_df)
+        return {"配对组数": 0, "冲正原始交易数": 0, "冲正记录数": 0}
+
+    _set_analysis_amounts(out_df)
+    is_alipay = _is_alipay_rows(out_df)
+    memo = out_df["账户方附言"].astype(str)
+    merchant_orders = memo.map(_extract_alipay_merchant_order).where(is_alipay, "")
+    if not merchant_orders.any():
+        return {"配对组数": 0, "冲正原始交易数": 0, "冲正记录数": 0}
+
+    inc = _money_series(out_df, "收入金额")
+    exp = _money_series(out_df, "支出金额")
+    has_cash_flow = (inc > 0) | (exp > 0)
+    is_cancel = memo.str.contains("支付宝订单状态=取消/退款关联", regex=False, na=False)
+    if "银行备注" in out_df.columns:
+        is_cancel = is_cancel | (
+            (merchant_orders != "")
+            & (~has_cash_flow)
+            & out_df["银行备注"].astype(str).str.contains("退款|取消|退货", regex=True, na=False)
+        )
+
+    group_cols = []
+    if "本方账户" in out_df.columns:
+        group_cols.append(out_df["本方账户"].astype(str))
+    else:
+        group_cols.append(pd.Series("", index=out_df.index))
+    group_cols.append(merchant_orders)
+    keys = pd.Series(list(zip(*group_cols)), index=out_df.index)
+
+    paired_groups = original_count = cancel_count = 0
+    for key, idx in keys[(merchant_orders != "") & is_alipay].groupby(keys).groups.items():
+        idx = list(idx)
+        normal_idx = [i for i in idx if bool(has_cash_flow.loc[i]) and not bool(is_cancel.loc[i])]
+        cancel_idx = [i for i in idx if bool(is_cancel.loc[i])]
+        if len(normal_idx) < 1 or len(cancel_idx) < 1:
+            continue
+        normal_directions = {"收入" if inc.loc[i] > 0 else "支出" for i in normal_idx}
+        if len(normal_directions) != 1:
+            continue
+
+        direction = next(iter(normal_directions))
+        refund_l3 = "退款收入" if direction == "收入" else "退款支出"
+
+        paired_groups += 1
+        original_count += len(normal_idx)
+        cancel_count += len(cancel_idx)
+
+        paired = normal_idx + cancel_idx
+        out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
+        normal_ids = "；".join(str(out_df.loc[i, "交易唯一编号"]) for i in normal_idx)
+        cancel_ids = "；".join(str(out_df.loc[i, "交易唯一编号"]) for i in cancel_idx)
+        out_df.loc[normal_idx, "交易状态"] = "被取消"
+        out_df.loc[cancel_idx, "交易状态"] = "取消"
+        out_df.loc[normal_idx, "关联冲正交易编号"] = cancel_ids
+        out_df.loc[cancel_idx, "关联冲正交易编号"] = normal_ids
+
+        out_df.loc[cancel_idx, "收支方向"] = direction
+        out_df.loc[cancel_idx, "一级标签"] = "经营类"
+        out_df.loc[cancel_idx, "二级标签"] = "退款交易"
+        out_df.loc[cancel_idx, "三级标签"] = refund_l3
+        out_df.loc[cancel_idx, "标签来源"] = "支付宝订单配对"
+        out_df.loc[cancel_idx, "标签置信度"] = 0.95
+        out_df.loc[cancel_idx, "命中规则编号"] = "ALIPAY_ORDER_REVERSAL"
+        out_df.loc[cancel_idx, "命中关键词"] = "商家订单号取消/退款关联"
+        out_df.loc[cancel_idx, "命中字段"] = "账户方附言"
+
+    return {"配对组数": paired_groups, "冲正原始交易数": original_count, "冲正记录数": cancel_count}
+
+
 def tag(csv_path, rules_path, out_dir=None):
     df = pd.read_csv(csv_path, dtype=str)
     buckets = load_rules(rules_path)
@@ -222,7 +339,7 @@ def tag(csv_path, rules_path, out_dir=None):
                 "命中规则编号": r["编号"], "命中关键词": r["关键词"], "命中字段": hit_field,
             }
         else:
-            l3 = "其他支出" if d == "支出" else "其他收入"
+            l3 = "其他支出" if d == "支出" else "其他收入" if d == "收入" else "其他"
             l1_stat["其他类"] += 1
             tagrow = {
                 "收支方向": d, "一级标签": "其他类", "二级标签": "其他", "三级标签": l3,
@@ -236,6 +353,7 @@ def tag(csv_path, rules_path, out_dir=None):
         rows_out.append({**row.to_dict(), **tagrow})
 
     out_df = pd.DataFrame(rows_out)
+    reversal_summary = _apply_alipay_order_reversals(out_df)
 
     suggestions = []
     for (d, opp), cnt in unmatched.most_common(40):
@@ -254,6 +372,7 @@ def tag(csv_path, rules_path, out_dir=None):
             "兜底其他类数量": int(len(df) - rule_hits),
             "规则命中率": round(rule_hits / max(1, len(df)), 3),
             "命中字段分布": dict(field_stat),
+            "支付宝冲正配对": reversal_summary,
         },
         "一级标签分布": dict(l1_stat),
         "标签分布": out_df.groupby(["一级标签", "二级标签", "三级标签"]).size()

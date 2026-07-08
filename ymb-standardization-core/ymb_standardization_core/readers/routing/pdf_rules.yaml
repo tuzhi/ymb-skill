@@ -820,7 +820,7 @@
         交易对方: 对手名称
         商户单号: null
   reader_id: payment_proof_text
-- id: md5:cf70380d7ed3124ebddb69119e9c8d36
+- id: md5:7b8550aa0fb09fbf645f59b6f720c917
   file_type: pdf
   bank: 支付宝
   account_type: 个人
@@ -840,6 +840,6 @@
         收/付款方式: 交易渠道
         金额: 交易金额
         交易订单号: null
-        商家订单号: null
+        商家订单号: 账户方附言
         交易时间: 交易时间
   reader_id: payment_proof_text
