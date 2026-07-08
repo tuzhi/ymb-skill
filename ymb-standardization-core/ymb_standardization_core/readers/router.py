@@ -4,7 +4,6 @@ from ymb_standardization_core.readers.jiangxi_yumin_bank_pdf import read_jiangxi
 from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
-from ymb_standardization_core.readers.wechat_pay_proof_pdf import read_wechat_pay_proof_pdf
 from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 ABC_TEXT_PDF_FINGERPRINTS = {"md5:ab5d413308d9d27f3aa913d772fa3494"}
@@ -12,10 +11,6 @@ JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
 JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS = {"md5:19c8a8f7513adce0f0ad32a5c0b05154"}
-WECHAT_PAY_PROOF_PDF_FINGERPRINTS = {
-    "md5:48a1a9cde662e1515e3d8f3238934e92",
-    "md5:13cbd1af07e92414229d298a67bcf533",
-}
 ALIPAY_PROOF_PDF_FINGERPRINTS = {"md5:7b8550aa0fb09fbf645f59b6f720c917"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
@@ -743,9 +738,6 @@ def read_pdf_rows(path, open_password=None):
             return preamble, rows, route_info
         if fingerprint_id in ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
-            return preamble, rows, route_info
-        if fingerprint_id in WECHAT_PAY_PROOF_PDF_FINGERPRINTS:
-            preamble, rows = read_wechat_pay_proof_pdf(pdf)
             return preamble, rows, route_info
         if fingerprint_id in ALIPAY_PROOF_PDF_FINGERPRINTS:
             preamble, rows = read_alipay_proof_pdf(pdf)

@@ -791,35 +791,7 @@
         金额(元): 交易金额
         交易对方: 对手名称
         商户单号: null
-  reader_id: payment_proof_text
-- id: md5:13cbd1af07e92414229d298a67bcf533
-  file_type: pdf
-  bank: 微信支付
-  account_type: 个人
-  fingerprint:
-    metadata:
-      all:
-        Creator: WPS 表格
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 微信支付交易明细证明
-    columns:
-      all:
-        兹证明: null
-        交易明细对应时间段: null
-        具体交易明细: null
-        交易单号: null
-        交易时间: 交易时间
-        交易类型: 银行备注
-        收/支/其他: 收支方向
-        交易方式: 交易渠道
-        金额(元): 交易金额
-        交易对方: 对手名称
-        商户单号: null
-  reader_id: payment_proof_text
+  reader_id: pdfplumber_table
 - id: md5:7b8550aa0fb09fbf645f59b6f720c917
   file_type: pdf
   bank: 支付宝

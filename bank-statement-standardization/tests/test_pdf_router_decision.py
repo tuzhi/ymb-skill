@@ -200,7 +200,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["reader_id"], "payment_proof_text")
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["column_mapping"]["交易时间"], "交易时间")
         self.assertEqual(result["column_mapping"]["金额(元)"], "交易金额")
         self.assertTrue(result["fingerprint_id"].startswith("md5:"))
@@ -220,7 +220,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:48a1a9cde662e1515e3d8f3238934e92', 'md5:13cbd1af07e92414229d298a67bcf533'})
+        self.assertEqual(result["fingerprint_id"], "md5:48a1a9cde662e1515e3d8f3238934e92")
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["decision"], "matched")
 
     def test_identity_only_kasikorn_markers_do_not_create_ambiguous_route(self):
