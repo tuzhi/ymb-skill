@@ -770,7 +770,7 @@
         存入/支取: 交易金额
         交易后余额: 账户余额
   reader_id: pdfplumber_text_separator_table
-- id: md5:19c8a8f7513adce0f0ad32a5c0b05154
+- id: md5:cfad9d275e1a54a34f9c452ae43ba884
   file_type: pdf
   bank: 江西裕民银行
   account_type: 个人
@@ -783,11 +783,23 @@
       all:
         客户姓名: null
         账号: 本方账户
-        交易日期: null
+        交易日期: 交易日期
+        业务摘要: 收支方向
         交易金额(元): 交易金额
         账户余额(元): 账户余额
+        交易币种: null
+        交易类别: 银行备注
         对方户名: 对手名称
-  reader_id: pdf_fixed_width
+        对方账号: 对手账户
+    row_anchor:
+      column: 交易日期
+      pattern: ^\d{4}[‑-]\d{2}[‑-]\d{2}$
+    column_transforms:
+      交易类别:
+        newline: cjk_join
+      对方户名:
+        newline: cjk_join
+  reader_id: pdfplumber_word_column_table
 - id: md5:48a1a9cde662e1515e3d8f3238934e92
   file_type: pdf
   bank: 微信支付

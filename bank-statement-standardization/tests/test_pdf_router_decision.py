@@ -184,6 +184,38 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[51][7], "大额支付")
         self.assertEqual(rows[51][8], "网商银行转账")
 
+    def test_jiangxi_yumin_pdf_uses_word_column_table_reader(self):
+        path = ROOT / "testdata" / "陈国付103135" / "APPLY2026060214573700135618149968_trade_history_sign.pdf"
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(rows[0], [
+            "交易日期",
+            "业务摘要",
+            "交易金额(元)",
+            "账户余额(元)",
+            "交易币种",
+            "交易类别",
+            "对方户名",
+            "对方账号",
+        ])
+        self.assertEqual(len(rows) - 1, 289)
+        self.assertEqual(rows[7], [
+            "2025-06-30",
+            "转出",
+            "50.00",
+            "1194.45",
+            "人民币",
+            "行内转账支取（非支票）",
+            "陈国泉",
+            "6236433910000395765",
+        ])
+        self.assertEqual(rows[22][6], "丰城华英种鸭有限公司")
+        self.assertEqual(rows[22][7], "14081901040002355")
+        self.assertEqual(rows[26][5], "银联全渠道贷记发卡侧入账")
+        self.assertEqual(rows[26][6], "银联待清算往来")
+
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
 

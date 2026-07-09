@@ -315,7 +315,7 @@ def _column_transforms(fingerprint):
         if options is None:
             continue
         if not isinstance(options, dict):
-            raise ValueError("fingerprint.column_transforms values must be dicts")
+            raise ValueError("fingerprint.column_transforms options must be dicts")
         item = {}
         newline = str(options.get("newline") or "").strip()
         if newline:

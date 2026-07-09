@@ -1082,7 +1082,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
                                     or field_to_cols.get("收入金额", [])
                                     or field_to_cols.get("支出金额", [])))
             txn = amt
-            is_income = ("收" in direction) or ("贷" in direction)
+            is_income = ("收" in direction) or ("贷" in direction) or ("入" in direction)
             is_expense = ("支" in direction) or ("出" in direction) or ("借" in direction)
             if amt is not None:
                 if is_income and not is_expense:

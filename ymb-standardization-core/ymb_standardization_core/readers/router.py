@@ -1,4 +1,3 @@
-from ymb_standardization_core.readers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
@@ -7,7 +6,6 @@ from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejia
 JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
-JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS = {"md5:19c8a8f7513adce0f0ad32a5c0b05154"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
@@ -179,13 +177,14 @@ def _is_cjk_char(value):
 
 
 def _join_cjk_fragments(parts):
+    cjk_join_punctuation = "（【《〈“‘"
     output = ""
     for part in parts:
         if not part:
             continue
         if not output:
             output = part
-        elif _is_cjk_char(output[-1]) and _is_cjk_char(part[0]):
+        elif _is_cjk_char(output[-1]) and (_is_cjk_char(part[0]) or part[0] in cjk_join_punctuation):
             output += part
         else:
             output += " " + part
@@ -193,16 +192,24 @@ def _join_cjk_fragments(parts):
 
 
 def _clean_pdf_cell(value, column_name="", column_transforms=None):
-    parts = str(value or "").split()
+    normalized_value = (
+        str(value or "")
+        .replace("‑", "-")
+        .replace("行", "行")
+        .replace("易", "易")
+    )
+    parts = normalized_value.split()
     if not parts:
         return ""
     transform = (column_transforms or {}).get(str(column_name or "").strip(), {})
     newline = str(transform.get("newline") or "space").strip()
     if newline == "remove_all":
-        return "".join(parts).strip()
-    if newline == "cjk_join":
-        return _join_cjk_fragments(parts)
-    return " ".join(parts).strip()
+        cleaned = "".join(parts).strip()
+    elif newline == "cjk_join":
+        cleaned = _join_cjk_fragments(parts)
+    else:
+        cleaned = " ".join(parts).strip()
+    return cleaned
 
 
 def _clean_pdf_table_cells(row, headers=None, column_transforms=None):
@@ -452,7 +459,7 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
             cells = [[] for _ in headers]
             for word in body_words:
                 top = float(word.get("top", 0))
-                if not (start_top <= top < end_top):
+                if not (start_top < top <= end_top):
                     continue
                 col = _word_column_index(float(word.get("x0", 0)), boundaries)
                 if col is None or col >= len(cells):
@@ -469,6 +476,19 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
             if row and row[0]:
                 all_rows.append(row)
     return all_rows if len(all_rows) > 1 else []
+
+
+def _preamble_before_reader_header(text, headers):
+    headers = [str(header or "").strip() for header in headers if str(header or "").strip()]
+    if not headers:
+        return str(text or "")
+    lines = str(text or "").splitlines()
+    for index, line in enumerate(lines):
+        normalized = _clean_pdf_cell(line)
+        hits = sum(1 for header in headers if header in normalized)
+        if hits >= min(3, len(headers)):
+            return "\n".join(lines[:index])
+    return str(text or "")
 
 
 def _clean_payment_cell(value):
@@ -902,9 +922,6 @@ def read_pdf_rows(path, open_password=None):
         if fingerprint_id in JXRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_jxrcb_text_pdf(pdf)
             return preamble, rows, route_info
-        if fingerprint_id in JIANGXI_YUMIN_BANK_PDF_FINGERPRINTS:
-            preamble, rows = read_jiangxi_yumin_bank_pdf(pdf)
-            return preamble, rows, route_info
         if fingerprint_id in KASIKORN_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_kasikorn_text_pdf(pdf)
             return preamble, rows, route_info
@@ -914,6 +931,7 @@ def read_pdf_rows(path, open_password=None):
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") == "pdfplumber_word_column_table" and table_rows:
+            preamble = _preamble_before_reader_header(text, table_rows[0])
             route_info = {**route_info, "reader_headers": table_rows[0]}
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
             rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])
