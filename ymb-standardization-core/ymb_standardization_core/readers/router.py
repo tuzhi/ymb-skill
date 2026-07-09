@@ -1,11 +1,9 @@
-from ymb_standardization_core.readers.abc_text_pdf import read_abc_text_pdf
 from ymb_standardization_core.readers.jiangxi_yumin_bank_pdf import read_jiangxi_yumin_bank_pdf
 from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
-ABC_TEXT_PDF_FINGERPRINTS = {"md5:ab5d413308d9d27f3aa913d772fa3494"}
 JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
@@ -160,6 +158,7 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             pdf,
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
+            column_transforms=column_transforms,
         )
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
@@ -312,16 +311,31 @@ def _group_words_by_top(words):
     return groups
 
 
+def _word_column_header_match(group, candidate_header):
+    tokens = [token for token in str(candidate_header or "").split() if token]
+    if not tokens:
+        return None
+    sorted_group = sorted(group, key=lambda item: float(item.get("x0", 0)))
+    for index in range(0, len(sorted_group) - len(tokens) + 1):
+        chunk = sorted_group[index:index + len(tokens)]
+        if [str(word.get("text") or "").strip() for word in chunk] != tokens:
+            continue
+        return {
+            "x0": float(chunk[0].get("x0", 0)),
+            "x1": float(chunk[-1].get("x1", chunk[-1].get("x0", 0))),
+        }
+    return None
+
+
 def _word_column_header(words, candidate_headers):
     candidate_headers = [str(header).strip() for header in candidate_headers if str(header).strip()]
-    header_set = set(candidate_headers)
     best = None
     for top, group in _group_words_by_top(words).items():
         by_text = {}
-        for word in group:
-            text = str(word.get("text") or "").strip()
-            if text in header_set and text not in by_text:
-                by_text[text] = word
+        for header in candidate_headers:
+            match = _word_column_header_match(group, header)
+            if match:
+                by_text[header] = match
         if len(by_text) < 3:
             continue
         if best is None or len(by_text) > len(best[1]):
@@ -363,12 +377,31 @@ def _is_word_column_row_anchor(word, anchor_x, anchor_header, row_anchor=None):
     }
     if anchor_values:
         return text in anchor_values
+    pattern = str((row_anchor or {}).get("pattern") or "").strip()
+    if pattern:
+        return bool(re.fullmatch(pattern, text))
     if "序号" in str(anchor_header):
         return bool(re.fullmatch(r"\d{1,6}", text))
     return bool(text)
 
 
-def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None):
+def _is_word_column_noise_word(word):
+    text = str(word.get("text") or "").strip()
+    if not text:
+        return True
+    return (
+        text.startswith("第")
+        or text.startswith("该交易明细因")
+        or text == "明细内容仅供参考"
+    )
+
+
+def _word_column_cell_text(header, cell, column_transforms=None):
+    text = " ".join(value for _top, _x0, value in sorted(cell)).strip()
+    return _clean_pdf_cell(text, header, column_transforms=column_transforms)
+
+
+def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
@@ -401,7 +434,7 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None)
         body_words = [
             word for word in words
             if float(word.get("top", 0)) > body_top_min
-            and not str(word.get("text") or "").startswith("第")
+            and not _is_word_column_noise_word(word)
         ]
         anchors = sorted(
             (float(word.get("top", 0)), word)
@@ -425,7 +458,14 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None)
                 if col is None or col >= len(cells):
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
-            row = [" ".join(text for _top, _x0, text in sorted(cell)).strip() for cell in cells]
+            row = [
+                _word_column_cell_text(
+                    headers[cell_index],
+                    cell,
+                    column_transforms=column_transforms,
+                )
+                for cell_index, cell in enumerate(cells)
+            ]
             if row and row[0]:
                 all_rows.append(row)
     return all_rows if len(all_rows) > 1 else []
@@ -858,10 +898,7 @@ def read_pdf_rows(path, open_password=None):
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
 
         fingerprint_id = route_info.get("fingerprint_id", "")
-        # 专用 reader 只接管已识别模板；未命中时回退到通用表格行，交给标准化层映射字段。
-        if fingerprint_id in ABC_TEXT_PDF_FINGERPRINTS:
-            preamble, rows = read_abc_text_pdf(pdf)
-            return preamble, rows, route_info
+        # 专用 reader 只接管尚未收敛到通用 reader 的已识别模板。
         if fingerprint_id in JXRCB_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_jxrcb_text_pdf(pdf)
             return preamble, rows, route_info

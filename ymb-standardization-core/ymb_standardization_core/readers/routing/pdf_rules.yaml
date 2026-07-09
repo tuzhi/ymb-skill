@@ -1,4 +1,4 @@
-- id: md5:ab5d413308d9d27f3aa913d772fa3494
+- id: md5:cd253a8df83a6adee5ab5e047e54bc4e
   file_type: pdf
   bank: 中国农业银行
   account_type: 个人
@@ -18,7 +18,13 @@
         日 志 号: null
         交易渠道: 交易渠道
         交易附言: 账户方附言
-  reader_id: pdf_fixed_width
+    row_anchor:
+      column: 交易日期
+      pattern: ^20\d{6}$
+    column_transforms:
+      对手信息:
+        newline: cjk_join
+  reader_id: pdfplumber_word_column_table
 - id: md5:e833fbf4a2171d66315c5a3bda64711c
   file_type: pdf
   bank: 江西农商银行

@@ -18,12 +18,12 @@ reader 不硬编码银行字段名，也不猜测业务语义。模板差异通�
 
 - `pdfplumber_table`：直接使用 `pdfplumber.extract_tables()` 读取有表格结构的 PDF。
 - `pdfplumber_line_table`：`extract_tables()` 读不到表时，使用 PDF 真实横线推断行、显式竖向边界推断列。
-- `pdfplumber_word_column_table`：按文字坐标列读取，没有完整表格线但列位置稳定，常用于 word/坐标列式 PDF。
+- `pdfplumber_word_column_table`：按文字坐标列读取，没有完整表格线但列位置稳定，常用于 word/坐标列式 PDF。表头来自 `fingerprint.columns.all` 的 key；key 中包含空格时按多 word 表头匹配，例如 `日 志 号` 会匹配同一表头行里的 `日`、`志`、`号` 三个 word，并作为一个源字段输出。
 - `pdfplumber_text_separator_table`：读取文本层里用分隔符或文本行表达的表格。
 
 专用或文本层 reader 标识：
 
-- `pdf_fixed_width`：固定宽度/专用文本 PDF。路由命中后由 fingerprint 对应的专用 reader 接管，例如农行文本 PDF、江西农商、开泰银行、浙江庆元农商、江西裕民银行等。
+- `pdf_fixed_width`：固定宽度/专用文本 PDF。路由命中后由 fingerprint 对应的专用 reader 接管，例如江西农商、开泰银行、浙江庆元农商、江西裕民银行等。农行文本 PDF 已收敛到 `pdfplumber_word_column_table`。
 - `pdfplumber_text_lines`：文本行解析型 PDF。它不是普通 `extract_tables()` reader；路由命中后由文本行 fallback 或专用文本解析逻辑处理，例如招商交易流水、九江银行文本流水、民生个人对账单等。
 
 Excel 当前使用：

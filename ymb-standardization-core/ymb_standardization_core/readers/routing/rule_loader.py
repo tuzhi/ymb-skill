@@ -7,11 +7,6 @@ import re
 import yaml
 
 
-DEPRECATED_READER_IDS = {
-    "payment_proof_text": "use pdfplumber_table for WeChat PDF, pdfplumber_word_column_table for Alipay PDF, or openpyxl_grid for payment Excel",
-}
-
-
 @dataclass(frozen=True)
 class RouteRule:
     id: str
@@ -275,8 +270,6 @@ def _rule_id(item, fingerprint):
 def _reader_id(item, default_file_type):
     reader_id = str(item.get("reader_id") or "").strip()
     if reader_id:
-        if reader_id in DEPRECATED_READER_IDS:
-            raise ValueError(f"deprecated reader_id: {reader_id}; {DEPRECATED_READER_IDS[reader_id]}")
         return reader_id
     file_type = item.get("file_type", default_file_type)
     if file_type == "pdf":

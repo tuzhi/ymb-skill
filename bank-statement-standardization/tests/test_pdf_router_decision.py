@@ -150,12 +150,46 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 self.assertEqual(len(rows) - 1, expected_rows)
                 self.assertEqual(rows[1][:3], expected_prefix)
 
+    def test_pdfplumber_word_column_table_reader_uses_composite_header_from_columns(self):
+        path = ROOT / "testdata" / "陈国付103135" / "26060214275857136186.pdf"
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(rows[0], [
+            "交易日期",
+            "交易时间",
+            "交易摘要",
+            "交易金额",
+            "本次余额",
+            "对手信息",
+            "日 志 号",
+            "交易渠道",
+            "交易附言",
+        ])
+        self.assertEqual(len(rows) - 1, 395)
+        self.assertEqual(rows[6], [
+            "20250608",
+            "",
+            "短信费",
+            "-2.50",
+            "670.14",
+            "081701940050307",
+            "R016358142",
+            "",
+            "短信费",
+        ])
+        self.assertEqual(rows[23][5], "国网江西省电力有限公司")
+        self.assertEqual(rows[23][8], "")
+        self.assertEqual(rows[51][7], "大额支付")
+        self.assertEqual(rows[51][8], "网商银行转账")
+
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
 
         by_id = {rule.id: rule for rule in rules}
         for fingerprint_id in [
-            "md5:ab5d413308d9d27f3aa913d772fa3494",
+            "md5:cd253a8df83a6adee5ab5e047e54bc4e",
             "md5:e833fbf4a2171d66315c5a3bda64711c",
             "md5:37399b38ddd3572cc70fc6f8b9be2900",
             "md5:69c7df7286e238aef80ae49938fd397a",
@@ -167,9 +201,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rules[0].file_type, "pdf")
         self.assertTrue(rules[0].id.startswith("md5:"))
 
-        self.assertEqual(by_id["md5:ab5d413308d9d27f3aa913d772fa3494"].account_type, "个人")
+        self.assertEqual(by_id["md5:cd253a8df83a6adee5ab5e047e54bc4e"].account_type, "个人")
         for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日 志 号", "交易渠道", "交易附言"]:
-            self.assertIn(marker, by_id["md5:ab5d413308d9d27f3aa913d772fa3494"].column_markers)
+            self.assertIn(marker, by_id["md5:cd253a8df83a6adee5ab5e047e54bc4e"].column_markers)
         self.assertEqual(by_id["md5:0488448d0f1d96413a25254a500aab29"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
@@ -182,7 +216,6 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for item in items:
             self.assertNotIn("parser", item)
             self.assertIn("reader_id", item)
-            self.assertNotEqual(item.get("reader_id"), "payment_proof_text")
             self.assertNotIn("column_mapping", item)
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
@@ -196,28 +229,6 @@ class PdfRouterDecisionTests(unittest.TestCase):
             columns = fingerprint.get("columns") or {}
             self.assertIsInstance(columns.get("all"), dict)
             self.assertTrue(columns.get("all"))
-
-    def test_deprecated_payment_proof_text_reader_id_is_rejected(self):
-        from ymb_standardization_core.readers.routing import rule_loader
-
-        fingerprint = {
-            "identity": {"any": ["支付证明"]},
-            "columns": {"all": {"交易时间": "交易时间"}},
-        }
-        item = {
-            "id": fingerprint_md5(fingerprint),
-            "file_type": "pdf",
-            "bank": "测试支付",
-            "reader_id": "payment_proof_text",
-            "fingerprint": fingerprint,
-        }
-        original = rule_loader._load_yaml
-        try:
-            rule_loader._load_yaml = lambda _name: [item]
-            with self.assertRaisesRegex(ValueError, "deprecated reader_id: payment_proof_text"):
-                rule_loader.load_pdf_route_rules()
-        finally:
-            rule_loader._load_yaml = original
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
@@ -267,10 +278,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 0, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:ab5d413308d9d27f3aa913d772fa3494'})
+        self.assertIn(result["fingerprint_id"], {'md5:cd253a8df83a6adee5ab5e047e54bc4e'})
         self.assertEqual(result["decision"], "matched")
 
-    def test_abc_text_pdf_requires_transaction_header_columns(self):
+    def test_abc_pdf_route_requires_transaction_header_columns(self):
         result = router.route_pdf("中国农业银行账户活期交易明细清单", 0, 1)
 
         self.assertNotIn("parser", result)
