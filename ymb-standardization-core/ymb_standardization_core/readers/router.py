@@ -1,9 +1,7 @@
-from ymb_standardization_core.readers.jxrcb_pdf_text import read_jxrcb_text_pdf
 from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
-JXRCB_TEXT_PDF_FINGERPRINTS = {"md5:e833fbf4a2171d66315c5a3bda64711c"}
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
 TEXT_TABLE_FINGERPRINTS = {
@@ -27,6 +25,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
         "column_transforms": route_evidence.get("column_transforms", {}) if route_evidence else {},
+        "word_filters": route_evidence.get("word_filters", {}) if route_evidence else {},
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
@@ -122,6 +121,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
             route_evidence={
                 "reader_header_candidates": rule.column_markers,
                 "column_transforms": rule.column_transforms,
+                "word_filters": rule.word_filters,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
@@ -157,6 +157,7 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
             column_transforms=column_transforms,
+            word_filters=route_info.get("word_filters") or {},
         )
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
@@ -403,19 +404,117 @@ def _is_word_column_noise_word(word):
     )
 
 
+def _drop_word_filter_char(char, word_filters):
+    text = str(char.get("text") or "")
+    for item in (word_filters or {}).get("drop_chars", []):
+        chars = {str(value) for value in item.get("text_any", [])}
+        if chars and text not in chars:
+            continue
+        font_contains = str(item.get("fontname_contains") or "")
+        if font_contains and font_contains not in str(char.get("fontname") or ""):
+            continue
+        min_size = item.get("min_size")
+        if min_size is not None and float(char.get("size") or 0) < float(min_size):
+            continue
+        max_size = item.get("max_size")
+        if max_size is not None and float(char.get("size") or 0) > float(max_size):
+            continue
+        return True
+    return False
+
+
+def _word_column_page_words(page, word_filters=None):
+    if word_filters:
+        page = page.filter(lambda char: not _drop_word_filter_char(char, word_filters))
+    return page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False)
+
+
+def _word_column_label_tokens(group):
+    labels = []
+    current = []
+    current_x0 = None
+    for word in sorted(group, key=lambda item: float(item.get("x0", 0))):
+        text = str(word.get("text") or "").strip()
+        if not text:
+            continue
+        if current_x0 is None:
+            current_x0 = float(word.get("x0", 0))
+        current.append(text)
+        if ":" in text or "：" in text:
+            label = "".join(current).replace(":", "").replace("：", "").strip()
+            if label:
+                labels.append((label, current_x0))
+            current = []
+            current_x0 = None
+    return labels
+
+
+def _word_column_metadata_preamble(pdf, route_info):
+    if not pdf.pages:
+        return ""
+    page = pdf.pages[0]
+    words = _word_column_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
+    header_top, _headers, _starts = _word_column_header(
+        words,
+        (route_info or {}).get("reader_header_candidates") or [],
+    )
+    if header_top is None:
+        return ""
+    groups = {
+        top: sorted(group, key=lambda item: float(item.get("x0", 0)))
+        for top, group in sorted(_group_words_by_top(words).items())
+        if top < header_top
+    }
+    tops = sorted(groups)
+    output = []
+    for index, top in enumerate(tops[:-1]):
+        labels = _word_column_label_tokens(groups[top])
+        if not labels:
+            continue
+        next_group = groups[tops[index + 1]]
+        if tops[index + 1] - top > 18:
+            continue
+        label_bounds = [x0 for _label, x0 in labels] + [page.width + 10]
+        for label_index, (label, _x0) in enumerate(labels):
+            left = label_bounds[label_index] - 5
+            right = label_bounds[label_index + 1] - 5
+            value = " ".join(
+                str(word.get("text") or "").strip()
+                for word in next_group
+                if left <= float(word.get("x0", 0)) < right
+            ).strip()
+            if value:
+                output.append(f"{label}: {value}")
+    return "\n".join(output)
+
+
+def _word_column_stop_top(words, word_filters=None):
+    markers = [
+        str(value).strip()
+        for value in (word_filters or {}).get("stop_line_contains_any", [])
+        if str(value).strip()
+    ]
+    if not markers:
+        return None
+    for top, group in sorted(_group_words_by_top(words).items()):
+        if any(marker in str(word.get("text") or "") for marker in markers for word in group):
+            return float(top)
+    return None
+
+
 def _word_column_cell_text(header, cell, column_transforms=None):
     text = " ".join(value for _top, _x0, value in sorted(cell)).strip()
     return _clean_pdf_cell(text, header, column_transforms=column_transforms)
 
 
-def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None):
+def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None, word_filters=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
     output_starts = None
     row_anchor = row_anchor or {}
     for page in pdf.pages:
-        words = page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False)
+        words = _word_column_page_words(page, word_filters=word_filters)
         header_top, page_headers, page_starts = _word_column_header(words, candidate_headers)
         if page_starts is not None:
             headers = page_headers
@@ -438,9 +537,16 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
         else:
             output_starts = starts
         boundaries = _word_column_boundaries(page.width, starts)
+        drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
+        stop_top = _word_column_stop_top(words, word_filters=word_filters)
         body_words = [
             word for word in words
             if float(word.get("top", 0)) > body_top_min
+            and (stop_top is None or float(word.get("top", 0)) < stop_top)
+            and (
+                drop_bottom_margin is None
+                or float(word.get("top", 0)) < page.height - float(drop_bottom_margin)
+            )
             and not _is_word_column_noise_word(word)
         ]
         anchors = sorted(
@@ -919,9 +1025,6 @@ def read_pdf_rows(path, open_password=None):
 
         fingerprint_id = route_info.get("fingerprint_id", "")
         # 专用 reader 只接管尚未收敛到通用 reader 的已识别模板。
-        if fingerprint_id in JXRCB_TEXT_PDF_FINGERPRINTS:
-            preamble, rows = read_jxrcb_text_pdf(pdf)
-            return preamble, rows, route_info
         if fingerprint_id in KASIKORN_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_kasikorn_text_pdf(pdf)
             return preamble, rows, route_info
@@ -931,7 +1034,7 @@ def read_pdf_rows(path, open_password=None):
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") == "pdfplumber_word_column_table" and table_rows:
-            preamble = _preamble_before_reader_header(text, table_rows[0])
+            preamble = _word_column_metadata_preamble(pdf, route_info) or _preamble_before_reader_header(text, table_rows[0])
             route_info = {**route_info, "reader_headers": table_rows[0]}
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
             rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])

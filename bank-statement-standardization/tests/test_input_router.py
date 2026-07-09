@@ -989,7 +989,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertNotIn("parser", route)
 
-        self.assertEqual(route["reader_id"], "pdf_fixed_width")
+        self.assertEqual(route["reader_id"], "pdfplumber_word_column_table")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "个人")

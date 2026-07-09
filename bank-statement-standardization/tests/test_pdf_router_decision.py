@@ -216,13 +216,38 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[26][5], "银联全渠道贷记发卡侧入账")
         self.assertEqual(rows[26][6], "银联待清算往来")
 
+    def test_jiangxi_rural_commercial_pdf_uses_word_column_table_reader(self):
+        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(rows[0], [
+            "记账日期",
+            "交易金额(元)",
+            "交易后余额(元)",
+            "交易摘要",
+            "对方户名",
+            "对方账号",
+        ])
+        self.assertEqual(len(rows) - 1, 1328)
+        target = next(row for row in rows[1:] if row[0] == "2025-06-12" and row[1] == "-41,100.00")
+        self.assertEqual(target, [
+            "2025-06-12",
+            "-41,100.00",
+            "832,420.54",
+            "跨行转出-南昌巨鲸农牧发展有限公司",
+            "南昌巨鲸农牧发展有限公司",
+            "36050182035200000593",
+        ])
+
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
 
         by_id = {rule.id: rule for rule in rules}
         for fingerprint_id in [
             "md5:cd253a8df83a6adee5ab5e047e54bc4e",
-            "md5:e833fbf4a2171d66315c5a3bda64711c",
+            "md5:0bdf0854f29ad6928e2fdd0da1d52dc5",
             "md5:37399b38ddd3572cc70fc6f8b9be2900",
             "md5:69c7df7286e238aef80ae49938fd397a",
             "md5:0488448d0f1d96413a25254a500aab29",
@@ -393,7 +418,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 0, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:e833fbf4a2171d66315c5a3bda64711c'})
+        self.assertIn(result["fingerprint_id"], {'md5:0bdf0854f29ad6928e2fdd0da1d52dc5'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "江西农商银行")
         self.assertEqual(result["file_type"], "pdf")

@@ -19,12 +19,6 @@ SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / 
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
 
-PARSER_SPEC = importlib.util.spec_from_file_location(
-    "jxrcb_pdf_text",
-    CORE_PACKAGE / "ymb_standardization_core" / "readers" / "jxrcb_pdf_text.py")
-jxrcb_pdf_text = importlib.util.module_from_spec(PARSER_SPEC)
-PARSER_SPEC.loader.exec_module(jxrcb_pdf_text)
-
 ROUTER_SPEC = importlib.util.spec_from_file_location(
     "router",
     CORE_PACKAGE / "ymb_standardization_core" / "readers" / "router.py")
@@ -49,7 +43,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertNotIn("parser", abc)
         self.assertEqual(abc["fingerprint_id"], "md5:cd253a8df83a6adee5ab5e047e54bc4e")
         self.assertNotIn("parser", jxrcb)
-        self.assertEqual(jxrcb["fingerprint_id"], "md5:e833fbf4a2171d66315c5a3bda64711c")
+        self.assertEqual(jxrcb["fingerprint_id"], "md5:0bdf0854f29ad6928e2fdd0da1d52dc5")
 
     def test_jxrcb_requires_bank_heading(self):
         text = (
@@ -64,20 +58,18 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(result["decision"], "unmatched")
         self.assertEqual(result["reader_id"], "none")
 
-    def test_watermarked_text_line_is_parsed(self):
-        # 江西农商 PDF 文本层会把水印字插入数字 token，解析器必须先清理再定位日期/金额。
-        line = "2025-行11-22 -11行5.00 65行2.50 微信行支付 扫二维行码付款 100行0107301 行 行"
+    def test_watermarked_pdf_uses_word_column_reader(self):
+        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
-        row = jxrcb_pdf_text.parse_transaction_line(line)
+        preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(row, [
-            "2025-11-22",
-            "-115.00",
-            "652.50",
-            "微信支付",
-            "扫二维码付款",
-            "1000107301",
-        ])
+        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertIn("户名: 艾晓林", preamble)
+        self.assertIn("账号: 6226822010201107935", preamble)
+        row = next(item for item in rows[1:] if item[0] == "2025-06-12" and item[1] == "-41,100.00")
+        self.assertEqual(row[3], "跨行转出-南昌巨鲸农牧发展有限公司")
+        self.assertEqual(row[4], "南昌巨鲸农牧发展有限公司")
+        self.assertEqual(row[5], "36050182035200000593")
 
 
 if __name__ == "__main__":

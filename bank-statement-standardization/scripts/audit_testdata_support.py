@@ -221,7 +221,7 @@ def git_sha():
 
 def test_class_for_fingerprint(fingerprint_id):
     mapping = {
-        "md5:e833fbf4a2171d66315c5a3bda64711c": "test_jxrcb_pdf_route.py",
+        "md5:0bdf0854f29ad6928e2fdd0da1d52dc5": "test_jxrcb_pdf_route.py",
         "md5:37399b38ddd3572cc70fc6f8b9be2900": "test_kasikorn_pdf_route.py",
         "md5:69c7df7286e238aef80ae49938fd397a": "test_zhejiang_qyrcb_pdf_route.py",
     }
@@ -293,7 +293,7 @@ def normalize_bank_name(bank, fingerprint_id="", template=""):
     rules = [
         ("md5:69c7df7286e238aef80ae49938fd397a", "浙江庆元农商银行"),
         ("庆元农商银行", "浙江庆元农商银行"),
-        ("md5:e833fbf4a2171d66315c5a3bda64711c", "江西农商银行"),
+        ("md5:0bdf0854f29ad6928e2fdd0da1d52dc5", "江西农商银行"),
         ("江西·农商银行", "江西农商银行"),
         ("江西农商", "江西农商银行"),
         ("md5:37399b38ddd3572cc70fc6f8b9be2900", "开泰银行（Kasikorn Bank）"),

@@ -22,6 +22,7 @@ class RouteRule:
     date_format_any: list
     column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
+    word_filters: dict = field(default_factory=dict)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -345,6 +346,7 @@ def load_pdf_route_rules():
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
             column_transforms=_column_transforms(fingerprint),
             row_anchor=fingerprint.get("row_anchor", {}),
+            word_filters=fingerprint.get("word_filters", {}),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -368,6 +370,7 @@ def load_excel_route_rules():
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
             column_transforms=_column_transforms(fingerprint),
             row_anchor=fingerprint.get("row_anchor", {}),
+            word_filters=fingerprint.get("word_filters", {}),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

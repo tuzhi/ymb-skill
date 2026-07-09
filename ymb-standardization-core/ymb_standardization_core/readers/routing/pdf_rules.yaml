@@ -25,7 +25,7 @@
       对手信息:
         newline: cjk_join
   reader_id: pdfplumber_word_column_table
-- id: md5:e833fbf4a2171d66315c5a3bda64711c
+- id: md5:0bdf0854f29ad6928e2fdd0da1d52dc5
   file_type: pdf
   bank: 江西农商银行
   account_type: 个人
@@ -49,7 +49,35 @@
         交易摘要: 银行备注
         对方户名: 对手名称
         对方账号: 对手账户
-  reader_id: pdf_fixed_width
+    row_anchor:
+      column: 记账日期
+      pattern: ^20\d{2}-\d{2}-\d{2}$
+    column_transforms:
+      交易摘要:
+        newline: cjk_join
+      对方户名:
+        newline: cjk_join
+      对方账号:
+        newline: remove_all
+    word_filters:
+      drop_words_below_page_bottom: 45
+      stop_line_contains_any:
+      - 借方总笔数
+      - 借方发生额累计
+      - 贷方总笔数
+      - 贷方发生额累计
+      drop_chars:
+      - text_any:
+        - 江
+        - 西
+        - 农
+        - 商
+        - 银
+        - 行
+        - ·
+        fontname_contains: SimHei
+        min_size: 18
+  reader_id: pdfplumber_word_column_table
 - id: md5:37399b38ddd3572cc70fc6f8b9be2900
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
