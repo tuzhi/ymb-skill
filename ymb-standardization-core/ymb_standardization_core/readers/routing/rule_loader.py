@@ -7,6 +7,11 @@ import re
 import yaml
 
 
+DEPRECATED_READER_IDS = {
+    "payment_proof_text": "use pdfplumber_table for WeChat PDF, pdfplumber_word_column_table for Alipay PDF, or openpyxl_grid for payment Excel",
+}
+
+
 @dataclass(frozen=True)
 class RouteRule:
     id: str
@@ -20,6 +25,7 @@ class RouteRule:
     metadata_all: dict
     style_all: list
     date_format_any: list
+    column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     has_fingerprint: bool = False
 
@@ -269,6 +275,8 @@ def _rule_id(item, fingerprint):
 def _reader_id(item, default_file_type):
     reader_id = str(item.get("reader_id") or "").strip()
     if reader_id:
+        if reader_id in DEPRECATED_READER_IDS:
+            raise ValueError(f"deprecated reader_id: {reader_id}; {DEPRECATED_READER_IDS[reader_id]}")
         return reader_id
     file_type = item.get("file_type", default_file_type)
     if file_type == "pdf":
@@ -302,6 +310,30 @@ def _column_mapping(fingerprint):
     return {str(key).strip(): str(value).strip() for key, value in mapping.items() if str(key).strip() and str(value).strip()}
 
 
+def _column_transforms(fingerprint):
+    transforms = (fingerprint or {}).get("column_transforms") or {}
+    if not isinstance(transforms, dict):
+        raise ValueError("fingerprint.column_transforms must be a dict")
+    normalized = {}
+    for column, options in transforms.items():
+        source = str(column).strip()
+        if not source:
+            continue
+        if options is None:
+            continue
+        if not isinstance(options, dict):
+            raise ValueError("fingerprint.column_transforms values must be dicts")
+        item = {}
+        newline = str(options.get("newline") or "").strip()
+        if newline:
+            if newline not in {"space", "cjk_join", "remove_all"}:
+                raise ValueError(f"unsupported newline transform: {newline}")
+            item["newline"] = newline
+        if item:
+            normalized[source] = item
+    return normalized
+
+
 def load_pdf_route_rules():
     rules = []
     for item in _load_yaml("pdf_rules.yaml"):
@@ -318,6 +350,7 @@ def load_pdf_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            column_transforms=_column_transforms(fingerprint),
             row_anchor=fingerprint.get("row_anchor", {}),
             has_fingerprint=bool(fingerprint),
         ))
@@ -340,6 +373,7 @@ def load_excel_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
+            column_transforms=_column_transforms(fingerprint),
             row_anchor=fingerprint.get("row_anchor", {}),
             has_fingerprint=bool(fingerprint),
         ))

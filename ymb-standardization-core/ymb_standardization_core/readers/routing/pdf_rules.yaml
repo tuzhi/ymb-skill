@@ -561,7 +561,7 @@
         Counterparty’s: null
         Counterparty’s Account No.: null
   reader_id: pdfplumber_table
-- id: md5:0288eb600b69c2019ecf5ba7c11b422f
+- id: md5:9151a3e2adbe4098101800a1348f62c7
   file_type: pdf
   bank: 未识别
   account_type: 对公
@@ -585,6 +585,17 @@
         收(付)方名称: 对手名称
         收(付)方账号: 本方账户
         交易类型: 银行备注
+    column_transforms:
+      交易日期:
+        newline: space
+      摘要:
+        newline: cjk_join
+      收(付)方名称:
+        newline: cjk_join
+      收(付)方账号:
+        newline: remove_all
+      交易类型:
+        newline: cjk_join
   reader_id: pdfplumber_line_table
 - id: md5:0818218cb218b9bdb699770e6a65e6dd
   file_type: pdf

@@ -30,6 +30,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
+        "column_transforms": route_evidence.get("column_transforms", {}) if route_evidence else {},
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
@@ -124,6 +125,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
             columns_evidence=match["columns_evidence"],
             route_evidence={
                 "reader_header_candidates": rule.column_markers,
+                "column_transforms": rule.column_transforms,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
@@ -150,6 +152,7 @@ def _extract_pdf_tables(pdf):
 
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     route_info = route_info or {}
+    column_transforms = route_info.get("column_transforms") or {}
     if reader_id == "pdfplumber_text_separator_table":
         return _extract_pdf_text_separator_table_rows(pdf)
     if reader_id == "pdfplumber_word_column_table":
@@ -159,19 +162,66 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             route_info.get("row_anchor") or {},
         )
     if reader_id == "pdfplumber_line_table":
-        return _extract_pdf_tables_from_horizontal_lines(pdf)
+        return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
     if reader_id == "pdfplumber_table":
-        return _extract_pdf_tables_default(pdf)
+        return _extract_pdf_tables_default(pdf, column_transforms=column_transforms)
     return []
 
 
-def _clean_pdf_table_cells(row):
-    return [" ".join(str(c or "").split()).strip() for c in row]
+def _is_cjk_char(value):
+    if not value:
+        return False
+    code = ord(value)
+    return (
+        0x3400 <= code <= 0x4DBF
+        or 0x4E00 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+    )
 
 
-def _append_pdf_table_rows(all_rows, table_rows, header_sig):
+def _join_cjk_fragments(parts):
+    output = ""
+    for part in parts:
+        if not part:
+            continue
+        if not output:
+            output = part
+        elif _is_cjk_char(output[-1]) and _is_cjk_char(part[0]):
+            output += part
+        else:
+            output += " " + part
+    return output.strip()
+
+
+def _clean_pdf_cell(value, column_name="", column_transforms=None):
+    parts = str(value or "").split()
+    if not parts:
+        return ""
+    transform = (column_transforms or {}).get(str(column_name or "").strip(), {})
+    newline = str(transform.get("newline") or "space").strip()
+    if newline == "remove_all":
+        return "".join(parts).strip()
+    if newline == "cjk_join":
+        return _join_cjk_fragments(parts)
+    return " ".join(parts).strip()
+
+
+def _clean_pdf_table_cells(row, headers=None, column_transforms=None):
+    headers = headers or []
+    return [
+        _clean_pdf_cell(
+            cell,
+            headers[index] if index < len(headers) else "",
+            column_transforms=column_transforms,
+        )
+        for index, cell in enumerate(row)
+    ]
+
+
+def _append_pdf_table_rows(all_rows, table_rows, header_sig, column_transforms=None):
     for r in table_rows:
-        cells = _clean_pdf_table_cells(r)
+        headers = all_rows[0] if header_sig and all_rows else []
+        cells = _clean_pdf_table_cells(r, headers=headers, column_transforms=column_transforms)
         if not any(cells):
             continue
         sig = "|".join(cells)
@@ -185,12 +235,12 @@ def _append_pdf_table_rows(all_rows, table_rows, header_sig):
     return header_sig
 
 
-def _extract_pdf_tables_default(pdf):
+def _extract_pdf_tables_default(pdf, column_transforms=None):
     all_rows = []
     header_sig = None
     for page in pdf.pages:
         for tbl in page.extract_tables():
-            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig)
+            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig, column_transforms=column_transforms)
     return all_rows
 
 
@@ -229,7 +279,7 @@ def _looks_like_statement_header(row):
     return sum(1 for marker in markers if marker in text) >= 3
 
 
-def _extract_pdf_tables_from_horizontal_lines(pdf):
+def _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=None):
     """Fallback for ruled PDFs with horizontal row lines but no vertical borders."""
     all_rows = []
     header_sig = None
@@ -248,7 +298,7 @@ def _extract_pdf_tables_from_horizontal_lines(pdf):
             "text_y_tolerance": 3,
         }
         for tbl in page.extract_tables(table_settings=settings):
-            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig)
+            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig, column_transforms=column_transforms)
     if not all_rows or not _looks_like_statement_header(all_rows[0]):
         return []
     return all_rows

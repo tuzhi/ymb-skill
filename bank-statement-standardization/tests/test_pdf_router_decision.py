@@ -33,7 +33,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:0288eb600b69c2019ecf5ba7c11b422f")
+        self.assertEqual(route_info["fingerprint_id"], "md5:9151a3e2adbe4098101800a1348f62c7")
         self.assertEqual(rows[0], [
             "交易日期",
             "借方(出账)",
@@ -48,6 +48,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[1][0], "2025-01-15 17:42:45")
         self.assertEqual(rows[1][1], "1,564.14")
         self.assertEqual(rows[1][3], "411.64")
+        self.assertEqual(rows[2][0], "2025-02-03 07:55:20")
+        self.assertEqual(rows[2][5], "对公中间业务收入-网上其他收入")
+        self.assertEqual(rows[2][6], "979154850070019810")
+        self.assertEqual(rows[11][5], "上海寻梦信息技术有限公司")
 
     def test_pdfplumber_line_table_reader_does_not_call_default_extract_tables(self):
         path = (
@@ -178,6 +182,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for item in items:
             self.assertNotIn("parser", item)
             self.assertIn("reader_id", item)
+            self.assertNotEqual(item.get("reader_id"), "payment_proof_text")
             self.assertNotIn("column_mapping", item)
             self.assertNotIn("identity", item)
             self.assertNotIn("layout", item)
@@ -191,6 +196,28 @@ class PdfRouterDecisionTests(unittest.TestCase):
             columns = fingerprint.get("columns") or {}
             self.assertIsInstance(columns.get("all"), dict)
             self.assertTrue(columns.get("all"))
+
+    def test_deprecated_payment_proof_text_reader_id_is_rejected(self):
+        from ymb_standardization_core.readers.routing import rule_loader
+
+        fingerprint = {
+            "identity": {"any": ["支付证明"]},
+            "columns": {"all": {"交易时间": "交易时间"}},
+        }
+        item = {
+            "id": fingerprint_md5(fingerprint),
+            "file_type": "pdf",
+            "bank": "测试支付",
+            "reader_id": "payment_proof_text",
+            "fingerprint": fingerprint,
+        }
+        original = rule_loader._load_yaml
+        try:
+            rule_loader._load_yaml = lambda _name: [item]
+            with self.assertRaisesRegex(ValueError, "deprecated reader_id: payment_proof_text"):
+                rule_loader.load_pdf_route_rules()
+        finally:
+            rule_loader._load_yaml = original
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
