@@ -28,6 +28,8 @@ class RouteRule:
     split_amount_balance: dict = field(default_factory=dict)
     amount_columns: list = field(default_factory=list)
     extract_patterns: list = field(default_factory=list)
+    preamble_mapping: dict = field(default_factory=dict)
+    preamble_extractors: list = field(default_factory=list)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -309,6 +311,37 @@ def _column_mapping(fingerprint):
     return {str(key).strip(): str(value).strip() for key, value in mapping.items() if str(key).strip() and str(value).strip()}
 
 
+def _preamble_mapping(fingerprint):
+    mapping = (fingerprint or {}).get("preamble_mapping") or {}
+    if not isinstance(mapping, dict):
+        raise ValueError("fingerprint.preamble_mapping must be a dict")
+    return {
+        str(key).strip(): str(value).strip()
+        for key, value in mapping.items()
+        if str(key).strip() and str(value).strip()
+    }
+
+
+def _preamble_extractors(fingerprint):
+    extractors = (fingerprint or {}).get("preamble_extractors") or []
+    if not isinstance(extractors, list):
+        raise ValueError("fingerprint.preamble_extractors must be a list")
+    normalized = []
+    for extractor in extractors:
+        if not isinstance(extractor, dict):
+            raise ValueError("fingerprint.preamble_extractors items must be dicts")
+        field_name = str(extractor.get("field") or "").strip()
+        pattern = str(extractor.get("pattern") or "").strip()
+        template = str(extractor.get("template") or "").strip()
+        if not field_name or not pattern:
+            raise ValueError("preamble extractor requires field and pattern")
+        item = {"field": field_name, "pattern": pattern}
+        if template:
+            item["template"] = template
+        normalized.append(item)
+    return normalized
+
+
 def _reader_options(item):
     options = (item or {}).get("reader_options") or {}
     if not isinstance(options, dict):
@@ -479,6 +512,8 @@ def load_pdf_route_rules():
             split_amount_balance=_split_amount_balance(item),
             amount_columns=_amount_columns(item),
             extract_patterns=_extract_patterns(item),
+            preamble_mapping=_preamble_mapping(fingerprint),
+            preamble_extractors=_preamble_extractors(fingerprint),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -508,6 +543,8 @@ def load_excel_route_rules():
             split_amount_balance=_split_amount_balance(item),
             amount_columns=_amount_columns(item),
             extract_patterns=_extract_patterns(item),
+            preamble_mapping=_preamble_mapping(fingerprint),
+            preamble_extractors=_preamble_extractors(fingerprint),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

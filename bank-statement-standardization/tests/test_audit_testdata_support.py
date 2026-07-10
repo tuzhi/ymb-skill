@@ -116,7 +116,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "格式": "pdf",
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
-            "router类": "md5:69c7df7286e238aef80ae49938fd397a",
+            "router类": "md5:eb90af33b5f89117b801f28b10fdc111",
             "reader_id": "pdfplumber_coordinate_table",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
@@ -139,7 +139,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[0], "浙江庆元农商银行")
         self.assertIn("账户类型(YAML)", header)
         self.assertEqual(first_row[header.index("账户类型(YAML)")], "个人")
-        self.assertEqual(first_row[header.index("router类")], "md5:69c7df7286e238aef80ae49938fd397a")
+        self.assertEqual(first_row[header.index("router类")], "md5:eb90af33b5f89117b801f28b10fdc111")
         self.assertNotIn("命中parser", header)
         self.assertIn("reader_id", header)
         self.assertEqual(first_row[header.index("reader_id")], "pdfplumber_coordinate_table")
@@ -157,11 +157,11 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "江西农商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("农村商业银行", "md5:69c7df7286e238aef80ae49938fd397a", "浙江庆元农商银行"),
+            module.normalize_bank_name("农村商业银行", "md5:eb90af33b5f89117b801f28b10fdc111", "浙江庆元农商银行"),
             "浙江庆元农商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "md5:09ce033b3aeccb7c4dc7a47eac35e16d", "Kasikorn Bank"),
+            module.normalize_bank_name("", "md5:b75cf43e9a35b4ca0c082906f3aa2c7b", "Kasikorn Bank"),
             "开泰银行（Kasikorn Bank）",
         )
         self.assertEqual(

@@ -78,7 +78,7 @@
         fontname_contains: SimHei
         min_size: 18
   reader_id: pdfplumber_coordinate_table
-- id: md5:09ce033b3aeccb7c4dc7a47eac35e16d
+- id: md5:b75cf43e9a35b4ca0c082906f3aa2c7b
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
   account_type: 个人
@@ -96,6 +96,11 @@
       - K BIZ
       - AccountMR.
       - Account Number
+    preamble_extractors:
+    - field: 本方名称
+      pattern: 'AccountMR\.\s*(.+?)\s+Reference'
+    - field: 本方账户
+      pattern: 'Account Number\s+(\d[\d\-]{5,}\d)'
     columns:
       all:
         K PLUS: null
@@ -149,7 +154,7 @@
       - Deposit Transfer Withdrawal
       - Transfer Withdrawal For more information,
   reader_id: pdfplumber_grid_line_table
-- id: md5:69c7df7286e238aef80ae49938fd397a
+- id: md5:eb90af33b5f89117b801f28b10fdc111
   file_type: pdf
   bank: 浙江庆元农商银行
   account_type: 个人
@@ -165,6 +170,11 @@
       any:
       - 浙江庆元农商银行
       - 庆元农商银行
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]?\s*([^:：\s]+)\s+账号'
+    - field: 本方账户
+      pattern: '账号[:：]?\s*(\d[\d*\-]{5,}\d)'
     columns:
       all:
         个人账户交易明细: null
@@ -578,7 +588,7 @@
         摘要: 银行备注
         附言: 账户方附言
   reader_id: pdfplumber_table
-- id: md5:d312dfd06697a8e02c6a74294675ec65
+- id: md5:6cadae92bf0342082ec8ce1556cf1ac0
   file_type: pdf
   bank: 浙江网商银行
   account_type: 对公
@@ -586,6 +596,11 @@
     identity:
       any:
       - 企业账号
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '企业名称\s+(.+?)\s+企业账号'
+    - field: 本方账户
+      pattern: '企业账号\s+(\d[\d*\-]{5,}\d)'
     columns:
       all:
         企业名称: 本方名称
@@ -655,7 +670,7 @@
         Counterparty’s: null
         Counterparty’s Account No.: null
   reader_id: pdfplumber_table
-- id: md5:9151a3e2adbe4098101800a1348f62c7
+- id: md5:cb2278ac12a08930475e412c101c28f6
   file_type: pdf
   bank: 未识别
   account_type: 对公
@@ -670,6 +685,8 @@
       any:
       - 用户所属公司
       - 记录数
+    preamble_mapping:
+      用户所属公司: 本方名称
     columns:
       all:
         交易日期: 交易日期
@@ -677,7 +694,7 @@
         贷方(入账): 收入金额
         余额摘要: 账户余额
         收(付)方名称: 对手名称
-        收(付)方账号: 本方账户
+        收(付)方账号: 对手账户
         交易类型: 银行备注
     column_transforms:
       交易日期:
@@ -888,7 +905,7 @@
       对方户名:
         newline: cjk_join
   reader_id: pdfplumber_coordinate_table
-- id: md5:48a1a9cde662e1515e3d8f3238934e92
+- id: md5:a18a99243ad411aa342820d09cbcdaf1
   file_type: pdf
   bank: 微信支付
   account_type: 个人
@@ -896,6 +913,9 @@
     identity:
       any:
       - 微信支付交易明细证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
     columns:
       all:
         兹证明: null

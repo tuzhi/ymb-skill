@@ -33,7 +33,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:9151a3e2adbe4098101800a1348f62c7")
+        self.assertEqual(route_info["fingerprint_id"], "md5:cb2278ac12a08930475e412c101c28f6")
+        self.assertEqual(route_info["preamble_mapping"], {"用户所属公司": "本方名称"})
         self.assertEqual(rows[0], [
             "交易日期",
             "借方(出账)",
@@ -131,7 +132,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
                 self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
-                self.assertEqual(route_info["fingerprint_id"], "md5:d312dfd06697a8e02c6a74294675ec65")
+                self.assertEqual(route_info["fingerprint_id"], "md5:6cadae92bf0342082ec8ce1556cf1ac0")
                 self.assertEqual(rows[0], route_info["reader_headers"])
                 self.assertEqual(rows[0], [
                     "序号",
@@ -249,7 +250,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:69c7df7286e238aef80ae49938fd397a")
+        self.assertEqual(route_info["fingerprint_id"], "md5:eb90af33b5f89117b801f28b10fdc111")
         self.assertEqual(rows[0], [
             "交易日期",
             "币种",
@@ -278,10 +279,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for fingerprint_id in [
             "md5:cd253a8df83a6adee5ab5e047e54bc4e",
             "md5:0bdf0854f29ad6928e2fdd0da1d52dc5",
-            "md5:09ce033b3aeccb7c4dc7a47eac35e16d",
-            "md5:69c7df7286e238aef80ae49938fd397a",
+            "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
+            "md5:eb90af33b5f89117b801f28b10fdc111",
             "md5:0488448d0f1d96413a25254a500aab29",
-            "md5:48a1a9cde662e1515e3d8f3238934e92",
+            "md5:a18a99243ad411aa342820d09cbcdaf1",
         ]:
             self.assertIn(fingerprint_id, by_id)
         self.assertEqual(rules[0].bank, "中国农业银行")
@@ -294,7 +295,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(by_id["md5:0488448d0f1d96413a25254a500aab29"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
-            self.assertIn(marker, by_id["md5:48a1a9cde662e1515e3d8f3238934e92"].column_markers)
+            self.assertIn(marker, by_id["md5:a18a99243ad411aa342820d09cbcdaf1"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
         rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "pdf_rules.yaml"
@@ -346,7 +347,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:48a1a9cde662e1515e3d8f3238934e92")
+        self.assertEqual(result["fingerprint_id"], "md5:a18a99243ad411aa342820d09cbcdaf1")
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["decision"], "matched")
 
@@ -768,7 +769,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:d312dfd06697a8e02c6a74294675ec65'})
+        self.assertIn(result["fingerprint_id"], {'md5:6cadae92bf0342082ec8ce1556cf1ac0'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")

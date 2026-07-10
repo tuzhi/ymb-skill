@@ -222,8 +222,8 @@ def git_sha():
 def test_class_for_fingerprint(fingerprint_id):
     mapping = {
         "md5:0bdf0854f29ad6928e2fdd0da1d52dc5": "test_jxrcb_pdf_route.py",
-        "md5:09ce033b3aeccb7c4dc7a47eac35e16d": "test_kasikorn_pdf_route.py",
-        "md5:69c7df7286e238aef80ae49938fd397a": "test_zhejiang_qyrcb_pdf_route.py",
+        "md5:b75cf43e9a35b4ca0c082906f3aa2c7b": "test_kasikorn_pdf_route.py",
+        "md5:eb90af33b5f89117b801f28b10fdc111": "test_zhejiang_qyrcb_pdf_route.py",
     }
     return mapping.get(fingerprint_id or "", "")
 
@@ -291,12 +291,12 @@ def normalize_bank_name(bank, fingerprint_id="", template=""):
     """将映射结果里的简称或模板标记统一成支持矩阵里的银行全称。"""
     text = " ".join(str(part or "") for part in (bank, fingerprint_id, template))
     rules = [
-        ("md5:69c7df7286e238aef80ae49938fd397a", "浙江庆元农商银行"),
+        ("md5:eb90af33b5f89117b801f28b10fdc111", "浙江庆元农商银行"),
         ("庆元农商银行", "浙江庆元农商银行"),
         ("md5:0bdf0854f29ad6928e2fdd0da1d52dc5", "江西农商银行"),
         ("江西·农商银行", "江西农商银行"),
         ("江西农商", "江西农商银行"),
-        ("md5:09ce033b3aeccb7c4dc7a47eac35e16d", "开泰银行（Kasikorn Bank）"),
+        ("md5:b75cf43e9a35b4ca0c082906f3aa2c7b", "开泰银行（Kasikorn Bank）"),
         ("Kasikorn", "开泰银行（Kasikorn Bank）"),
         ("农业银行", "中国农业银行"),
         ("农行", "中国农业银行"),

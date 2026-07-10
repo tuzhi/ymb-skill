@@ -565,57 +565,66 @@ def find_header_row(rows, max_scan=30):
     return best_idx, best_hits
 
 
-def sniff_account_info(rows, header_idx, preamble=""):
-    """从抬头元数据（表头以上的行 + CSV 说明行）里抓 本方户名 / 本方账户 / 账户类型线索。"""
+def sniff_account_info(rows, header_idx, preamble="", preamble_mapping=None,
+                       preamble_extractors=None, column_mapping=None):
+    """按路由配置从表头以上元数据提取本方户名、账号和账户类型线索。"""
     info = {"本方名称": "", "本方账户": "", "账户类型线索": ""}
-    # 只取表头以上的抬头行；header_idx 可能为 0（CSV 表头即首行），此时仅用 preamble，
-    # 不能误取数据行——否则交易备注里的「…有限公司」会把个人账户错判成对公。
-    # 注意：这里是“抬头/元数据”识别，和 SYNONYMS 里的“数据列名映射”是两套逻辑。
-    # 例如建行 PDF 的「客户名称:张三」通常在表格上方抬头里，不在明细表头列里，
-    # 因此必须在这里显式匹配，不能只依赖 SYNONYMS["本方名称"]。
+    # 只取表头以上的元数据；header_idx 为 0 时仅使用 reader 提供的 preamble。
     upper = rows[:header_idx] if header_idx is not None else rows[:6]
     meta = preamble + " " + " ".join(
         str(c) for r in upper for c in r if c
     )
-    # 英文 PDF 抬头常见空格姓名，如“户名：HUAHUA JIANG 账号：...”，需保留完整姓名。
-    m = re.search(
-        r"(?:户名|账户名称|账户名|客户名称|客户姓名|企业名称)[:：]?\s*"
-        r"([A-Za-z][A-Za-z .'\-]*[A-Za-z])"
-        r"(?=\s+(?:账\s*号|卡\s*号|Reference|Account Number)|\s*$)",
-        meta,
+    metadata_lines = preamble + "\n" + "\n".join(
+        str(c) for r in upper for c in r if c
     )
-    if not m:
-        m = re.search(r"(?:户名|账户名称|账户名|客户名称|客户姓名|企业名称)[:：]?\s*([^\s,，:：\-]+)", meta)
-    if not m:
-        m = re.search(r"AccountMR\.\s*(.+?)\s+Reference", meta)
-    if not m:
-        m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
-    if m:
-        info["本方名称"] = m.group(1)
-    # 账号：优先带「账号/卡号/账户」标签的；支持掩码 6226****4806
-    acct = None
-    m = re.search(r"(?:账\s*号|卡\s*号|账\s*户)[^0-9]{0,6}(\d[\d*\-]{5,}\d)", meta)
-    if m:
-        acct = m.group(1)
-        # 户名后接「-账号」结构，如 公司名称-800091876502013
-        m = re.search(r"[一-龥)）]-(\d{8,})", meta)
+    mappings = dict(column_mapping or {})
+    mappings.update(preamble_mapping or {})
+    for label, field in mappings.items():
+        if field not in info:
+            continue
+        clean_label = str(label).strip().rstrip(":：").strip()
+        if not clean_label:
+            continue
+        value = ""
+        for row in upper:
+            for index, cell in enumerate(row):
+                text = str(cell or "").strip()
+                match = re.match(
+                    rf"^{re.escape(clean_label)}(?=\s|[:：]|$)\s*[:：]?\s*(.*)$",
+                    text,
+                )
+                if not match:
+                    continue
+                value = match.group(1).strip()
+                if not value:
+                    value = next(
+                        (str(item).strip() for item in row[index + 1:] if str(item or "").strip()),
+                        "",
+                    )
+                if value:
+                    break
+            if value:
+                break
+        m = re.search(
+            rf"(?:^|\n)\s*{re.escape(clean_label)}(?=\s|[:：]|$)\s*[:：]?\s*(.+?)"
+            rf"(?=\s+[^\s:：]{{1,20}}\s*[:：]|\s*(?:\r?\n|$))",
+            metadata_lines,
+        )
         if m:
-            acct = m.group(1)
-    if not acct:
-        m = re.search(r"Account Number\s+(\d[\d\-]{5,}\d)", meta)
-        if m:
-            acct = m.group(1)
-    if not acct:
-        # 兜底：抬头里最长的数字/掩码串（>=8 位）
-        cands = re.findall(r"\d[\d*]{7,}", meta)
-        if cands:
-            acct = max(cands, key=len)
-    if acct:
-        info["本方账户"] = acct
-    if re.search(r"对公|公司|企业|有限|厂|合作社|个体", meta):
-        info["账户类型线索"] = "对公"
-    elif re.search(r"借记卡|一卡通|储蓄|个人|活期一本通|储种", meta):
-        info["账户类型线索"] = "个人"
+            value = m.group(1).strip()
+        if value:
+            info[field] = value
+    for extractor in preamble_extractors or []:
+        field = str(extractor.get("field") or "").strip()
+        pattern = str(extractor.get("pattern") or "").strip()
+        if field not in info or not pattern:
+            continue
+        match = re.search(pattern, meta)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        template = str(extractor.get("template") or "").strip()
+        info[field] = template.format(value=value) if template else value
     return info
 
 
@@ -923,7 +932,14 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     header = [(_norm(c) if c is not None else "") for c in rows[header_idx]]
     data_rows = rows[header_idx + 1:]
 
-    acct = sniff_account_info(rows, header_idx, preamble)
+    acct = sniff_account_info(
+        rows,
+        header_idx,
+        preamble,
+        route_info.get("preamble_mapping"),
+        route_info.get("preamble_extractors"),
+        route_info.get("column_mapping"),
+    )
     if customer and (force_customer or not acct["本方名称"]):
         acct["本方名称"] = customer
     account_type, account_type_source, account_type_card_bin = resolve_account_type(

@@ -783,7 +783,7 @@
         个性化信息10: null
         交易介质编号: null
   reader_id: openpyxl_grid
-- id: md5:dd4dfb9405be31302010fe2e2757e1d0
+- id: md5:e8ac6cd5859af9542a0e6df9aff9db7f
   file_type: excel
   bank: 招商银行
   account_type: 对公
@@ -810,7 +810,7 @@
       - ACCOUNT
     columns:
       all:
-        账号名称: 本方账户
+        账号名称: 本方名称
         银行账号: 本方账户
         查询开始日期: null
         查询结束日期: null
@@ -833,11 +833,11 @@
         其它摘要: 银行备注
         收(付)方分行名: null
         收(付)方名称: 对手名称
-        收(付)方账号: 本方账户
+        收(付)方账号: 对手账户
         收(付)方开户行行号: null
         收(付)方开户行名: null
         收(付)方开户行地址: null
-        母(子)公司账号分行名: 本方账户
+        母(子)公司账号分行名: null
         母(子)公司账号: 本方账户
         母(子)公司名称: null
         信息标志: null
@@ -952,7 +952,7 @@
         交易摘要: 银行备注
         对手信息: 对手名称
   reader_id: openpyxl_grid
-- id: md5:d99fc743b49a5bb0cd43079dde2f6a1e
+- id: md5:e0c9c0799dd30d32ec34a26ccb9e8270
   file_type: excel
   bank: 微信支付
   account_type: 个人
@@ -960,6 +960,12 @@
     identity:
       any:
       - 微信支付账单明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '微信昵称[:：]?\s*[［\[]\s*([^］\]\s]+)\s*[］\]]'
+    - field: 本方账户
+      pattern: '微信昵称[:：]?\s*[［\[]\s*([^］\]\s]+)\s*[］\]]'
+      template: '微信支付#{value}'
     columns:
       all:
         微信昵称: null
@@ -979,7 +985,7 @@
         商户单号: null
         备注: 银行备注
   reader_id: openpyxl_grid
-- id: md5:48a1a9cde662e1515e3d8f3238934e92
+- id: md5:a18a99243ad411aa342820d09cbcdaf1
   file_type: excel
   bank: 微信支付
   account_type: 个人
@@ -987,6 +993,9 @@
     identity:
       any:
       - 微信支付交易明细证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
     columns:
       all:
         兹证明: null
