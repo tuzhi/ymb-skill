@@ -587,6 +587,8 @@ def sniff_account_info(rows, header_idx, preamble=""):
     if not m:
         m = re.search(r"(?:户名|账户名称|账户名|客户名称|客户姓名|企业名称)[:：]?\s*([^\s,，:：\-]+)", meta)
     if not m:
+        m = re.search(r"AccountMR\.\s*(.+?)\s+Reference", meta)
+    if not m:
         m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
         info["本方名称"] = m.group(1)
@@ -597,6 +599,10 @@ def sniff_account_info(rows, header_idx, preamble=""):
         acct = m.group(1)
         # 户名后接「-账号」结构，如 公司名称-800091876502013
         m = re.search(r"[一-龥)）]-(\d{8,})", meta)
+        if m:
+            acct = m.group(1)
+    if not acct:
+        m = re.search(r"Account Number\s+(\d[\d\-]{5,}\d)", meta)
         if m:
             acct = m.group(1)
     if not acct:
@@ -890,6 +896,23 @@ def standardize(path, out_dir=None, customer=None, bank=None,
 
     if header_row is None:
         header_idx, hits = find_header_row(rows)
+        route_header_keys = {
+            _norm(src)
+            for src in (route_info.get("column_mapping") or {})
+            if str(src or "").strip()
+        }
+        if route_header_keys:
+            best_route_idx, best_route_hits = None, -1
+            for i, row in enumerate(rows[:30]):
+                route_hits = 0
+                for value in row:
+                    key = _norm(value)
+                    if key and (key in route_header_keys or match_field(key)):
+                        route_hits += 1
+                if route_hits > best_route_hits:
+                    best_route_idx, best_route_hits = i, route_hits
+            if best_route_idx is not None and best_route_hits > (hits or 0):
+                header_idx, hits = best_route_idx, best_route_hits
     else:
         header_idx, hits = header_row, None
     if header_idx is None:

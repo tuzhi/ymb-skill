@@ -23,6 +23,11 @@ class RouteRule:
     column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
+    direction_from_column: dict = field(default_factory=dict)
+    drop_rows: list = field(default_factory=list)
+    split_amount_balance: dict = field(default_factory=dict)
+    amount_columns: list = field(default_factory=list)
+    extract_patterns: list = field(default_factory=list)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -375,6 +380,81 @@ def _word_filters(item, fingerprint):
     return filters
 
 
+def _direction_from_column(item):
+    config = _reader_options(item).get("direction_from_column") or {}
+    if not config:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("reader_options.direction_from_column must be a dict")
+    normalized = {}
+    source = str(config.get("source") or "").strip()
+    if source:
+        normalized["source"] = source
+    normalized["target"] = str(config.get("target") or "收支方向").strip()
+    for key in ("income_prefixes", "expense_prefixes"):
+        values = config.get(key) or []
+        if not isinstance(values, list):
+            raise ValueError(f"reader_options.direction_from_column.{key} must be a list")
+        normalized[key] = [str(value).strip() for value in values if str(value).strip()]
+    return normalized if normalized.get("source") else {}
+
+
+def _drop_rows(item):
+    rules = _reader_options(item).get("drop_rows") or []
+    if not rules:
+        return []
+    if not isinstance(rules, list):
+        raise ValueError("reader_options.drop_rows must be a list")
+    normalized = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError("reader_options.drop_rows items must be dicts")
+        column = str(rule.get("column") or "").strip()
+        values = [str(value).strip() for value in (rule.get("values") or []) if str(value).strip()]
+        if column and values:
+            normalized.append({"column": column, "values": values})
+    return normalized
+
+
+def _split_amount_balance(item):
+    config = _reader_options(item).get("split_amount_balance") or {}
+    if not config:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("reader_options.split_amount_balance must be a dict")
+    source = str(config.get("source") or "").strip()
+    amount = str(config.get("amount") or "").strip()
+    if not source or not amount:
+        raise ValueError("reader_options.split_amount_balance requires source and amount")
+    return {"source": source, "amount": amount}
+
+
+def _amount_columns(item):
+    columns = _reader_options(item).get("amount_columns") or []
+    if not columns:
+        return []
+    if not isinstance(columns, list):
+        raise ValueError("reader_options.amount_columns must be a list")
+    return [str(column).strip() for column in columns if str(column).strip()]
+
+
+def _extract_patterns(item):
+    patterns = _reader_options(item).get("extract_patterns") or []
+    if not patterns:
+        return []
+    if not isinstance(patterns, list):
+        raise ValueError("reader_options.extract_patterns must be a list")
+    normalized = []
+    for pattern in patterns:
+        if not isinstance(pattern, dict):
+            raise ValueError("reader_options.extract_patterns items must be dicts")
+        column = str(pattern.get("column") or "").strip()
+        regex = str(pattern.get("pattern") or "").strip()
+        if column and regex:
+            normalized.append({"column": column, "pattern": regex})
+    return normalized
+
+
 def load_pdf_route_rules():
     rules = []
     for item in _load_yaml("pdf_rules.yaml"):
@@ -394,6 +474,11 @@ def load_pdf_route_rules():
             column_transforms=_column_transforms(item, fingerprint),
             row_anchor=_row_anchor(item, fingerprint),
             word_filters=_word_filters(item, fingerprint),
+            direction_from_column=_direction_from_column(item),
+            drop_rows=_drop_rows(item),
+            split_amount_balance=_split_amount_balance(item),
+            amount_columns=_amount_columns(item),
+            extract_patterns=_extract_patterns(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -418,6 +503,11 @@ def load_excel_route_rules():
             column_transforms=_column_transforms(item, fingerprint),
             row_anchor=_row_anchor(item, fingerprint),
             word_filters=_word_filters(item, fingerprint),
+            direction_from_column=_direction_from_column(item),
+            drop_rows=_drop_rows(item),
+            split_amount_balance=_split_amount_balance(item),
+            amount_columns=_amount_columns(item),
+            extract_patterns=_extract_patterns(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

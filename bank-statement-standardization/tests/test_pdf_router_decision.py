@@ -278,7 +278,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         for fingerprint_id in [
             "md5:cd253a8df83a6adee5ab5e047e54bc4e",
             "md5:0bdf0854f29ad6928e2fdd0da1d52dc5",
-            "md5:37399b38ddd3572cc70fc6f8b9be2900",
+            "md5:09ce033b3aeccb7c4dc7a47eac35e16d",
             "md5:69c7df7286e238aef80ae49938fd397a",
             "md5:0488448d0f1d96413a25254a500aab29",
             "md5:48a1a9cde662e1515e3d8f3238934e92",

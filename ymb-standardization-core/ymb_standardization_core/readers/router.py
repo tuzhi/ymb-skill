@@ -1,7 +1,5 @@
-from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
-KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
@@ -24,6 +22,11 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "columns_evidence": columns_evidence,
         "column_transforms": route_evidence.get("column_transforms", {}) if route_evidence else {},
         "word_filters": route_evidence.get("word_filters", {}) if route_evidence else {},
+        "direction_from_column": route_evidence.get("direction_from_column", {}) if route_evidence else {},
+        "drop_rows": route_evidence.get("drop_rows", []) if route_evidence else [],
+        "split_amount_balance": route_evidence.get("split_amount_balance", {}) if route_evidence else {},
+        "amount_columns": route_evidence.get("amount_columns", []) if route_evidence else [],
+        "extract_patterns": route_evidence.get("extract_patterns", []) if route_evidence else [],
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
@@ -120,6 +123,11 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "reader_header_candidates": rule.column_markers,
                 "column_transforms": rule.column_transforms,
                 "word_filters": rule.word_filters,
+                "direction_from_column": rule.direction_from_column,
+                "drop_rows": rule.drop_rows,
+                "split_amount_balance": rule.split_amount_balance,
+                "amount_columns": rule.amount_columns,
+                "extract_patterns": rule.extract_patterns,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
@@ -142,6 +150,147 @@ def _extract_pdf_tables(pdf):
     if rows:
         return rows
     return _extract_pdf_tables_from_horizontal_lines(pdf)
+
+
+def _drop_configured_rows(rows, rules):
+    if not rows or not rules:
+        return rows
+    headers = [str(header or "").strip() for header in rows[0]]
+    output = [rows[0]]
+    for row in rows[1:]:
+        drop = False
+        for rule in rules:
+            column = str(rule.get("column") or "").strip()
+            if column not in headers:
+                continue
+            index = headers.index(column)
+            value = str(row[index] if index < len(row) else "").strip()
+            if value in {str(item).strip() for item in rule.get("values", [])}:
+                drop = True
+                break
+        if not drop:
+            output.append(row)
+    return output if len(output) > 1 else []
+
+
+def _split_amount_balance_column(rows, config):
+    if not rows or not config:
+        return rows
+    import re
+
+    headers = [str(header or "").strip() for header in rows[0]]
+    source = str(config.get("source") or "").strip()
+    amount = str(config.get("amount") or "").strip()
+    if source not in headers or amount not in headers:
+        return rows
+    source_index = headers.index(source)
+    amount_index = headers.index(amount)
+    money_re = re.compile(r"\d[\d,]*\.\d{2}")
+    output = [rows[0]]
+    for row in rows[1:]:
+        cells = list(row)
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        values = money_re.findall(str(cells[source_index] if source_index < len(cells) else ""))
+        if not str(cells[amount_index] if amount_index < len(cells) else "").strip() and len(values) >= 2:
+            cells[amount_index] = values[0]
+            cells[source_index] = values[-1]
+        output.append(cells)
+    return output
+
+
+def _normalize_amount_columns(rows, columns):
+    if not rows or not columns:
+        return rows
+    import re
+
+    headers = [str(header or "").strip() for header in rows[0]]
+    indexes = [headers.index(column) for column in columns if column in headers]
+    if not indexes:
+        return rows
+    money_re = re.compile(r"\d[\d,]*\.\d{2}")
+    output = [rows[0]]
+    for row in rows[1:]:
+        cells = list(row)
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        for index in indexes:
+            match = money_re.search(str(cells[index] if index < len(cells) else ""))
+            if match:
+                cells[index] = match.group(0)
+        output.append(cells)
+    return output
+
+
+def _extract_column_patterns(rows, patterns):
+    if not rows or not patterns:
+        return rows
+    import re
+
+    headers = [str(header or "").strip() for header in rows[0]]
+    compiled = []
+    for item in patterns:
+        column = str(item.get("column") or "").strip()
+        pattern = str(item.get("pattern") or "").strip()
+        if column in headers and pattern:
+            compiled.append((headers.index(column), re.compile(pattern)))
+    if not compiled:
+        return rows
+    output = [rows[0]]
+    for row in rows[1:]:
+        cells = list(row)
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        for index, pattern in compiled:
+            match = pattern.search(str(cells[index] if index < len(cells) else ""))
+            if match:
+                cells[index] = match.group(1) if match.groups() else match.group(0)
+        output.append(cells)
+    return output
+
+
+def _apply_direction_from_column(rows, config):
+    if not rows or not config:
+        return rows
+    headers = [str(header or "").strip() for header in rows[0]]
+    source = str(config.get("source") or "").strip()
+    target = str(config.get("target") or "收支方向").strip()
+    if source not in headers or not target:
+        return rows
+    source_index = headers.index(source)
+    if target in headers:
+        target_index = headers.index(target)
+        output = [headers]
+    else:
+        target_index = len(headers)
+        output = [headers + [target]]
+    income_prefixes = [str(value).strip().lower() for value in config.get("income_prefixes", [])]
+    expense_prefixes = [str(value).strip().lower() for value in config.get("expense_prefixes", [])]
+    for row in rows[1:]:
+        cells = list(row)
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        text = str(cells[source_index] if source_index < len(cells) else "").strip().lower()
+        direction = ""
+        if any(text == prefix or text.startswith(prefix) for prefix in income_prefixes):
+            direction = "收入"
+        elif any(text == prefix or text.startswith(prefix) for prefix in expense_prefixes):
+            direction = "支出"
+        if target_index < len(cells):
+            cells[target_index] = direction
+        else:
+            cells.append(direction)
+        output.append(cells)
+    return output
+
+
+def _postprocess_reader_rows(rows, route_info):
+    rows = _drop_configured_rows(rows, (route_info or {}).get("drop_rows") or [])
+    rows = _split_amount_balance_column(rows, (route_info or {}).get("split_amount_balance") or {})
+    rows = _normalize_amount_columns(rows, (route_info or {}).get("amount_columns") or [])
+    rows = _extract_column_patterns(rows, (route_info or {}).get("extract_patterns") or [])
+    rows = _apply_direction_from_column(rows, (route_info or {}).get("direction_from_column") or {})
+    return rows
 
 
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
@@ -169,6 +318,14 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             column_transforms=column_transforms,
             word_filters=route_info.get("word_filters") or {},
         )
+    if reader_id == "pdfplumber_grid_line_table":
+        return _postprocess_reader_rows(_extract_pdf_grid_line_table_rows(
+            pdf,
+            route_info.get("reader_header_candidates") or [],
+            route_info.get("row_anchor") or {},
+            column_transforms=column_transforms,
+            word_filters=route_info.get("word_filters") or {},
+        ), route_info)
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
     if reader_id == "pdfplumber_table":
@@ -522,6 +679,77 @@ def _word_column_cell_text(header, cell, column_transforms=None):
     return _clean_pdf_cell(text, header, column_transforms=column_transforms)
 
 
+def _grid_line_vertical_boundaries(page, min_segments=5, body_top_min=None):
+    counts = {}
+    for edge in page.edges:
+        if edge.get("orientation") != "v":
+            continue
+        top = float(edge.get("top", 0))
+        bottom = float(edge.get("bottom", 0))
+        if body_top_min is not None and bottom <= float(body_top_min):
+            continue
+        if bottom - top < 8:
+            continue
+        x = round(float(edge.get("x0", 0)), 1)
+        counts[x] = counts.get(x, 0) + 1
+    boundaries = sorted(x for x, count in counts.items() if count >= min_segments)
+    return boundaries if len(boundaries) >= 3 else []
+
+
+def _grid_line_anchor_text_match(word, row_anchor):
+    import re
+
+    text = str(word.get("text") or "").strip()
+    anchor_values = {
+        str(value).strip()
+        for value in (row_anchor or {}).get("values", [])
+        if str(value).strip()
+    }
+    if anchor_values:
+        return text in anchor_values
+    pattern = str((row_anchor or {}).get("pattern") or "").strip()
+    if pattern:
+        return bool(re.fullmatch(pattern, text))
+    return bool(text)
+
+
+def _grid_line_header_match(text, candidate_header):
+    tokens = [token.lower() for token in str(candidate_header or "").split() if token]
+    if not tokens:
+        return False
+    text_tokens = [token.lower() for token in str(text or "").split() if token]
+    pos = 0
+    for token in tokens:
+        try:
+            found = text_tokens.index(token, pos)
+        except ValueError:
+            return False
+        pos = found + 1
+    return True
+
+
+def _grid_line_headers(words, boundaries, candidate_headers, first_anchor_top):
+    candidate_headers = [str(header).strip() for header in candidate_headers if str(header).strip()]
+    headers = []
+    for index, (left, right) in enumerate(zip(boundaries, boundaries[1:])):
+        col_words = [
+            word for word in words
+            if left <= float(word.get("x0", 0)) < right
+            and first_anchor_top - 45 <= float(word.get("top", 0)) < first_anchor_top
+        ]
+        text = " ".join(str(word.get("text") or "").strip() for word in sorted(
+            col_words,
+            key=lambda item: (float(item.get("top", 0)), float(item.get("x0", 0))),
+        ))
+        match = ""
+        for header in candidate_headers:
+            if _grid_line_header_match(text, header):
+                match = header
+                break
+        headers.append(match or f"列{index + 1}")
+    return headers
+
+
 def _word_column_row_bounds(index, anchors, body_top_min, page_height, row_anchor):
     anchor_top = anchors[index][0]
     continuation = str((row_anchor or {}).get("continuation") or "").strip()
@@ -532,6 +760,89 @@ def _word_column_row_bounds(index, anchors, body_top_min, page_height, row_ancho
     start_top = (anchors[index - 1][0] + anchor_top) / 2 if index else body_top_min
     end_top = (anchor_top + anchors[index + 1][0]) / 2 if index + 1 < len(anchors) else page_height - 25
     return start_top, end_top
+
+
+def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
+                                      word_filters=None):
+    """Use real vertical ruling lines for x columns and row_anchor words for y rows."""
+    all_rows = []
+    output_headers = None
+    row_anchor = row_anchor or {}
+    for page in pdf.pages:
+        words = _word_column_page_words(page, word_filters=word_filters)
+        first_anchor_top = min(
+            (float(word.get("top", 0)) for word in words if _grid_line_anchor_text_match(word, row_anchor)),
+            default=None,
+        )
+        if first_anchor_top is None:
+            continue
+        boundaries = _grid_line_vertical_boundaries(page, body_top_min=first_anchor_top)
+        if not boundaries:
+            continue
+        anchor_column = str(row_anchor.get("column") or "").strip()
+        anchor_index_hint = 0
+        anchors = []
+        for index, (left, right) in enumerate(zip(boundaries, boundaries[1:])):
+            for word in words:
+                if not (left <= float(word.get("x0", 0)) < right):
+                    continue
+                if _is_word_column_row_anchor(word, left, anchor_column, row_anchor):
+                    anchors.append((float(word.get("top", 0)), word, index))
+            if anchors:
+                anchor_index_hint = index
+                break
+        anchors = sorted((top, word) for top, word, _index in anchors)
+        if not anchors:
+            continue
+        headers = _grid_line_headers(words, boundaries, candidate_headers, anchors[0][0])
+        if anchor_column and anchor_column in headers:
+            anchor_index = headers.index(anchor_column)
+        else:
+            anchor_index = anchor_index_hint
+        if output_headers is None:
+            output_headers = headers
+            all_rows.append(headers)
+        elif headers != output_headers:
+            headers = output_headers
+        body_top_min = anchors[0][0] - 1
+        stop_top = _word_column_stop_top(words, word_filters=word_filters)
+        drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
+        body_words = [
+            word for word in words
+            if float(word.get("top", 0)) > body_top_min
+            and (stop_top is None or float(word.get("top", 0)) < stop_top)
+            and (
+                drop_bottom_margin is None
+                or float(word.get("top", 0)) < page.height - float(drop_bottom_margin)
+            )
+            and not _is_word_column_noise_word(word)
+        ]
+        anchors = sorted(
+            (float(word.get("top", 0)), word)
+            for word in body_words
+            if (
+                boundaries[anchor_index] <= float(word.get("x0", 0)) < boundaries[anchor_index + 1]
+                and _is_word_column_row_anchor(word, boundaries[anchor_index], headers[anchor_index], row_anchor)
+            )
+        )
+        for index, (anchor_top, _word) in enumerate(anchors):
+            start_top, end_top = _word_column_row_bounds(index, anchors, body_top_min, page.height, row_anchor)
+            cells = [[] for _ in headers]
+            for word in body_words:
+                top = float(word.get("top", 0))
+                if not (start_top < top <= end_top):
+                    continue
+                col = _word_column_index(float(word.get("x0", 0)), boundaries)
+                if col is None or col >= len(cells):
+                    continue
+                cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
+            row = [
+                _word_column_cell_text(headers[cell_index], cell, column_transforms=column_transforms)
+                for cell_index, cell in enumerate(cells)
+            ]
+            if row and row[0]:
+                all_rows.append(row)
+    return all_rows if len(all_rows) > 1 else []
 
 
 def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
@@ -1057,9 +1368,6 @@ def read_pdf_rows(path, open_password=None):
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
 
         fingerprint_id = route_info.get("fingerprint_id", "")
-        if fingerprint_id in KASIKORN_TEXT_PDF_FINGERPRINTS:
-            preamble, rows = read_kasikorn_text_pdf(pdf)
-            return preamble, rows, route_info
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") in {"pdfplumber_word_column_table", "pdfplumber_coordinate_table"} and table_rows:

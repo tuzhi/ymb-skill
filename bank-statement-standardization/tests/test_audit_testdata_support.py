@@ -161,7 +161,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "浙江庆元农商银行",
         )
         self.assertEqual(
-            module.normalize_bank_name("", "md5:37399b38ddd3572cc70fc6f8b9be2900", "Kasikorn Bank"),
+            module.normalize_bank_name("", "md5:09ce033b3aeccb7c4dc7a47eac35e16d", "Kasikorn Bank"),
             "开泰银行（Kasikorn Bank）",
         )
         self.assertEqual(

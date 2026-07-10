@@ -22,7 +22,7 @@ SPEC.loader.exec_module(standardize)
 
 
 class KasikornPdfRouteTests(unittest.TestCase):
-    def test_local_kasikorn_pdf_uses_text_parser(self):
+    def test_local_kasikorn_pdf_uses_grid_line_table_reader(self):
         pdf = ROOT / "testdata" / "泰国开泰银行" / "111.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供开泰银行 PDF 样本")
@@ -36,8 +36,8 @@ class KasikornPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertNotIn("parser", image)
-        self.assertEqual(image["fingerprint_id"], "md5:37399b38ddd3572cc70fc6f8b9be2900")
-        self.assertEqual(image["reader_id"], "pdf_fixed_width")
+        self.assertEqual(image["fingerprint_id"], "md5:09ce033b3aeccb7c4dc7a47eac35e16d")
+        self.assertEqual(image["reader_id"], "pdfplumber_grid_line_table")
         self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "HUAHUA JIANG")

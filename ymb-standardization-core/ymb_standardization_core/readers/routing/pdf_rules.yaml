@@ -78,7 +78,7 @@
         fontname_contains: SimHei
         min_size: 18
   reader_id: pdfplumber_coordinate_table
-- id: md5:37399b38ddd3572cc70fc6f8b9be2900
+- id: md5:09ce033b3aeccb7c4dc7a47eac35e16d
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
   account_type: 个人
@@ -102,15 +102,53 @@
         K BIZ: null
         AccountMR.: null
         Account Number: null
-        Date: null
-        Time/: null
-        Descriptions: null
-        Withdrawal / Deposit: null
-        Outstanding Balance: null
-        Channel: null
-        Details: null
+        Date: 交易日期
+        Time/: 交易时间
+        Descriptions: 银行备注
+        Withdrawal / Deposit: 交易金额
+        Outstanding Balance: 账户余额
+        Channel: 交易渠道
+        Details: 账户方附言
         Eff.Date: null
-  reader_id: pdf_fixed_width
+  reader_options:
+    row_transforms:
+      anchor_column: Date
+      anchor_pattern: ^\d{2}-\d{2}-\d{2}$
+      continuation: until_next_anchor
+    drop_rows:
+    - column: Descriptions
+      values:
+      - Beginning Balance
+    split_amount_balance:
+      source: Outstanding Balance
+      amount: Withdrawal / Deposit
+    amount_columns:
+    - Withdrawal / Deposit
+    - Outstanding Balance
+    extract_patterns:
+    - column: Date
+      pattern: \d{2}-\d{2}-\d{2}
+    - column: Time/
+      pattern: \d{2}:\d{2}
+    direction_from_column:
+      source: Descriptions
+      income_prefixes:
+      - Transfer Deposit
+      - Cash Deposit
+      - Interest Deposit
+      - Inter-Region Transfer
+      expense_prefixes:
+      - Transfer Withdrawal
+      - Payment
+      - Cash Withdrawal
+      - Fee
+      - Annual Debit Card Fee
+      - Annual Debit Card
+      - Withholding Tax Payable
+      - Withholding Tax
+      - Deposit Transfer Withdrawal
+      - Transfer Withdrawal For more information,
+  reader_id: pdfplumber_grid_line_table
 - id: md5:69c7df7286e238aef80ae49938fd397a
   file_type: pdf
   bank: 浙江庆元农商银行
