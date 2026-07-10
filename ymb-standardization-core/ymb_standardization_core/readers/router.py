@@ -1,9 +1,7 @@
 from ymb_standardization_core.readers.kasikorn_pdf_text import read_kasikorn_text_pdf
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
-from ymb_standardization_core.readers.zhejiang_qyrcb_pdf_text import read_zhejiang_qyrcb_text_pdf
 
 KASIKORN_TEXT_PDF_FINGERPRINTS = {"md5:37399b38ddd3572cc70fc6f8b9be2900"}
-ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS = {"md5:69c7df7286e238aef80ae49938fd397a"}
 TEXT_TABLE_FINGERPRINTS = {
     "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
@@ -151,6 +149,18 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     column_transforms = route_info.get("column_transforms") or {}
     if reader_id == "pdfplumber_text_separator_table":
         return _extract_pdf_text_separator_table_rows(pdf)
+    if reader_id == "pdfplumber_coordinate_table":
+        rows = _extract_pdf_word_column_table_rows(
+            pdf,
+            route_info.get("reader_header_candidates") or [],
+            route_info.get("row_anchor") or {},
+            column_transforms=column_transforms,
+            word_filters=route_info.get("word_filters") or {},
+        )
+        separator_rows = _extract_pdf_text_separator_table_rows(pdf)
+        if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):
+            return separator_rows
+        return rows
     if reader_id == "pdfplumber_word_column_table":
         return _extract_pdf_word_column_table_rows(
             pdf,
@@ -179,13 +189,17 @@ def _is_cjk_char(value):
 
 def _join_cjk_fragments(parts):
     cjk_join_punctuation = "（【《〈“‘"
+    cjk_closing_punctuation = "）】》〉”’"
     output = ""
     for part in parts:
         if not part:
             continue
         if not output:
             output = part
-        elif _is_cjk_char(output[-1]) and (_is_cjk_char(part[0]) or part[0] in cjk_join_punctuation):
+        elif (
+            _is_cjk_char(output[-1])
+            and (_is_cjk_char(part[0]) or part[0] in cjk_join_punctuation or part[0] in cjk_closing_punctuation)
+        ):
             output += part
         else:
             output += " " + part
@@ -497,7 +511,8 @@ def _word_column_stop_top(words, word_filters=None):
     if not markers:
         return None
     for top, group in sorted(_group_words_by_top(words).items()):
-        if any(marker in str(word.get("text") or "") for marker in markers for word in group):
+        line = " ".join(str(word.get("text") or "") for word in group)
+        if any(marker in line for marker in markers):
             return float(top)
     return None
 
@@ -507,7 +522,20 @@ def _word_column_cell_text(header, cell, column_transforms=None):
     return _clean_pdf_cell(text, header, column_transforms=column_transforms)
 
 
-def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None, word_filters=None):
+def _word_column_row_bounds(index, anchors, body_top_min, page_height, row_anchor):
+    anchor_top = anchors[index][0]
+    continuation = str((row_anchor or {}).get("continuation") or "").strip()
+    if continuation == "until_next_anchor":
+        start_top = max(body_top_min, anchor_top - 0.5)
+        end_top = anchors[index + 1][0] - 0.5 if index + 1 < len(anchors) else page_height - 25
+        return start_top, end_top
+    start_top = (anchors[index - 1][0] + anchor_top) / 2 if index else body_top_min
+    end_top = (anchor_top + anchors[index + 1][0]) / 2 if index + 1 < len(anchors) else page_height - 25
+    return start_top, end_top
+
+
+def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
+                                        word_filters=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
@@ -560,8 +588,13 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
             )
         )
         for index, (anchor_top, _word) in enumerate(anchors):
-            start_top = (anchors[index - 1][0] + anchor_top) / 2 if index else body_top_min
-            end_top = (anchor_top + anchors[index + 1][0]) / 2 if index + 1 < len(anchors) else page.height - 25
+            start_top, end_top = _word_column_row_bounds(
+                index,
+                anchors,
+                body_top_min,
+                page.height,
+                row_anchor,
+            )
             cells = [[] for _ in headers]
             for word in body_words:
                 top = float(word.get("top", 0))
@@ -1024,17 +1057,18 @@ def read_pdf_rows(path, open_password=None):
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
 
         fingerprint_id = route_info.get("fingerprint_id", "")
-        # 专用 reader 只接管尚未收敛到通用 reader 的已识别模板。
         if fingerprint_id in KASIKORN_TEXT_PDF_FINGERPRINTS:
             preamble, rows = read_kasikorn_text_pdf(pdf)
             return preamble, rows, route_info
-        if fingerprint_id in ZHEJIANG_QYRCB_TEXT_PDF_FINGERPRINTS:
-            preamble, rows = read_zhejiang_qyrcb_text_pdf(pdf)
-            return preamble, rows, route_info
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
-        if route_info.get("reader_id") == "pdfplumber_word_column_table" and table_rows:
-            preamble = _word_column_metadata_preamble(pdf, route_info) or _preamble_before_reader_header(text, table_rows[0])
+        if route_info.get("reader_id") in {"pdfplumber_word_column_table", "pdfplumber_coordinate_table"} and table_rows:
+            metadata_preamble = _word_column_metadata_preamble(pdf, route_info)
+            text_preamble = _preamble_before_reader_header(text, table_rows[0])
+            preamble = "\n".join(
+                part for part in [metadata_preamble, text_preamble]
+                if str(part or "").strip()
+            )
             route_info = {**route_info, "reader_headers": table_rows[0]}
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
             rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])

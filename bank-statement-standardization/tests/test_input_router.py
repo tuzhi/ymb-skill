@@ -743,7 +743,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.kind, "pdf")
         self.assertNotIn("parser", result.route_info)
 
-        self.assertEqual(result.route_info["reader_id"], "pdf_fixed_width")
+        self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertGreater(len(result.rows), 200)
 
     def test_cmb_transaction_pdf_route_matches_local_sample(self):
@@ -960,7 +960,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertNotIn("parser", route)
 
-        self.assertEqual(route["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "支付宝")
         self.assertEqual(route["account_type"], "个人")
@@ -977,7 +977,7 @@ class InputRouterTests(unittest.TestCase):
 
         result = module.read_rows(str(pdf))
 
-        self.assertEqual(result.route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertGreater(len(result.rows), 1000)
 
     def test_jiangxi_rural_commercial_pdf_route_matches_watermarked_export(self):
@@ -989,7 +989,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertNotIn("parser", route)
 
-        self.assertEqual(route["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "个人")
@@ -999,6 +999,8 @@ class InputRouterTests(unittest.TestCase):
     def test_jiangxi_rural_commercial_watermarked_excel_does_not_match_from_transaction_values(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "张华峰" / "江西·农商银行(2026年03月04日09时54分56秒).xlsx"
+        if not excel.exists():
+            self.skipTest("本地未提供张华峰江西农商 xlsx 样本")
 
         result = module.read_rows(str(excel))
         route = result.route_info

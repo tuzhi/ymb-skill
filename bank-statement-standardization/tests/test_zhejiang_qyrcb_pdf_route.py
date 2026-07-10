@@ -45,7 +45,7 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(result["decision"], "unmatched")
         self.assertEqual(result["reader_id"], "none")
 
-    def test_local_grzd_pdf_uses_zhejiang_qyrcb_text_parser(self):
+    def test_local_grzd_pdf_uses_coordinate_table_reader(self):
         pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
@@ -59,7 +59,7 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertNotIn("parser", image)
-        self.assertEqual(image["reader_id"], "pdf_fixed_width")
+        self.assertEqual(image["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(image["decision"], "matched")
         self.assertTrue(image["fingerprint_id"].startswith("md5:"))
         self.assertEqual(image["file_type"], "pdf")

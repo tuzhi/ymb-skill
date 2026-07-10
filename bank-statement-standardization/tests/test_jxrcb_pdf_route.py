@@ -63,7 +63,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
 
         preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertIn("户名: 艾晓林", preamble)
         self.assertIn("账号: 6226822010201107935", preamble)
         row = next(item for item in rows[1:] if item[0] == "2025-06-12" and item[1] == "-41,100.00")

@@ -117,7 +117,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
             "版本": "个人账户交易明细",
             "文件路径": "testdata/李先根/GRZD.pdf",
             "router类": "md5:69c7df7286e238aef80ae49938fd397a",
-            "reader_id": "pdf_fixed_width",
+            "reader_id": "pdfplumber_coordinate_table",
             "YAML指纹": "身份:2；结构:15",
             "测试类": "test_zhejiang_qyrcb_pdf_route.py",
             "测试日期": "2026-06-17",
@@ -142,7 +142,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
         self.assertEqual(first_row[header.index("router类")], "md5:69c7df7286e238aef80ae49938fd397a")
         self.assertNotIn("命中parser", header)
         self.assertIn("reader_id", header)
-        self.assertEqual(first_row[header.index("reader_id")], "pdf_fixed_width")
+        self.assertEqual(first_row[header.index("reader_id")], "pdfplumber_coordinate_table")
         self.assertEqual(first_row[header.index("YAML指纹")], "身份:2；结构:15")
         self.assertIn("创建时间≈修改时间", header)
         self.assertIn("创建人=修改人", header)

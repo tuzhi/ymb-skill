@@ -405,7 +405,7 @@
         交易对手账号: 对手账户
         附言: 账户方附言
   reader_id: openpyxl_grid
-- id: md5:4439de424ba8efd1d77c7b9040e9c7ee
+- id: md5:6710c75ca4aa84eec738981247cc152a
   file_type: excel
   bank: 浙江网商银行
   account_type: 对公
@@ -418,7 +418,7 @@
       - yyyy-mm-dd hh:mm:ss
     columns:
       all:
-        企业名称: null
+        企业名称: 本方名称
         企业账号: 本方账户
         借方交易笔数: 支出金额
         借方交易金额: 支出金额

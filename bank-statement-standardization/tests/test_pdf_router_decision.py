@@ -79,7 +79,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(route_info["reader_id"], "pdfplumber_text_separator_table")
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(route_info["fingerprint_id"], "md5:099d6dd5362e8052b2b079fac6ebf6e0")
         self.assertEqual(rows[0], [
             "交易时间",
@@ -130,8 +130,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
                 _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-                self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
-                self.assertEqual(route_info["fingerprint_id"], "md5:afe2263442bc5b4e71148582aaacce44")
+                self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
+                self.assertEqual(route_info["fingerprint_id"], "md5:d312dfd06697a8e02c6a74294675ec65")
                 self.assertEqual(rows[0], route_info["reader_headers"])
                 self.assertEqual(rows[0], [
                     "序号",
@@ -155,7 +155,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
             "交易日期",
             "交易时间",
@@ -189,7 +189,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
             "交易日期",
             "业务摘要",
@@ -221,7 +221,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
-        self.assertEqual(route_info["reader_id"], "pdfplumber_word_column_table")
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
             "记账日期",
             "交易金额(元)",
@@ -240,6 +240,36 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "南昌巨鲸农牧发展有限公司",
             "36050182035200000593",
         ])
+
+    def test_zhejiang_qyrcb_pdf_uses_coordinate_table_reader_with_anchor_blocks(self):
+        path = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
+        if not path.exists():
+            self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
+
+        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+
+        self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
+        self.assertEqual(route_info["fingerprint_id"], "md5:69c7df7286e238aef80ae49938fd397a")
+        self.assertEqual(rows[0], [
+            "交易日期",
+            "币种",
+            "交易摘要",
+            "交易金额",
+            "账户余额",
+            "对方账号",
+            "对方户名",
+            "对方行",
+            "交易渠道",
+            "备注",
+        ])
+        self.assertEqual(len(rows) - 1, 240)
+        target = next(
+            row for row in rows[1:]
+            if row[0] == "2025-06-16" and row[2] == "汇出" and row[3] == "-168.65"
+        )
+        self.assertEqual(target[5], "201000022997361")
+        self.assertEqual(target[6], "庆元县供排水有限公司水费专户")
+        self.assertEqual(target[8], "人行接口（大小额）")
 
     def test_pdf_specialized_routes_are_loaded_from_config(self):
         rules = load_pdf_route_rules()
@@ -738,7 +768,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:afe2263442bc5b4e71148582aaacce44'})
+        self.assertIn(result["fingerprint_id"], {'md5:d312dfd06697a8e02c6a74294675ec65'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")

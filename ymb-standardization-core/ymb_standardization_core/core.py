@@ -579,13 +579,13 @@ def sniff_account_info(rows, header_idx, preamble=""):
     )
     # 英文 PDF 抬头常见空格姓名，如“户名：HUAHUA JIANG 账号：...”，需保留完整姓名。
     m = re.search(
-        r"(?:户名|账户名称|账户名|客户名称|客户姓名)[:：]?\s*"
+        r"(?:户名|账户名称|账户名|客户名称|客户姓名|企业名称)[:：]?\s*"
         r"([A-Za-z][A-Za-z .'\-]*[A-Za-z])"
         r"(?=\s+(?:账\s*号|卡\s*号|Reference|Account Number)|\s*$)",
         meta,
     )
     if not m:
-        m = re.search(r"(?:户名|账户名称|账户名|客户名称|客户姓名)[:：]?\s*([^\s,，:：\-]+)", meta)
+        m = re.search(r"(?:户名|账户名称|账户名|客户名称|客户姓名|企业名称)[:：]?\s*([^\s,，:：\-]+)", meta)
     if not m:
         m = re.search(r"兹证明[:：]?\s*([^（(\s,，:：\-]+)", meta)
     if m:
@@ -595,7 +595,6 @@ def sniff_account_info(rows, header_idx, preamble=""):
     m = re.search(r"(?:账\s*号|卡\s*号|账\s*户)[^0-9]{0,6}(\d[\d*\-]{5,}\d)", meta)
     if m:
         acct = m.group(1)
-    if not acct:
         # 户名后接「-账号」结构，如 公司名称-800091876502013
         m = re.search(r"[一-龥)）]-(\d{8,})", meta)
         if m:
@@ -929,6 +928,11 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     if not bank_name and route_info.get("fingerprint_id") == "md5:f25d1960686525515cc3c5d3eb69ad59":
         bank_name = "农村商业银行"
         bank_infer_source = "router"
+    if not bank_name:
+        route_bank = str(route_info.get("bank") or "").strip()
+        if route_bank and "银行" in route_bank and route_bank not in {"微信支付", "支付宝"}:
+            bank_name = route_bank
+            bank_infer_source = "router"
 
     # ---- 列 -> 标准字段 映射 ----
     overrides = overrides or {}

@@ -104,6 +104,30 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "中国光大银行",
         )
 
+    def test_mybank_pdf_uses_enterprise_name_and_router_bank(self):
+        pdf = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "程旭"
+            / "江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供网商银行 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                out_rows = list(csv.DictReader(f))
+
+        self.assertEqual(report["文件画像"]["本方名称"], "江西嘟咔熊电子商务有限公司")
+        self.assertEqual(report["文件画像"]["本方账户"], "8888888826100206")
+        self.assertEqual(report["文件画像"]["开户行"], "浙江网商银行")
+        self.assertEqual(report["文件画像"]["开户行识别来源"], "router")
+        self.assertEqual(out_rows[0]["本方名称"], "江西嘟咔熊电子商务有限公司")
+        self.assertEqual(out_rows[0]["本方账户"], "8888888826100206")
+        self.assertEqual(out_rows[0]["开户行"], "浙江网商银行")
+
     def test_enterprise_counterparty_ratio_marks_probable_corporate(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

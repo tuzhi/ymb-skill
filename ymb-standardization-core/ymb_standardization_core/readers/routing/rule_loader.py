@@ -304,10 +304,20 @@ def _column_mapping(fingerprint):
     return {str(key).strip(): str(value).strip() for key, value in mapping.items() if str(key).strip() and str(value).strip()}
 
 
-def _column_transforms(fingerprint):
-    transforms = (fingerprint or {}).get("column_transforms") or {}
+def _reader_options(item):
+    options = (item or {}).get("reader_options") or {}
+    if not isinstance(options, dict):
+        raise ValueError("reader_options must be a dict")
+    return options
+
+
+def _column_transforms(item, fingerprint):
+    options = _reader_options(item)
+    transforms = options.get("column_transforms")
+    if transforms is None:
+        transforms = (fingerprint or {}).get("column_transforms") or {}
     if not isinstance(transforms, dict):
-        raise ValueError("fingerprint.column_transforms must be a dict")
+        raise ValueError("reader_options.column_transforms must be a dict")
     normalized = {}
     for column, options in transforms.items():
         source = str(column).strip()
@@ -316,7 +326,7 @@ def _column_transforms(fingerprint):
         if options is None:
             continue
         if not isinstance(options, dict):
-            raise ValueError("fingerprint.column_transforms options must be dicts")
+            raise ValueError("reader_options.column_transforms options must be dicts")
         item = {}
         newline = str(options.get("newline") or "").strip()
         if newline:
@@ -326,6 +336,43 @@ def _column_transforms(fingerprint):
         if item:
             normalized[source] = item
     return normalized
+
+
+def _row_anchor(item, fingerprint):
+    options = _reader_options(item)
+    row_transforms = options.get("row_transforms")
+    if row_transforms is None:
+        row_transforms = (fingerprint or {}).get("row_anchor") or {}
+    if not isinstance(row_transforms, dict):
+        raise ValueError("reader_options.row_transforms must be a dict")
+
+    anchor = {}
+    column = row_transforms.get("anchor_column", row_transforms.get("column"))
+    if column:
+        anchor["column"] = str(column).strip()
+    pattern = row_transforms.get("anchor_pattern", row_transforms.get("pattern"))
+    if pattern:
+        anchor["pattern"] = str(pattern).strip()
+    values = row_transforms.get("anchor_values", row_transforms.get("values"))
+    if values:
+        anchor["values"] = [str(value).strip() for value in values if str(value).strip()]
+    continuation = row_transforms.get("continuation")
+    if continuation:
+        continuation = str(continuation).strip()
+        if continuation not in {"until_next_anchor"}:
+            raise ValueError(f"unsupported row continuation: {continuation}")
+        anchor["continuation"] = continuation
+    return anchor
+
+
+def _word_filters(item, fingerprint):
+    options = _reader_options(item)
+    filters = options.get("word_filters")
+    if filters is None:
+        filters = (fingerprint or {}).get("word_filters") or {}
+    if not isinstance(filters, dict):
+        raise ValueError("reader_options.word_filters must be a dict")
+    return filters
 
 
 def load_pdf_route_rules():
@@ -344,9 +391,9 @@ def load_pdf_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            column_transforms=_column_transforms(fingerprint),
-            row_anchor=fingerprint.get("row_anchor", {}),
-            word_filters=fingerprint.get("word_filters", {}),
+            column_transforms=_column_transforms(item, fingerprint),
+            row_anchor=_row_anchor(item, fingerprint),
+            word_filters=_word_filters(item, fingerprint),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -368,9 +415,9 @@ def load_excel_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            column_transforms=_column_transforms(fingerprint),
-            row_anchor=fingerprint.get("row_anchor", {}),
-            word_filters=fingerprint.get("word_filters", {}),
+            column_transforms=_column_transforms(item, fingerprint),
+            row_anchor=_row_anchor(item, fingerprint),
+            word_filters=_word_filters(item, fingerprint),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
