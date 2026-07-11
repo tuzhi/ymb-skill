@@ -1382,8 +1382,14 @@ def read_pdf_rows(path, open_password=None):
                 if str(part or "").strip()
             )
             route_info = {**route_info, "reader_headers": table_rows[0]}
+        elif table_rows:
+            # 通用 PDF reader 的首屏文本可能包含整页交易数据。只保留表头之前的固定抬头，
+            # 避免标准化层把交易行里的对手开户行误判成本方银行。
+            preamble = _preamble_before_reader_header(preamble, table_rows[0])
         if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
             rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])
+            if rows:
+                preamble = _preamble_before_reader_header(preamble, rows[0])
             return preamble or "", rows, route_info
         if route_info.get("decision") == "unmatched":
             table_rows = _extract_pdf_tables_default(pdf)
@@ -1400,4 +1406,6 @@ def read_pdf_rows(path, open_password=None):
                         "reader_id": "pdfplumber_line_table",
                     }
 
+    if table_rows:
+        preamble = _preamble_before_reader_header(preamble, table_rows[0])
     return preamble or "", table_rows, route_info

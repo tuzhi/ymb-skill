@@ -20,9 +20,10 @@ integrate.py — 单客户多流水文件整合与验证（阶段二，对应 Pr
   <客户名>__整合流水.csv     合并后的标准化明细（已排序、带账户分组）
   <客户名>__整合报告.json    Prompt 2 结构的整合与校验报告
 """
-import argparse, glob, json, os, sys, unicodedata
-from collections import defaultdict
+import argparse, glob, hashlib, json, os, sys, unicodedata
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from itertools import combinations
 
 try:
     import pandas as pd
@@ -73,6 +74,14 @@ def _explicit_account(value):
     return account if sum(char.isdigit() for char in account) >= 6 else ""
 
 
+def _account_key(value):
+    account = _explicit_account(value)
+    if not account:
+        return ""
+    digits = "".join(char for char in account if char.isdigit())
+    return digits or _identity_text(account)
+
+
 def _overlap_amount(value):
     text = _clean_text(value).replace(",", "")
     if not text:
@@ -94,6 +103,274 @@ def _transaction_overlap_key(row):
     if not time or not balance or not (income or expense) or not (opponent_name or opponent_account):
         return None
     return time, income, expense, balance, opponent_name, opponent_account
+
+
+def _core_pair_key(row):
+    """配套文件识别核心键；对手字段只作增强证据，不阻断 PDF/XLS 格式差异。"""
+    time = _clean_text(row.get("交易时间"))
+    income = _overlap_amount(row.get("收入金额"))
+    expense = _overlap_amount(row.get("支出金额"))
+    balance = _overlap_amount(row.get("账户余额"))
+    if not time or not balance or not (income or expense):
+        return None
+    return time, income, expense, balance
+
+
+def _counterparty_enhancement_keys(row):
+    core = _core_pair_key(row)
+    if core is None:
+        return []
+    keys = []
+    opponent_name = _identity_text(row.get("对手名称"))
+    if opponent_name:
+        keys.append((*core, "name", opponent_name))
+    opponent_digits = "".join(char for char in _clean_text(row.get("对手账户")) if char.isdigit())
+    if opponent_digits:
+        keys.append((*core, "account", opponent_digits))
+    return keys
+
+
+def _source_col(df):
+    if "__源标准化文件路径" in df.columns:
+        return "__源标准化文件路径"
+    if "来源文件名" in df.columns:
+        return "来源文件名"
+    if "__源标准化文件" in df.columns:
+        return "__源标准化文件"
+    return ""
+
+
+def complete_metadata_by_explicit_account(df):
+    """同批次相同明确账号之间补齐缺失的本方名称和银行，不覆盖冲突值。"""
+    result = df.copy()
+    report = {"补全文件数": 0, "补全交易数": 0, "补全明细": []}
+    if result.empty or "本方账户" not in result.columns:
+        return result, report
+    source_col = _source_col(result)
+    result["__account_key"] = result["本方账户"].map(_account_key)
+    touched_sources = set()
+    for account_key, group in result[result["__account_key"] != ""].groupby("__account_key", sort=True):
+        names = {
+            _identity_text(value): _clean_text(value)
+            for value in group.get("本方名称", pd.Series(dtype=str))
+            if _identity_text(value)
+        }
+        banks = {
+            _identity_bank(value): _clean_text(value)
+            for value in group.get("开户行", pd.Series(dtype=str))
+            if _identity_bank(value)
+        }
+        fill_name = next(iter(names.values())) if len(names) == 1 else ""
+        fill_bank = next(iter(banks.values())) if len(banks) == 1 else ""
+        changed = []
+        for index, row in group.iterrows():
+            fields = []
+            if fill_name and not _clean_text(row.get("本方名称")):
+                result.at[index, "本方名称"] = fill_name
+                fields.append("本方名称")
+            if fill_bank and not _clean_text(row.get("开户行")):
+                result.at[index, "开户行"] = fill_bank
+                result.at[index, "__batch_pair_bank"] = fill_bank
+                fields.append("开户行")
+            if fields:
+                changed.append(index)
+                touched_sources.add(_clean_text(row.get(source_col)))
+        if changed:
+            report["补全交易数"] += len(changed)
+            report["补全明细"].append({
+                "本方账户": _clean_text(group["本方账户"].iloc[0]),
+                "补全字段": sorted({field for index in changed for field in (
+                    ["本方名称"] if fill_name and not _clean_text(df.at[index, "本方名称"]) else []
+                ) + (
+                    ["开户行"] if fill_bank and not _clean_text(df.at[index, "开户行"]) else []
+                )}),
+                "涉及来源文件": sorted({_clean_text(result.at[index, "来源文件名"]) for index in changed}),
+            })
+    report["补全文件数"] = len(touched_sources)
+    return result.drop(columns=["__account_key"]), report
+
+
+def _source_bank_judgment(rows):
+    router_values = {
+        _clean_text(value) for value in rows.get("__router_bank", pd.Series(dtype=str))
+        if _identity_bank(value)
+    }
+    inferred_values = {
+        _clean_text(value) for value in rows.get("__inferred_bank", pd.Series(dtype=str))
+        if _identity_bank(value)
+    }
+    current_values = {
+        _clean_text(value) for value in rows.get("开户行", pd.Series(dtype=str))
+        if _identity_bank(value)
+    }
+    return {
+        "router_bank": next(iter(router_values)) if len(router_values) == 1 else "未识别",
+        "inferred_bank": next(iter(inferred_values)) if len(inferred_values) == 1 else "",
+        "current_bank": next(iter(current_values)) if len(current_values) == 1 else "",
+    }
+
+
+def pair_unknown_account_sources(df, min_overlap=3, min_ratio=0.9):
+    """将两个高重合、真实账号均未知的配套来源归到同一批次虚拟账户。"""
+    result = df.copy()
+    report = {"已配对组数": 0, "已配对文件数": 0, "已配对交易数": 0, "配对明细": []}
+    if result.empty or "本方账户" not in result.columns:
+        return result, report
+    source_col = _source_col(result)
+    source_groups = {
+        _clean_text(source): rows
+        for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True, dropna=False)
+        if rows["本方账户"].map(_is_unknown_account).all()
+    }
+    candidates = []
+    candidate_counts = defaultdict(int)
+    for left_source, right_source in combinations(sorted(source_groups), 2):
+        left = source_groups[left_source]
+        right = source_groups[right_source]
+        left_keys = Counter(
+            key for _, row in left.iterrows() if (key := _core_pair_key(row)) is not None
+        )
+        right_keys = Counter(
+            key for _, row in right.iterrows() if (key := _core_pair_key(row)) is not None
+        )
+        overlap_keys = left_keys & right_keys
+        overlap_count = sum(overlap_keys.values())
+        denominator = min(sum(left_keys.values()), sum(right_keys.values()))
+        ratio = overlap_count / denominator if denominator else 0
+        left_coverage = overlap_count / len(left) if len(left) else 0
+        right_coverage = overlap_count / len(right) if len(right) else 0
+        if (
+            overlap_count < min_overlap
+            or ratio < min_ratio
+            or left_coverage < min_ratio
+            or right_coverage < min_ratio
+        ):
+            continue
+        left_enhanced = Counter(
+            key for _, row in left.iterrows() for key in _counterparty_enhancement_keys(row)
+        )
+        right_enhanced = Counter(
+            key for _, row in right.iterrows() for key in _counterparty_enhancement_keys(row)
+        )
+        enhanced_matches = left_enhanced & right_enhanced
+        enhanced_overlap_count = max(
+            sum(count for key, count in enhanced_matches.items() if key[-2] == kind)
+            for kind in ("name", "account")
+        )
+        if enhanced_overlap_count < min_overlap:
+            continue
+        judgments = {
+            left_source: _source_bank_judgment(left),
+            right_source: _source_bank_judgment(right),
+        }
+        bank_values = {
+            _identity_bank(value): value
+            for judgment in judgments.values()
+            for value in (judgment["router_bank"], judgment["inferred_bank"], judgment["current_bank"])
+            if _identity_bank(value)
+        }
+        if len(bank_values) > 1:
+            continue
+        account_types = {
+            _clean_text(value) for value in pd.concat([left["账户类型"], right["账户类型"]])
+            if _clean_text(value) not in {"", "未知"}
+        }
+        if len(account_types) > 1:
+            continue
+        candidate = {
+            "sources": (left_source, right_source),
+            "overlap_keys": overlap_keys,
+            "ratio": ratio,
+            "left_coverage": left_coverage,
+            "right_coverage": right_coverage,
+            "enhanced_overlap_count": enhanced_overlap_count,
+            "bank": next(iter(bank_values.values())) if bank_values else "未识别",
+            "judgments": judgments,
+        }
+        candidates.append(candidate)
+        candidate_counts[left_source] += 1
+        candidate_counts[right_source] += 1
+
+    paired_sources = set()
+    for candidate in candidates:
+        left_source, right_source = candidate["sources"]
+        if candidate_counts[left_source] != 1 or candidate_counts[right_source] != 1:
+            continue
+        if left_source in paired_sources or right_source in paired_sources:
+            continue
+        indices = source_groups[left_source].index.tolist() + source_groups[right_source].index.tolist()
+        digest_raw = "\n".join(
+            "|".join(key) for key in sorted(candidate["overlap_keys"].elements())
+        )
+        digest = hashlib.md5(digest_raw.encode("utf-8")).hexdigest()[:10]
+        bank = candidate["bank"]
+        account = f"批次虚拟账户#{bank}#PAIR-{digest}"
+        result.loc[indices, "本方账户"] = account
+        if bank != "未识别":
+            result.loc[indices, "开户行"] = bank
+        result.loc[indices, "__batch_pair_bank"] = bank
+        names = {
+            _clean_text(value) for value in result.loc[indices, "本方名称"] if _clean_text(value)
+        }
+        if len(names) == 1:
+            result.loc[indices, "本方名称"] = next(iter(names))
+        source_names = {
+            source: sorted({_clean_text(value) for value in source_groups[source]["来源文件名"] if _clean_text(value)})
+            for source in (left_source, right_source)
+        }
+        report["配对明细"].append({
+            "批次虚拟账户": account,
+            "batch_pair": bank,
+            "核心交易重合数": sum(candidate["overlap_keys"].values()),
+            "核心交易重合率": round(candidate["ratio"], 4),
+            "左来源覆盖率": round(candidate["left_coverage"], 4),
+            "右来源覆盖率": round(candidate["right_coverage"], 4),
+            "对手增强重合数": candidate["enhanced_overlap_count"],
+            "来源文件": source_names,
+            "来源判断": {
+                os.path.basename(source): candidate["judgments"][source]
+                for source in (left_source, right_source)
+            },
+            "_证据行索引": indices,
+        })
+        report["已配对组数"] += 1
+        report["已配对文件数"] += 2
+        report["已配对交易数"] += len(indices)
+        paired_sources.update((left_source, right_source))
+    return result, report
+
+
+def _match_explicit_account_by_overlap(source_rows, explicit_rows, min_overlap=3, min_ratio=0.9):
+    source_key_rows = defaultdict(list)
+    for index, row in source_rows.iterrows():
+        key = _transaction_overlap_key(row)
+        if key is not None:
+            source_key_rows[key].append(index)
+    source_keys = Counter({key: len(indices) for key, indices in source_key_rows.items()})
+    if not source_keys:
+        return "", {}, [], 0
+    overlaps = {}
+    matched = []
+    for account, rows in explicit_rows.groupby("__explicit_account", sort=True):
+        known_keys = Counter(
+            key for _, row in rows.iterrows()
+            if (key := _transaction_overlap_key(row)) is not None
+        )
+        matched_keys = source_keys & known_keys
+        count = sum(matched_keys.values())
+        ratio = count / len(source_rows)
+        overlaps[account] = {"重合交易数": count, "重合率": round(ratio, 4)}
+        if count >= min_overlap and ratio >= min_ratio:
+            matched.append((account, matched_keys))
+    if len(matched) != 1:
+        return "", overlaps, [], 0
+    account, matched_keys = matched[0]
+    indices = [
+        index
+        for key, count in matched_keys.items()
+        for index in source_key_rows[key][:count]
+    ]
+    return account, overlaps, indices, sum(matched_keys.values())
 
 
 def resolve_batch_accounts(df, min_overlap=2):
@@ -122,6 +399,8 @@ def resolve_batch_accounts(df, min_overlap=2):
     )
     result["__identity_name"] = result["本方名称"].map(_identity_text)
     result["__identity_bank"] = result["开户行"].map(_identity_bank)
+    result["__explicit_account"] = result["本方账户"].map(_explicit_account)
+    all_explicit = result[result["__explicit_account"] != ""]
     unknown = result.loc[result["本方账户"].map(_is_unknown_account)]
     report["未知账号文件数"] = int(unknown[source_col].map(_clean_text).nunique())
 
@@ -138,6 +417,7 @@ def resolve_batch_accounts(df, min_overlap=2):
         accounts = []
         overlaps = {}
         review_reason = ""
+        batch_pair_bank = ""
 
         if not name_key or not bank_key:
             review_reason = "主体名称或银行缺失/不一致，无法建立批次归并候选组"
@@ -159,23 +439,54 @@ def resolve_batch_accounts(df, min_overlap=2):
                     key = _transaction_overlap_key(row)
                     if key is not None:
                         source_key_rows[key].append(index)
-                source_keys = set(source_key_rows)
+                source_keys = Counter({key: len(indices) for key, indices in source_key_rows.items()})
                 known_keys = {}
                 for account, account_rows in explicit.groupby("__explicit_account", sort=True):
-                    known_keys[account] = {
+                    known_keys[account] = Counter(
                         key for _, row in account_rows.iterrows()
                         if (key := _transaction_overlap_key(row)) is not None
-                    }
-                overlaps = {account: len(source_keys & known_keys[account]) for account in accounts}
+                    )
+                overlaps = {
+                    account: sum((source_keys & known_keys[account]).values()) for account in accounts
+                }
                 matched = [account for account, count in overlaps.items() if count >= min_overlap]
                 if len(matched) == 1:
                     target = matched[0]
                     method = "多笔交易重合唯一命中"
                     overlap_count = overlaps[target]
                     matched_keys = source_keys & known_keys[target]
-                    overlap_indices = [index for key in matched_keys for index in source_key_rows[key]]
+                    overlap_indices = [
+                        index
+                        for key, count in matched_keys.items()
+                        for index in source_key_rows[key][:count]
+                    ]
                 else:
                     review_reason = "同主体同银行存在多个明确账号，交易重合证据不能唯一确定归属"
+
+        # 元数据缺失或分组无法建立时，允许用高覆盖率交易重合跨元数据唯一命中明确账号。
+        if not target and not all_explicit.empty:
+            fallback_target, fallback_overlaps, fallback_indices, fallback_count = (
+                _match_explicit_account_by_overlap(source_rows, all_explicit)
+            )
+            if fallback_target:
+                target = fallback_target
+                method = "核心交易高重合跨元数据唯一命中"
+                overlaps = fallback_overlaps
+                overlap_indices = fallback_indices
+                overlap_count = fallback_count
+                matched_rows = all_explicit[all_explicit["__explicit_account"] == target]
+                names = {
+                    _clean_text(value) for value in matched_rows["本方名称"] if _clean_text(value)
+                }
+                banks = {
+                    _clean_text(value) for value in matched_rows["开户行"] if _identity_bank(value)
+                }
+                if len(names) == 1:
+                    result.loc[source_rows.index, "本方名称"] = next(iter(names))
+                if len(banks) == 1:
+                    batch_pair_bank = next(iter(banks))
+                    result.loc[source_rows.index, "开户行"] = batch_pair_bank
+                    result.loc[source_rows.index, "__batch_pair_bank"] = batch_pair_bank
 
         common = {
             "来源标准化文件": os.path.basename(_clean_text(source)),
@@ -192,6 +503,7 @@ def resolve_batch_accounts(df, min_overlap=2):
                 "归并账号": target,
                 "归并方式": method,
                 "重合交易数": overlap_count,
+                "batch_pair": batch_pair_bank,
                 "_证据行索引": overlap_indices,
             })
         else:
@@ -204,7 +516,7 @@ def resolve_batch_accounts(df, min_overlap=2):
             })
 
     report["待复核文件数"] = len(report["待复核明细"])
-    return result.drop(columns=["__identity_name", "__identity_bank"]), report
+    return result.drop(columns=["__identity_name", "__identity_bank", "__explicit_account"]), report
 
 
 def finalize_account_resolution_report(df, report):
@@ -213,6 +525,13 @@ def finalize_account_resolution_report(df, report):
         for item in report[bucket]:
             indices = item.pop("_证据行索引", [])
             item["证据交易唯一编号列表"] = df.loc[indices, "交易唯一编号"].head(20).tolist()
+    return report
+
+
+def finalize_pair_report(df, report):
+    for item in report["配对明细"]:
+        indices = item.pop("_证据行索引", [])
+        item["证据交易唯一编号列表"] = df.loc[indices, "交易唯一编号"].head(20).tolist()
     return report
 
 
@@ -277,6 +596,17 @@ def load_inputs(paths):
         df = pd.read_csv(f, dtype=str)
         df["__源标准化文件"] = os.path.basename(f)
         df["__源标准化文件路径"] = os.path.abspath(f)
+        mapping_path = f[:-len("__standardized.csv")] + "__mapping.json"
+        image = {}
+        if os.path.exists(mapping_path):
+            try:
+                with open(mapping_path, encoding="utf-8") as mapping_file:
+                    image = (json.load(mapping_file).get("文件画像") or {})
+            except (OSError, ValueError, TypeError):
+                image = {}
+        df["__router_bank"] = image.get("router_bank") or image.get("bank") or "未识别"
+        df["__inferred_bank"] = image.get("inferred_bank") or ""
+        df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
         # 文件内行序：standardize 已把倒序文件翻正，故 0..n 即该文件的时间正序（含同秒多笔的原始相对顺序）。
         # 余额校验与输出排序都用它，绝不用交易时间当主键，避免同时刻多笔被打乱产生伪断点。
         df["__fileseq"] = range(len(df))
@@ -470,11 +800,29 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     self_accounts = self_accounts or []
     raw_count = int(len(df))
 
+    # 相同明确账号先互补本方名称/银行；随后将两份高重合、账号都未知的配套文件归到共享虚拟账户。
+    df, metadata_completion = complete_metadata_by_explicit_account(df)
+    df, unknown_pairing = pair_unknown_account_sources(df)
+
     # 阶段一只判断单文件证据；阶段二可利用同批次其它文件的明确账号和交易重合证据补全未知账号。
     # 账号参与交易唯一编号内容指纹，因此必须在跨文件去重前重算编号。
     df, account_resolution = resolve_batch_accounts(df)
+    df["router_bank"] = df["__router_bank"].fillna("未识别")
+    df["inferred_bank"] = df["__inferred_bank"].fillna("")
+    df["batch_pair"] = df.get("__batch_pair_bank", pd.Series("", index=df.index)).fillna("")
+    df["bank_source"] = df.apply(
+        lambda row: (
+            "batch_pair" if _clean_text(row.get("batch_pair")) not in {"", "未知", "未识别"}
+            else "internal_transaction_profile" if _clean_text(row.get("inferred_bank"))
+                 and _clean_text(row.get("router_bank")) in {"", "未知", "未识别"}
+            else "router" if _clean_text(row.get("router_bank")) not in {"", "未知", "未识别"}
+            else _clean_text(row.get("__bank_source")) or "unknown"
+        ),
+        axis=1,
+    )
     df = regenerate_transaction_ids(df)
     account_resolution = finalize_account_resolution_report(df, account_resolution)
+    unknown_pairing = finalize_pair_report(df, unknown_pairing)
 
     # 跨文件/重复导入去重：折叠内容指纹（交易唯一编号）完全相同的交易，仅保留一笔（移除明细记入报告）。
     df, dedup_info = dedup_cross_file(df)
@@ -555,6 +903,9 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
         },
         "账户索引": accts,
         "整合策略": {
+            "同账号元数据补全": "相同明确账号且名称/银行候选唯一时，只补空值，不覆盖冲突值",
+            "双未知账号配对": "两个来源核心交易重合率≥90%、至少3笔、银行和账户类型不冲突且候选唯一时，"
+                          "共享批次虚拟账户；真实账号仍保持未知",
             "批次内账号归并顺序": "加载标准化文件后、重算交易唯一编号前、跨文件去重前",
             "批次内账号归并规则": "同主体同银行只有一个明确账号时自动归并；存在多个明确账号时，"
                               "仅在至少两笔时间/收支金额/余额/对手完全重合且唯一命中时归并，否则人工复核",
@@ -568,6 +919,8 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天、对手为本方名称/账户；仅标记不删除",
             "余额校验范围": "按本方账户分别校验",
         },
+        "同账号元数据补全": metadata_completion,
+        "批次未知账户配对": unknown_pairing,
         "批次内账号归并": account_resolution,
         "跨文件去重": dedup_info,
         "疑似重复交易组": dups,
@@ -589,6 +942,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     out_csv = os.path.join(out_dir, f"{customer}__整合流水.csv")
     out_json = os.path.join(out_dir, f"{customer}__整合报告.json")
     keep = ["交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
+            "router_bank", "inferred_bank", "batch_pair", "bank_source",
             "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
             "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号"]
     for c in keep:                       # 兼容旧版 standardized.csv（无开户行/账户类型列）

@@ -746,6 +746,62 @@ def infer_account_type_from_counterparties(records, min_rows=20, min_ratio=0.3):
     return "", stats
 
 
+LOAN_DISBURSEMENT_KEYWORDS = ["贷款放款"]
+LOAN_REPAYMENT_KEYWORDS = ["贷款扣款", "贷款还款", "贷款柜面还款"]
+
+
+def infer_bank_from_internal_transactions(records, min_rows=3, min_ratio=0.8):
+    """从明确行内业务的结构化对手开户行推测本方银行，不影响 Router 身份。"""
+    candidates = []
+    evidence = []
+    category_counts = defaultdict(Counter)
+    for row in records:
+        business_text = _norm(
+            " ".join(str(row.get(field) or "") for field in ("银行备注", "账户方附言"))
+        )
+        is_disbursement = any(keyword in business_text for keyword in LOAN_DISBURSEMENT_KEYWORDS)
+        is_repayment = any(keyword in business_text for keyword in LOAN_REPAYMENT_KEYWORDS)
+        if not (is_disbursement or is_repayment):
+            continue
+        bank = infer_bank(row.get("对手账户", ""))
+        if not bank:
+            continue
+        candidates.append(bank)
+        category = "loan_disbursement" if is_disbursement else "loan_repayment"
+        category_counts[bank][category] += 1
+        evidence.append({
+            "交易唯一编号": str(row.get("交易唯一编号") or ""),
+            "业务文本": business_text,
+            "候选银行": bank,
+            "业务类型": category,
+        })
+
+    counts = Counter(candidates)
+    top_bank, top_count = counts.most_common(1)[0] if counts else ("", 0)
+    ratio = round(top_count / len(candidates), 4) if candidates else 0
+    profile = {
+        "candidate_count": len(candidates),
+        "candidate_bank_counts": dict(sorted(counts.items())),
+        "candidate_ratio": ratio,
+        "candidate_business_counts": dict(category_counts.get(top_bank, {})),
+        "min_rows": min_rows,
+        "min_ratio": min_ratio,
+        "evidence_transaction_ids": [
+            item["交易唯一编号"] for item in evidence if item["候选银行"] == top_bank
+        ][:20],
+        "evidence": [item for item in evidence if item["候选银行"] == top_bank][:20],
+    }
+    top_categories = category_counts.get(top_bank, {})
+    has_lifecycle = (
+        top_categories.get("loan_disbursement", 0) >= 1
+        and top_categories.get("loan_repayment", 0) >= 1
+    )
+    profile["has_loan_lifecycle"] = has_lifecycle
+    if top_count >= min_rows and ratio >= min_ratio and has_lifecycle:
+        return top_bank, profile
+    return "", profile
+
+
 def resolve_account_type(manual_type, account, metadata_hint, route_type, counterparty_hint=""):
     """账户类型统一口径：人工参数优先；卡 BIN 命中判个人；交易画像只给“拟对公”。"""
     if manual_type:
@@ -949,8 +1005,10 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         route_info.get("account_type", ""),
     )
 
-    # 开户行：优先 --bank（仍做规范化），否则从内容证据推断；文件名仅作兼容兜底，并记录来源。
+    # 开户行：人工参数 > 表头前固定元数据 > Router 稳定模板。文件名和交易行内容均不参与。
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
+    route_bank = str(route_info.get("bank") or "").strip()
+    router_bank = route_bank if route_bank and route_bank not in {"未识别", "未知"} else ""
     bank_name = ""
     bank_infer_source = "未知"
     if bank:
@@ -959,18 +1017,13 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     else:
         bank_name = infer_bank(preamble, upper_text)
         if bank_name:
-            bank_infer_source = "内容"
-        else:
-            bank_name = infer_bank(fname)
-            if bank_name:
-                bank_infer_source = "文件名"
+            bank_infer_source = "metadata"
     if not bank_name and route_info.get("fingerprint_id") == "md5:f25d1960686525515cc3c5d3eb69ad59":
         bank_name = "农村商业银行"
         bank_infer_source = "router"
-    if not bank_name:
-        route_bank = str(route_info.get("bank") or "").strip()
-        if route_bank and "银行" in route_bank and route_bank not in {"微信支付", "支付宝"}:
-            bank_name = route_bank
+    if not bank_name and router_bank:
+        if "银行" in router_bank and router_bank not in {"微信支付", "支付宝"}:
+            bank_name = router_bank
             bank_infer_source = "router"
 
     # ---- 列 -> 标准字段 映射 ----
@@ -1211,6 +1264,20 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     if record_account.get("本方名称") and not (force_customer and customer):
         acct["本方名称"] = record_account["本方名称"]
     counterparty_account_type, counterparty_account_type_stats = infer_account_type_from_counterparties(std_records)
+    inferred_bank, internal_transaction_profile = infer_bank_from_internal_transactions(std_records)
+    bank_conflict = bool(
+        inferred_bank and bank_name and _norm(inferred_bank) != _norm(bank_name)
+    )
+    if inferred_bank and not bank_name:
+        bank_name = inferred_bank
+        bank_infer_source = "internal_transaction_profile"
+    elif bank_conflict:
+        review_items.append({
+            "字段": "开户行",
+            "问题": "Router/元数据银行与行内业务画像冲突",
+            "证据": {"确认银行": bank_name, "画像银行": inferred_bank},
+            "建议动作": "人工核对本方银行和对手开户行字段",
+        })
     account_type, account_type_source, account_type_card_bin = resolve_account_type(
         manual_account_type,
         acct["本方账户"],
@@ -1219,7 +1286,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         counterparty_account_type,
     )
     card_bin_bank_name = bank_name_from_card_bin(account_type_card_bin)
-    if card_bin_bank_name and (not bank_name or bank_infer_source in {"未知", "文件名"}):
+    if card_bin_bank_name and (not bank_name or bank_infer_source == "未知"):
         bank_name = card_bin_bank_name
         bank_infer_source = "card_bin"
     for record in std_records:
@@ -1278,6 +1345,16 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "确认银行": bank_name or "未知",
             "开户行": bank_name,
             "开户行识别来源": bank_infer_source,
+            "router_bank": router_bank or "未识别",
+            "inferred_bank": inferred_bank,
+            "bank_status": (
+                "conflict" if bank_conflict
+                else "inferred" if bank_infer_source == "internal_transaction_profile"
+                else "confirmed" if bank_name else "unknown"
+            ),
+            "bank_source": bank_infer_source,
+            "bank_conflict": bank_conflict,
+            "internal_transaction_profile": internal_transaction_profile,
             "账户类型": account_type,
             "account_type_source": account_type_source,
             "card_bin_match": account_type_card_bin or {},

@@ -16,6 +16,76 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_internal_transaction_profile_infers_bank_without_changing_router_bank(self):
+        records = []
+        for idx, memo in enumerate(("非分期贷款放款", "非分期贷款扣款", "非分期贷款扣款")):
+            records.append({
+                "交易唯一编号": f"TX-{idx}",
+                "对手账户": f"10010{idx} 上饶银行",
+                "银行备注": memo,
+                "账户方附言": "",
+            })
+
+        bank, profile = standardize.infer_bank_from_internal_transactions(records)
+
+        self.assertEqual(bank, "上饶银行")
+        self.assertEqual(profile["candidate_count"], 3)
+        self.assertEqual(profile["candidate_ratio"], 1.0)
+        self.assertEqual(profile["evidence_transaction_ids"], ["TX-0", "TX-1", "TX-2"])
+
+    def test_regular_counterparty_bank_does_not_infer_self_bank(self):
+        records = [
+            {
+                "交易唯一编号": "TX-1",
+                "对手账户": "6217000000000000 中国建设银行",
+                "银行备注": "采购货款",
+                "账户方附言": "",
+            }
+            for _ in range(5)
+        ]
+
+        bank, profile = standardize.infer_bank_from_internal_transactions(records)
+
+        self.assertEqual(bank, "")
+        self.assertEqual(profile["candidate_count"], 0)
+
+    def test_bank_fees_do_not_infer_self_bank(self):
+        records = [
+            {
+                "交易唯一编号": f"TX-{idx}",
+                "对手账户": "100101 上饶银行",
+                "银行备注": "银行手续费",
+                "账户方附言": "",
+            }
+            for idx in range(3)
+        ]
+
+        bank, profile = standardize.infer_bank_from_internal_transactions(records)
+
+        self.assertEqual(bank, "")
+        self.assertEqual(profile["candidate_count"], 0)
+
+    def test_srbank_corporate_pdf_separates_router_and_inferred_bank(self):
+        pdf = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "斑马商业对公流水"
+            / "斑马商业上饶一般户（南昌县支行）-8259流水........pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供斑马商业上饶 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+
+        image = report["文件画像"]
+        self.assertEqual(image["router_bank"], "未识别")
+        self.assertEqual(image["inferred_bank"], "上饶银行")
+        self.assertEqual(image["bank_status"], "inferred")
+        self.assertEqual(image["bank_source"], "internal_transaction_profile")
+        self.assertEqual(image["确认银行"], "上饶银行")
+        self.assertEqual(image["internal_transaction_profile"]["candidate_count"], 11)
     def test_account_metadata_is_not_guessed_without_route_configuration(self):
         info = standardize.sniff_account_info(
             [["交易时间", "交易金额", "余额"]],
@@ -206,7 +276,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(out_rows[1]["对手账户"], "979154850070019810")
         self.assertEqual(report["文件画像"]["本方名称"], "斑马（南昌）商业有限公司")
         self.assertEqual(report["文件画像"]["账户类型"], "对公")
-        self.assertEqual(report["文件画像"]["开户行"], "招商银行")
+        self.assertEqual(report["文件画像"]["开户行"], "")
+        self.assertEqual(report["文件画像"]["router_bank"], "未识别")
+        self.assertEqual(report["文件画像"]["bank_status"], "unknown")
 
     def test_cmb_corporate_excel_uses_statement_account_and_owner(self):
         excel = (
