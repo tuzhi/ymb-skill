@@ -16,6 +16,30 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_boc_payer_payee_columns_resolve_against_inquirer_account(self):
+        excel = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "斑马商业对公流水"
+            / "商业中国银行7920(青山路支行)流水.xls"
+        )
+        if not excel.exists():
+            self.skipTest("本地未提供中国银行查询账号流水样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(report["文件画像"]["conditional_mapping"]), 2)
+        self.assertEqual({row["本方账户"] for row in rows}, {"202264057920"})
+        normalize_name = lambda value: str(value or "").replace(" ", "").replace("（", "(").replace("）", ")")
+        self.assertEqual({normalize_name(row["本方名称"]) for row in rows}, {"斑马(南昌)商业有限公司"})
+
+        self.assertEqual({row["对手账户"] for row in rows}, {""})
+        self.assertEqual({row["对手名称"] for row in rows}, {""})
+
     def test_bank_aliases_are_loaded_from_yaml_without_python_patterns(self):
         self.assertFalse(hasattr(standardize, "BANK_PATTERNS"))
         self.assertEqual(standardize.infer_bank("开户行：中国工商银行"), "中国工商银行")

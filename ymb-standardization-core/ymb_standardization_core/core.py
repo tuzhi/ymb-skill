@@ -619,6 +619,29 @@ def sniff_account_info(rows, header_idx, preamble="", preamble_mapping=None,
     return info
 
 
+def apply_conditional_mapping(row, header, standard_values, rules):
+    """比较原始列与标准字段；条件成立时按 YAML 将原始列写入标准字段。"""
+    raw_values = {
+        _norm(name): str(row[index] or "").strip()
+        for index, name in enumerate(header)
+        if name and index < len(row)
+    }
+    resolved = {}
+    current = dict(standard_values or {})
+    for rule in rules or []:
+        source, target = next(iter(rule["if"].items()))
+        left = raw_values.get(_norm(source), "")
+        right = str(current.get(target) or "").strip()
+        if not left or _norm(left) != _norm(right):
+            continue
+        for raw_field, standard_field in rule["map"].items():
+            value = raw_values.get(_norm(raw_field), "")
+            if value:
+                resolved[standard_field] = value
+                current[standard_field] = value
+    return resolved
+
+
 _CARD_BIN_RULES = None
 _CARD_BIN_BANK_NAMES = None
 
@@ -1021,6 +1044,11 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         for src, dst in (route_info.get("column_mapping") or {}).items()
         if src and dst
     }
+    conditional_source_columns = {
+        _norm(source)
+        for rule in (route_info.get("conditional_mapping") or [])
+        for source in (*rule.get("if", {}).keys(), *rule.get("map", {}).keys())
+    }
     col_to_field = {}      # 列索引 -> 标准字段
     field_to_cols = {}     # 标准字段 -> [列索引...]
     mapping_detail = {}    # 标准字段 -> {原始字段, 置信度, 说明}
@@ -1036,6 +1064,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             field = overrides[_norm(idx)]
         elif _norm(col) in route_column_mapping:
             field = route_column_mapping[_norm(col)]
+        elif _norm(col) in conditional_source_columns:
+            field = None
         else:
             field = match_field(col)
         if not field:
@@ -1178,9 +1208,15 @@ def standardize(path, out_dir=None, customer=None, bank=None,
                 elif not direction:
                     expense = abs(amt)
 
+        conditional_values = apply_conditional_mapping(
+            row,
+            header,
+            {"本方账户": acct["本方账户"], "本方名称": acct["本方名称"]},
+            route_info.get("conditional_mapping") or [],
+        )
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
-        opp_name = cell(field_to_cols.get("对手名称", []))
-        opp_acct = cell(field_to_cols.get("对手账户", []))
+        opp_name = conditional_values.get("对手名称") or cell(field_to_cols.get("对手名称", []))
+        opp_acct = conditional_values.get("对手账户") or cell(field_to_cols.get("对手账户", []))
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
 
@@ -1200,8 +1236,8 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         # 2) 抬头来源：表格上方元数据中存在「户名/客户名称/账号」等信息，由 sniff_account_info() 抽成常量。
         # 若行内数据列有值，优先使用行内值；否则使用抬头常量。这样既支持单账户抬头式流水，
         # 也支持同一文件中多账户/多主体混在明细列里的情况。
-        row_self_acct = cell(field_to_cols.get("本方账户", []))
-        row_self_name = cell(field_to_cols.get("本方名称", []))
+        row_self_acct = conditional_values.get("本方账户") or cell(field_to_cols.get("本方账户", []))
+        row_self_name = conditional_values.get("本方名称") or cell(field_to_cols.get("本方名称", []))
         # 抬头和数据列都没有账号时，才在行级写入文件隔离占位账号，避免跨文件错误合并。
         self_acct = row_self_acct or acct["本方账户"] or f"未识别账户#{stem}"
         cust = customer if force_customer and customer else (row_self_name or acct["本方名称"] or customer)
@@ -1359,6 +1395,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
             "bank": route_info.get("bank", ""),
             "account_type": route_info.get("account_type", ""),
             "column_mapping": route_info.get("column_mapping", {}),
+            "conditional_mapping": route_info.get("conditional_mapping", []),
             "identity_evidence": route_info.get("identity_evidence", []),
             "columns_evidence": route_info.get("columns_evidence", []),
             "ocr_supported": False,

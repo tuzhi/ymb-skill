@@ -30,6 +30,7 @@ class RouteRule:
     extract_patterns: list = field(default_factory=list)
     preamble_mapping: dict = field(default_factory=dict)
     preamble_extractors: list = field(default_factory=list)
+    conditional_mapping: list = field(default_factory=list)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -342,6 +343,28 @@ def _preamble_extractors(fingerprint):
     return normalized
 
 
+def _conditional_mapping(item):
+    rules = _reader_options(item).get("conditional_mapping") or []
+    if not isinstance(rules, list):
+        raise ValueError("reader_options.conditional_mapping must be a list")
+    normalized = []
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError("reader_options.conditional_mapping items must be dicts")
+        condition = rule.get("if") or {}
+        mapping = rule.get("map") or {}
+        if not isinstance(condition, dict) or len(condition) != 1:
+            raise ValueError("conditional_mapping.if must contain exactly one comparison")
+        if not isinstance(mapping, dict) or not mapping:
+            raise ValueError("conditional_mapping.map must be a non-empty dict")
+        source, target = next(iter(condition.items()))
+        normalized.append({
+            "if": {str(source).strip(): str(target).strip()},
+            "map": {str(raw).strip(): str(field).strip() for raw, field in mapping.items()},
+        })
+    return normalized
+
+
 def _reader_options(item):
     options = (item or {}).get("reader_options") or {}
     if not isinstance(options, dict):
@@ -514,6 +537,7 @@ def load_pdf_route_rules():
             extract_patterns=_extract_patterns(item),
             preamble_mapping=_preamble_mapping(fingerprint),
             preamble_extractors=_preamble_extractors(fingerprint),
+            conditional_mapping=_conditional_mapping(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -545,6 +569,7 @@ def load_excel_route_rules():
             extract_patterns=_extract_patterns(item),
             preamble_mapping=_preamble_mapping(fingerprint),
             preamble_extractors=_preamble_extractors(fingerprint),
+            conditional_mapping=_conditional_mapping(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

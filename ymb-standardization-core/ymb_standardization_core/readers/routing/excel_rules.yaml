@@ -103,7 +103,7 @@
         交易用途: 银行备注
         交易摘要: 银行备注
   reader_id: openpyxl_grid
-- id: md5:80c960dd889647481791d4f4a22a9481
+- id: md5:1a38e2af2b9861ca48046144b6335a7e
   file_type: excel
   bank: 中国银行
   account_type: 对公
@@ -111,6 +111,8 @@
     identity:
       any:
       - 查询账号[ Inquirer account number ]
+    preamble_mapping:
+      查询账号[ Inquirer account number ]: 本方账户
     style:
       all:
       - text: 查询账号[ Inquirer account number ]
@@ -131,11 +133,11 @@
         业务类型[ Business type ]: null
         付款人开户行号[ Account holding bank number of payer ]: null
         付款人开户行名[ Payer account bank ]: null
-        付款人账号[ Debit Account No. ]: 本方账户
+        付款人账号[ Debit Account No. ]: null
         付款人名称[ Payer's Name ]: null
         收款人开户行行号[ Account holding bank number of beneficiary ]: null
         收款人开户行名[ Beneficiary account bank ]: null
-        收款人账号[ Payee's Account Number ]: 本方账户
+        收款人账号[ Payee's Account Number ]: null
         收款人名称[ Payee's Name ]: null
         交易日期[ Transaction Date ]: 交易日期
         交易时间[ Transaction time ]: 交易时间
@@ -145,6 +147,16 @@
         交易流水号[ Transaction reference number ]: null
         名义付款人开户行行号[ Opening bank number of nominal payer ]: null
         名义收款人名称[ Name of nominal payee ]: null
+  reader_options:
+    conditional_mapping:
+    - if:
+        付款人账号[ Debit Account No. ]: 本方账户
+      map:
+        付款人名称[ Payer's Name ]: 本方名称
+    - if:
+        收款人账号[ Payee's Account Number ]: 本方账户
+      map:
+        收款人名称[ Payee's Name ]: 本方名称
   reader_id: openpyxl_grid
 - id: md5:3ffb58ecb2fb3217b992a3fad6049fe5
   file_type: excel
