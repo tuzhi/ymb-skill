@@ -1,4 +1,4 @@
-- id: md5:cd253a8df83a6adee5ab5e047e54bc4e
+- id: md5:f1f82a652560900aea7c11139b852abf
   file_type: pdf
   bank: 中国农业银行
   account_type: 个人
@@ -6,6 +6,11 @@
     identity:
       any:
       - 中国农业银行账户活期交易明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账户[:：]\s*([0-9*]+)'
     columns:
       all:
         账户活期交易明细清单: null
@@ -384,7 +389,7 @@
         余额: 账户余额
         渠道: 交易渠道
   reader_id: pdfplumber_table
-- id: md5:1032385a14897d97067ff9b93def1769
+- id: md5:fc9f55594f8e7c3162be31d44b3ccfea
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -392,13 +397,23 @@
     identity:
       any:
       - 中国建设银行个人活期账户全部交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户名称[:：]\s*([^\s]+)'
     columns:
       all:
         卡号/账号: 本方账户
         客户名称: 本方名称
         交易金额: 交易金额
         账户余额: 账户余额
-        对方账号与户名: 对手账户
+        对方账号与户名: null
+  reader_options:
+    split_mapping:
+    - source: 对方账号与户名
+      separator: /
+      left: 对手账户
+      right: 对手名称
+      fallback: 对手名称
   reader_id: pdfplumber_table
 - id: md5:6db7b0df2ee808ba9fd0c559c836200e
   file_type: pdf

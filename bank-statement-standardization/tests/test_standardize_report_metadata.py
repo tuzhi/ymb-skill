@@ -147,6 +147,61 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(info["本方名称"], "刘伟兰")
         self.assertEqual(info["本方账户"], "微信支付#刘伟兰")
 
+    def test_split_mapping_splits_once_and_uses_configured_fallback(self):
+        rules = [{
+            "source": "对方账号与户名",
+            "separator": "/",
+            "left": "对手账户",
+            "right": "对手名称",
+            "fallback": "对手名称",
+        }]
+
+        split = standardize.apply_split_mapping(
+            ["6217002020026242362/邓俊英/附加信息"],
+            ["对方账号与户名"],
+            rules,
+        )
+        fallback = standardize.apply_split_mapping(
+            ["浙江民禾南昌律师事务所"],
+            ["对方账号与户名"],
+            rules,
+        )
+
+        self.assertEqual(split, {
+            "对手账户": "6217002020026242362",
+            "对手名称": "邓俊英/附加信息",
+        })
+        self.assertEqual(fallback, {"对手名称": "浙江民禾南昌律师事务所"})
+
+    def test_cao_jian_pdfs_extract_owner_and_split_ccb_counterparty(self):
+        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曹吉安"
+        abc = folder / "26060309491107220299.pdf"
+        ccb = folder / "hqmx_20260603095339(9).pdf"
+        if not abc.exists() or not ccb.exists():
+            self.skipTest("本地未提供曹吉安 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            abc_csv, _abc_json, _abc_report = standardize.standardize(str(abc), out_dir=tmp)
+            with open(abc_csv, encoding="utf-8-sig", newline="") as f:
+                abc_rows = list(csv.DictReader(f))
+
+            ccb_csv, _ccb_json, ccb_report = standardize.standardize(str(ccb), out_dir=tmp)
+            with open(ccb_csv, encoding="utf-8-sig", newline="") as f:
+                ccb_rows = list(csv.DictReader(f))
+
+        self.assertEqual({row["本方名称"] for row in abc_rows}, {"吴春梅"})
+        self.assertEqual({row["本方账户"] for row in abc_rows}, {"6230520920052630479"})
+        self.assertEqual({row["本方名称"] for row in ccb_rows}, {"吴春梅"})
+        self.assertEqual({row["本方账户"] for row in ccb_rows}, {"6217002020093758837"})
+        self.assertEqual(ccb_rows[0]["对手账户"], "6217002020026242362")
+        self.assertEqual(ccb_rows[0]["对手名称"], "邓俊英")
+        fallback_rows = [row for row in ccb_rows if row["对手名称"] == "浙江民禾南昌律师事务所"]
+        self.assertTrue(fallback_rows)
+        self.assertEqual({row["对手账户"] for row in fallback_rows}, {""})
+        self.assertEqual(ccb_report["字段映射"]["对手账户"]["原始字段"], "对方账号与户名")
+        self.assertEqual(ccb_report["字段映射"]["对手名称"]["原始字段"], "对方账号与户名")
+        self.assertFalse(any(item["字段"] == "对手名称" for item in ccb_report["人工复核事项"]))
+
     def test_report_account_metadata_uses_data_columns_when_header_sniff_is_empty(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
