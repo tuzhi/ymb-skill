@@ -642,8 +642,8 @@ def apply_conditional_mapping(row, header, standard_values, rules):
     return resolved
 
 
-def apply_split_mapping(row, header, rules):
-    """按 YAML 规则把一个复合原始列拆到两个标准字段。"""
+def apply_extract_mapping(row, header, rules):
+    """按 YAML 正则从一个原始列提取一个标准字段。"""
     raw_values = {
         _norm(name): str(row[index] or "").strip()
         for index, name in enumerate(header)
@@ -652,21 +652,19 @@ def apply_split_mapping(row, header, rules):
     resolved = {}
     for rule in rules or []:
         source = _norm(rule.get("source"))
-        separator = str(rule.get("separator") or "")
+        pattern = str(rule.get("pattern") or "")
         value = raw_values.get(source, "")
-        if not source or not separator or not value:
+        if not source or not pattern or not value:
             continue
-        if separator in value:
-            left_value, right_value = (part.strip() for part in value.split(separator, 1))
-            if left_value:
-                resolved[str(rule.get("left") or "").strip()] = left_value
-            if right_value:
-                resolved[str(rule.get("right") or "").strip()] = right_value
-        else:
-            fallback = str(rule.get("fallback") or "").strip()
-            if fallback:
-                resolved[fallback] = value
-    return {field: value for field, value in resolved.items() if field and value}
+        match = re.search(pattern, value)
+        if not match:
+            continue
+        field = str(rule.get("field") or "").strip()
+        replacement = str(rule.get("replacement", r"\1"))
+        extracted = re.sub(pattern, replacement, value, count=1)
+        extracted = re.sub(r"\s+", " ", extracted).strip(" /|,，;；:：-")
+        resolved[field] = extracted
+    return resolved
 
 
 _CARD_BIN_RULES = None
@@ -1073,19 +1071,18 @@ def standardize(path, out_dir=None, bank=None,
         for rule in (route_info.get("conditional_mapping") or [])
         for source in (*rule.get("if", {}).keys(), *rule.get("map", {}).keys())
     }
-    split_mapping_rules = route_info.get("split_mapping") or []
-    split_source_columns = {
+    extract_mapping_rules = route_info.get("extract_mapping") or []
+    extract_source_columns = {
         _norm(rule.get("source"))
-        for rule in split_mapping_rules
+        for rule in extract_mapping_rules
         if str(rule.get("source") or "").strip()
     }
-    split_target_sources = {}
-    for rule in split_mapping_rules:
+    derived_target_sources = {}
+    for rule in extract_mapping_rules:
         source = str(rule.get("source") or "").strip()
-        for target in (rule.get("left"), rule.get("right"), rule.get("fallback")):
-            target = str(target or "").strip()
-            if source and target:
-                split_target_sources.setdefault(target, []).append(source)
+        target = str(rule.get("field") or "").strip()
+        if source and target:
+            derived_target_sources.setdefault(target, []).append(source)
     col_to_field = {}      # 列索引 -> 标准字段
     field_to_cols = {}     # 标准字段 -> [列索引...]
     mapping_detail = {}    # 标准字段 -> {原始字段, 置信度, 说明}
@@ -1101,7 +1098,7 @@ def standardize(path, out_dir=None, bank=None,
             field = overrides[_norm(idx)]
         elif _norm(col) in route_column_mapping:
             field = route_column_mapping[_norm(col)]
-        elif _norm(col) in conditional_source_columns or _norm(col) in split_source_columns:
+        elif _norm(col) in conditional_source_columns or _norm(col) in extract_source_columns:
             field = None
         else:
             field = match_field(col)
@@ -1251,11 +1248,13 @@ def standardize(path, out_dir=None, bank=None,
             {"本方账户": acct["本方账户"], "本方名称": acct["本方名称"]},
             route_info.get("conditional_mapping") or [],
         )
-        split_values = apply_split_mapping(row, header, split_mapping_rules)
-        derived_values = {**split_values, **conditional_values}
+        extract_values = apply_extract_mapping(row, header, extract_mapping_rules)
+        derived_values = {**extract_values, **conditional_values}
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
-        opp_name = derived_values.get("对手名称") or cell(field_to_cols.get("对手名称", []))
-        opp_acct = derived_values.get("对手账户") or cell(field_to_cols.get("对手账户", []))
+        opp_name = (derived_values["对手名称"] if "对手名称" in derived_values
+                    else cell(field_to_cols.get("对手名称", [])))
+        opp_acct = (derived_values["对手账户"] if "对手账户" in derived_values
+                    else cell(field_to_cols.get("对手账户", [])))
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
 
@@ -1275,8 +1274,10 @@ def standardize(path, out_dir=None, bank=None,
         # 2) 抬头来源：表格上方元数据中存在「户名/客户名称/账号」等信息，由 sniff_account_info() 抽成常量。
         # 若行内数据列有值，优先使用行内值；否则使用抬头常量。这样既支持单账户抬头式流水，
         # 也支持同一文件中多账户/多主体混在明细列里的情况。
-        row_self_acct = derived_values.get("本方账户") or cell(field_to_cols.get("本方账户", []))
-        row_self_name = derived_values.get("本方名称") or cell(field_to_cols.get("本方名称", []))
+        row_self_acct = (derived_values["本方账户"] if "本方账户" in derived_values
+                         else cell(field_to_cols.get("本方账户", [])))
+        row_self_name = (derived_values["本方名称"] if "本方名称" in derived_values
+                         else cell(field_to_cols.get("本方名称", [])))
         # 抬头和数据列都没有账号时，才在行级写入文件隔离占位账号，避免跨文件错误合并。
         self_acct = row_self_acct or acct["本方账户"] or f"未识别账户#{stem}"
         cust = row_self_name or acct["本方名称"]
@@ -1368,9 +1369,9 @@ def standardize(path, out_dir=None, bank=None,
             note = "不可信字段，仅作辅助证据" if field in UNTRUSTED else ""
             mapping_detail[field] = {"原始字段": "+".join(header[i] for i in cols),
                                      "置信度": conf, "说明": note}
-        elif split_target_sources.get(field):
+        elif derived_target_sources.get(field):
             mapping_detail[field] = {
-                "原始字段": "+".join(dict.fromkeys(split_target_sources[field])),
+                "原始字段": "+".join(dict.fromkeys(derived_target_sources[field])),
                 "置信度": 0.9,
                 "说明": "由复合列按路由 YAML 拆分",
             }
@@ -1395,7 +1396,7 @@ def standardize(path, out_dir=None, bank=None,
             "字段": "交易时间", "问题": f"{empty_time} 行交易时间解析为空（必填字段不应空缺）",
             "证据": f"日期列={[header[i] for i in date_cols]} 时间列={[header[i] for i in time_cols]}",
             "建议动作": "人工核对这些行的原始日期/时间格式"})
-    if not (field_to_cols.get("对手名称") or split_target_sources.get("对手名称")):
+    if not (field_to_cols.get("对手名称") or derived_target_sources.get("对手名称")):
         review_items.append({"字段": "对手名称", "问题": "未识别到对手名称列，可能嵌在备注中",
                              "证据": f"表头={header}", "建议动作": "人工确认对手名称来源"})
     if not field_to_cols.get("账户余额"):
@@ -1407,7 +1408,7 @@ def standardize(path, out_dir=None, bank=None,
 
     overall_conf = round(min(0.95, 0.5 + 0.1 * len(
         [f for f in ("交易时间", "账户余额", "对手名称")
-         if field_to_cols.get(f) or split_target_sources.get(f)
+         if field_to_cols.get(f) or derived_target_sources.get(f)
          or (f == "交易时间" and (date_cols or time_cols))]
     ) + (0.15 if amount_mode != "未知" else 0)), 2)
 
@@ -1443,7 +1444,7 @@ def standardize(path, out_dir=None, bank=None,
             "account_type": route_info.get("account_type", ""),
             "column_mapping": route_info.get("column_mapping", {}),
             "conditional_mapping": route_info.get("conditional_mapping", []),
-            "split_mapping": route_info.get("split_mapping", []),
+            "extract_mapping": route_info.get("extract_mapping", []),
             "identity_evidence": route_info.get("identity_evidence", []),
             "columns_evidence": route_info.get("columns_evidence", []),
             "ocr_supported": False,

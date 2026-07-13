@@ -389,7 +389,7 @@
         余额: 账户余额
         渠道: 交易渠道
   reader_id: pdfplumber_table
-- id: md5:fc9f55594f8e7c3162be31d44b3ccfea
+- id: md5:4bc420e58476b2ac78274d490018f216
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -406,14 +406,16 @@
         客户名称: 本方名称
         交易金额: 交易金额
         账户余额: 账户余额
-        对方账号与户名: null
+        对方账号与户名: 对手名称
   reader_options:
-    split_mapping:
+    extract_mapping:
     - source: 对方账号与户名
-      separator: /
-      left: 对手账户
-      right: 对手名称
-      fallback: 对手名称
+      field: 对手账户
+      pattern: '^(\d{8,})/.*$'
+    - source: 对方账号与户名
+      field: 对手名称
+      pattern: '^\d{8,}/'
+      replacement: ''
   reader_id: pdfplumber_table
 - id: md5:6db7b0df2ee808ba9fd0c559c836200e
   file_type: pdf
@@ -637,7 +639,7 @@
         对方机构: null
         备注: 银行备注
   reader_id: pdfplumber_coordinate_table
-- id: md5:336aced4f33ef27ad250e418e5b5eb18
+- id: md5:b3931dcff339eccaf63efd597d60132b
   file_type: pdf
   bank: 招商银行
   account_type: 个人
@@ -652,6 +654,9 @@
       any:
       - 招商银行交易流水
       - Transaction Statement of China Merchants Bank
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '账号[:：]\s*([0-9*]+)'
     columns:
       all:
         户 名: 本方名称
@@ -662,6 +667,15 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
+  reader_options:
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^.*?(?<!\d)(\d{8,})(?!\d).*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '(?<!\d)\d{8,}(?!\d)'
+      replacement: ''
   reader_id: pdfplumber_text_lines
 - id: md5:a70735a0cf8fd249d144458896f7346c
   file_type: pdf

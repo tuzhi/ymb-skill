@@ -147,21 +147,24 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(info["本方名称"], "刘伟兰")
         self.assertEqual(info["本方账户"], "微信支付#刘伟兰")
 
-    def test_split_mapping_splits_once_and_uses_configured_fallback(self):
+    def test_extract_mapping_extracts_one_field(self):
         rules = [{
             "source": "对方账号与户名",
-            "separator": "/",
-            "left": "对手账户",
-            "right": "对手名称",
-            "fallback": "对手名称",
+            "field": "对手账户",
+            "pattern": r"^(\d{8,})/.*$",
+        }, {
+            "source": "对方账号与户名",
+            "field": "对手名称",
+            "pattern": r"^\d{8,}/",
+            "replacement": "",
         }]
 
-        split = standardize.apply_split_mapping(
+        split = standardize.apply_extract_mapping(
             ["6217002020026242362/邓俊英/附加信息"],
             ["对方账号与户名"],
             rules,
         )
-        fallback = standardize.apply_split_mapping(
+        fallback = standardize.apply_extract_mapping(
             ["浙江民禾南昌律师事务所"],
             ["对方账号与户名"],
             rules,
@@ -171,7 +174,83 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "对手账户": "6217002020026242362",
             "对手名称": "邓俊英/附加信息",
         })
-        self.assertEqual(fallback, {"对手名称": "浙江民禾南昌律师事务所"})
+        self.assertEqual(fallback, {})
+
+    def test_extract_mapping_maps_account_and_name_separately(self):
+        rules = [{
+            "source": "对手信息",
+            "field": "对手账户",
+            "pattern": r"^.*?(?<!\d)(\d{8,})(?!\d).*$",
+        }, {
+            "source": "对手信息",
+            "field": "对手名称",
+            "pattern": r"(?<!\d)\d{8,}(?!\d)",
+            "replacement": "",
+        }]
+
+        combined = standardize.apply_extract_mapping(
+            ["曾小园 6217002020025481698 招商银行第三方平台交易资金"],
+            ["对手信息"],
+            rules,
+        )
+        account_only = standardize.apply_extract_mapping(
+            ["12591713522210004"],
+            ["对手信息"],
+            rules,
+        )
+
+        self.assertEqual(combined, {
+            "对手账户": "6217002020025481698",
+            "对手名称": "曾小园 招商银行第三方平台交易资金",
+        })
+        self.assertEqual(account_only, {
+            "对手账户": "12591713522210004",
+            "对手名称": "",
+        })
+
+    def test_zeng_xiaoyuan_cmb_pdf_extracts_owner_account_and_counterparty_account(self):
+        pdf = (
+            REPO_ROOT / "bank-statement-standardization" / "testdata" / "曾小园"
+            / "招商银行交易流水(申请时间2026年06月05日13时47分40秒).pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供曾小园招商银行 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 337)
+        self.assertEqual({row["本方名称"] for row in rows}, {"宋志鹏"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"6214853380229907"})
+        self.assertTrue(all(row["对手账户"] for row in rows))
+        self.assertEqual(rows[0]["对手账户"], "6227002022070397612")
+        self.assertEqual(rows[0]["对手名称"], "宋志鹏 招商银行第三方平台交易资金")
+        self.assertEqual(report["字段映射"]["对手账户"]["原始字段"], "对手信息")
+        self.assertEqual(report["文件画像"]["extract_mapping"][0]["field"], "对手账户")
+
+    def test_zeng_xiaoyuan_ccb_excels_split_counterparty_account_and_name(self):
+        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曾小园"
+        samples = [
+            (folder / "hqmx_20260605134404.xls", 3315, "曾小园", "6217002020025481698"),
+            (folder / "hqmx_20260605135123.xls", 1036, "宋志鹏", "6227002022070397612"),
+        ]
+        if not all(path.exists() for path, *_ in samples):
+            self.skipTest("本地未提供曾小园建设银行 XLS 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for path, expected_rows, owner, account in samples:
+                csv_path, _json_path, report = standardize.standardize(str(path), out_dir=tmp)
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                self.assertEqual(len(rows), expected_rows)
+                self.assertEqual({row["本方名称"] for row in rows}, {owner})
+                self.assertEqual({row["本方账户"] for row in rows}, {account})
+                self.assertFalse(any("/" in row["对手账户"] for row in rows))
+                self.assertEqual(report["字段映射"]["对手账户"]["原始字段"], "对方账号与户名")
+                self.assertEqual(report["字段映射"]["对手名称"]["原始字段"], "对方账号与户名")
 
     def test_cao_jian_pdfs_extract_owner_and_split_ccb_counterparty(self):
         folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曹吉安"

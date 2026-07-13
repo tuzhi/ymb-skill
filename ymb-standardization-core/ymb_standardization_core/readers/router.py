@@ -1,7 +1,7 @@
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
 TEXT_TABLE_FINGERPRINTS = {
-    "md5:336aced4f33ef27ad250e418e5b5eb18": "currency",
+    "md5:b3931dcff339eccaf63efd597d60132b": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
     "md5:831325d33aa7b01f10771881ffc3ae76": "cmbc_personal",
 }
@@ -30,7 +30,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "preamble_mapping": route_evidence.get("preamble_mapping", {}) if route_evidence else {},
         "preamble_extractors": route_evidence.get("preamble_extractors", []) if route_evidence else [],
         "conditional_mapping": route_evidence.get("conditional_mapping", []) if route_evidence else [],
-        "split_mapping": route_evidence.get("split_mapping", []) if route_evidence else [],
+        "extract_mapping": route_evidence.get("extract_mapping", []) if route_evidence else [],
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
@@ -135,7 +135,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "preamble_mapping": rule.preamble_mapping,
                 "preamble_extractors": rule.preamble_extractors,
                 "conditional_mapping": rule.conditional_mapping,
-                "split_mapping": rule.split_mapping,
+                "extract_mapping": rule.extract_mapping,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),

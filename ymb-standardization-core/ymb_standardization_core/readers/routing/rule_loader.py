@@ -31,7 +31,7 @@ class RouteRule:
     preamble_mapping: dict = field(default_factory=dict)
     preamble_extractors: list = field(default_factory=list)
     conditional_mapping: list = field(default_factory=list)
-    split_mapping: list = field(default_factory=list)
+    extract_mapping: list = field(default_factory=list)
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -366,30 +366,31 @@ def _conditional_mapping(item):
     return normalized
 
 
-def _split_mapping(item):
-    rules = _reader_options(item).get("split_mapping") or []
+def _extract_mapping(item):
+    rules = _reader_options(item).get("extract_mapping") or []
     if not isinstance(rules, list):
-        raise ValueError("reader_options.split_mapping must be a list")
+        raise ValueError("reader_options.extract_mapping must be a list")
     normalized = []
     for rule in rules:
         if not isinstance(rule, dict):
-            raise ValueError("reader_options.split_mapping items must be dicts")
+            raise ValueError("reader_options.extract_mapping items must be dicts")
         source = str(rule.get("source") or "").strip()
-        separator = str(rule.get("separator") or "").strip()
-        left = str(rule.get("left") or "").strip()
-        right = str(rule.get("right") or "").strip()
-        fallback = str(rule.get("fallback") or "").strip()
-        if not source or not separator or not left or not right:
-            raise ValueError("split_mapping requires source, separator, left and right")
-        normalized_rule = {
+        field = str(rule.get("field") or "").strip()
+        pattern = str(rule.get("pattern") or "").strip()
+        replacement = str(rule.get("replacement", r"\1"))
+        if not source or not field or not pattern:
+            raise ValueError("extract_mapping requires source, field and pattern")
+        try:
+            compiled = re.compile(pattern)
+            compiled.sub(replacement, "")
+        except re.error as exc:
+            raise ValueError(f"invalid extract_mapping pattern or replacement: {pattern}") from exc
+        normalized.append({
             "source": source,
-            "separator": separator,
-            "left": left,
-            "right": right,
-        }
-        if fallback:
-            normalized_rule["fallback"] = fallback
-        normalized.append(normalized_rule)
+            "field": field,
+            "pattern": pattern,
+            "replacement": replacement,
+        })
     return normalized
 
 
@@ -566,7 +567,7 @@ def load_pdf_route_rules():
             preamble_mapping=_preamble_mapping(fingerprint),
             preamble_extractors=_preamble_extractors(fingerprint),
             conditional_mapping=_conditional_mapping(item),
-            split_mapping=_split_mapping(item),
+            extract_mapping=_extract_mapping(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -599,7 +600,7 @@ def load_excel_route_rules():
             preamble_mapping=_preamble_mapping(fingerprint),
             preamble_extractors=_preamble_extractors(fingerprint),
             conditional_mapping=_conditional_mapping(item),
-            split_mapping=_split_mapping(item),
+            extract_mapping=_extract_mapping(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

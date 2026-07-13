@@ -54,7 +54,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
             context={"lines": [], "date_patterns": ["yyyy-mm-dd"]})
 
         self.assertNotIn("parser", abc)
-        self.assertEqual(abc["fingerprint_id"], "md5:cd253a8df83a6adee5ab5e047e54bc4e")
+        self.assertEqual(abc["fingerprint_id"], "md5:f1f82a652560900aea7c11139b852abf")
         self.assertNotIn("parser", jxrcb)
         self.assertEqual(jxrcb["fingerprint_id"], "md5:0bdf0854f29ad6928e2fdd0da1d52dc5")
 

@@ -574,7 +574,7 @@
         余额: 账户余额
         业务编号: null
   reader_id: openpyxl_grid
-- id: md5:64234594676aef35cfeb0968f3774a0c
+- id: md5:23e855a4237def17360251e88e3ffca6
   file_type: excel
   bank: 中国建设银行
   account_type: 个人
@@ -592,7 +592,16 @@
         交易金额: 交易金额
         账户余额: 账户余额
         交易地点/附言: 账户方附言
-        对方账号与户名: 对手账户
+        对方账号与户名: 对手名称
+  reader_options:
+    extract_mapping:
+    - source: 对方账号与户名
+      field: 对手账户
+      pattern: '^(\d{8,})/.*$'
+    - source: 对方账号与户名
+      field: 对手名称
+      pattern: '^\d{8,}/'
+      replacement: ''
   reader_id: openpyxl_grid
 - id: md5:4fb218cc43c550d1fffc02e114d1f6f4
   file_type: excel
