@@ -73,7 +73,6 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
         tagged = pd.DataFrame([{
             "交易唯一编号": "tx-1",
             "客户名称": "测试客户",
-            "主体名称": "测试主体",
             "账户类型": "对公",
             "本方名称": "测试主体",
             "本方账户": "10001",
@@ -142,7 +141,6 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                     irep,
                     srep,
                     pbrep,
-                    [("测试主体", [])],
                     out_path,
                     [],
                 )

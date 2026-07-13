@@ -733,21 +733,6 @@ class Runner:
             "rule_hit_rate": summary["规则命中率"],
         }
 
-    def _subjects_from_standardized(self):
-        import pandas as pd
-        names = []
-        for path in sorted(glob.glob(os.path.join(self.work_dir(), "*__standardized.csv"))):
-            try:
-                df = pd.read_csv(path, dtype=str, encoding="utf-8-sig", usecols=lambda col: col == "本方名称")
-            except Exception:
-                continue
-            if "本方名称" not in df:
-                continue
-            for name in df["本方名称"].dropna().astype(str).str.strip().unique():
-                if name and name.lower() not in {"nan", "none"} and name not in names:
-                    names.append(name)
-        return [(name, []) for name in (names or [self.args.client])]
-
     def stage_4_package(self):
         import pandas as pd
         work = self.work_dir()
@@ -769,7 +754,6 @@ class Runner:
             srep,
             work,
             self.out_dir,
-            self._subjects_from_standardized(),
             skipped,
         )
         return {"deliverable": deliverable}

@@ -158,7 +158,7 @@
       map:
         收款人名称[ Payee's Name ]: 本方名称
   reader_id: openpyxl_grid
-- id: md5:3ffb58ecb2fb3217b992a3fad6049fe5
+- id: md5:9160ecccb80e57358b52ad52bd6d75ef
   file_type: excel
   bank: 未识别
   account_type: 对公
@@ -166,6 +166,11 @@
     identity:
       any:
       - 账户交易明细
+    preamble_mapping:
+      账户: 本方账户
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '(?:^|\s)账户\s+\S+\s+([^\s]+)'
     metadata:
       all:
         sheet: 数据导出
@@ -181,7 +186,7 @@
         col_max: 1
     columns:
       all:
-        账户: 本方名称
+        账户: null
         交易流水号: null
         交易日期: 交易日期
         借方发生额: 支出金额

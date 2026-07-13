@@ -170,7 +170,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
 
         self.assertEqual(set(resolved["本方账户"]), {"791912215110008"})
         self.assertEqual(report["已归并文件数"], 1)
-        self.assertEqual(report["归并明细"][0]["归并方式"], "同主体同银行唯一明确账号")
+        self.assertEqual(report["归并明细"][0]["归并方式"], "同户名同银行唯一明确账号")
         self.assertEqual(report["待复核明细"], [])
 
     def test_high_overlap_resolves_unknown_when_bank_metadata_is_missing(self):
@@ -393,7 +393,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(output["本方账户"].nunique(), 1)
         self.assertEqual(report["批次未知账户配对"]["已配对组数"], 1)
         self.assertEqual(report["客户整合概览"]["跨文件去重笔数"], 3)
-        self.assertTrue({"router_bank", "inferred_bank", "batch_pair", "bank_source"}.issubset(output.columns))
+        self.assertTrue({"router_bank", "inferred_bank", "batch_pair", "bank_source"}.isdisjoint(output.columns))
 
     def test_zebra_batch_finishes_with_expected_accounts_and_transactions(self):
         folder = ROOT / "testdata" / "斑马商业对公流水"
@@ -416,7 +416,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(overview["原始交易数"], 11107)
         self.assertEqual(overview["跨文件去重笔数"], 5548)
         self.assertEqual(overview["整合交易数"], 5559)
-        self.assertEqual(overview["整合账户数"], 11)
+        self.assertEqual(overview["整合账户数"], 6)
         self.assertEqual(report["同账号元数据补全"]["补全交易数"], 203)
         self.assertEqual(report["批次未知账户配对"]["配对明细"][0]["核心交易重合数"], 50)
 

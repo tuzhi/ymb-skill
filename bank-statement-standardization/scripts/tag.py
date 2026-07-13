@@ -318,6 +318,11 @@ def _apply_alipay_order_reversals(out_df):
 
 def tag(csv_path, rules_path, out_dir=None):
     df = pd.read_csv(csv_path, dtype=str)
+    # 银行识别过程证据只保留在 mapping/整合报告，不能进入标准业务流水。
+    df = df.drop(
+        columns=["router_bank", "inferred_bank", "batch_pair", "bank_source"],
+        errors="ignore",
+    )
     buckets = load_rules(rules_path)
 
     rows_out, review = [], []

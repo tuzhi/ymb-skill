@@ -44,7 +44,7 @@ def _clean_text(value):
 
 
 def _identity_text(value):
-    """规范主体名称等身份文本，仅消除字符宽度、空白和大小写差异。"""
+    """规范本方户名等身份文本，仅消除字符宽度、空白和大小写差异。"""
     return "".join(unicodedata.normalize("NFKC", _clean_text(value)).split()).casefold()
 
 
@@ -420,7 +420,7 @@ def resolve_batch_accounts(df, min_overlap=2):
         batch_pair_bank = ""
 
         if not name_key or not bank_key:
-            review_reason = "主体名称或银行缺失/不一致，无法建立批次归并候选组"
+            review_reason = "本方名称或银行缺失/不一致，无法建立批次归并候选组"
         else:
             identity_group = result.loc[
                 (result["__identity_name"] == name_key) & (result["__identity_bank"] == bank_key)
@@ -429,10 +429,10 @@ def resolve_batch_accounts(df, min_overlap=2):
             explicit = identity_group.loc[identity_group["__explicit_account"] != ""]
             accounts = sorted(explicit["__explicit_account"].unique().tolist())
             if not accounts:
-                review_reason = "同主体同银行组内没有可验证的明确本方账号"
+                review_reason = "同户名同银行组内没有可验证的明确本方账号"
             elif len(accounts) == 1:
                 target = accounts[0]
-                method = "同主体同银行唯一明确账号"
+                method = "同户名同银行唯一明确账号"
             else:
                 source_key_rows = defaultdict(list)
                 for index, row in source_rows.iterrows():
@@ -461,7 +461,7 @@ def resolve_batch_accounts(df, min_overlap=2):
                         for index in source_key_rows[key][:count]
                     ]
                 else:
-                    review_reason = "同主体同银行存在多个明确账号，交易重合证据不能唯一确定归属"
+                    review_reason = "同户名同银行存在多个明确账号，交易重合证据不能唯一确定归属"
 
         # 元数据缺失或分组无法建立时，允许用高覆盖率交易重合跨元数据唯一命中明确账号。
         if not target and not all_explicit.empty:
@@ -491,7 +491,7 @@ def resolve_batch_accounts(df, min_overlap=2):
         common = {
             "来源标准化文件": os.path.basename(_clean_text(source)),
             "来源文件": source_files,
-            "主体名称": _clean_text(source_rows["本方名称"].iloc[0]),
+            "本方名称": _clean_text(source_rows["本方名称"].iloc[0]),
             "银行": _clean_text(source_rows["开户行"].iloc[0]),
         }
         if target:
@@ -807,19 +807,6 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     # 阶段一只判断单文件证据；阶段二可利用同批次其它文件的明确账号和交易重合证据补全未知账号。
     # 账号参与交易唯一编号内容指纹，因此必须在跨文件去重前重算编号。
     df, account_resolution = resolve_batch_accounts(df)
-    df["router_bank"] = df["__router_bank"].fillna("未识别")
-    df["inferred_bank"] = df["__inferred_bank"].fillna("")
-    df["batch_pair"] = df.get("__batch_pair_bank", pd.Series("", index=df.index)).fillna("")
-    df["bank_source"] = df.apply(
-        lambda row: (
-            "batch_pair" if _clean_text(row.get("batch_pair")) not in {"", "未知", "未识别"}
-            else "internal_transaction_profile" if _clean_text(row.get("inferred_bank"))
-                 and _clean_text(row.get("router_bank")) in {"", "未知", "未识别"}
-            else "router" if _clean_text(row.get("router_bank")) not in {"", "未知", "未识别"}
-            else _clean_text(row.get("__bank_source")) or "unknown"
-        ),
-        axis=1,
-    )
     df = regenerate_transaction_ids(df)
     account_resolution = finalize_account_resolution_report(df, account_resolution)
     unknown_pairing = finalize_pair_report(df, unknown_pairing)
@@ -942,7 +929,6 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     out_csv = os.path.join(out_dir, f"{customer}__整合流水.csv")
     out_json = os.path.join(out_dir, f"{customer}__整合报告.json")
     keep = ["交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
-            "router_bank", "inferred_bank", "batch_pair", "bank_source",
             "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
             "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号"]
     for c in keep:                       # 兼容旧版 standardized.csv（无开户行/账户类型列）

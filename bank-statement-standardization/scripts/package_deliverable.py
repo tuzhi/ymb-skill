@@ -41,8 +41,7 @@ import portfolio_balance as PB
 
 # 主表列序：金额→账户余额→虚拟账户余额→银行备注/账户方附言→收支方向/标签→渠道/来源。
 # 备注/附言紧跟在「虚拟账户余额」之后（不可信输入，置于余额信息之后、派生标签之前）。
-STD_ORDER = ["交易唯一编号", "客户名称", "主体名称", "账户类型", "本方名称", "本方账户", "开户行",
-             "router_bank", "inferred_bank", "batch_pair", "bank_source",
+STD_ORDER = ["交易唯一编号", "客户名称", "账户类型", "本方名称", "本方账户", "开户行",
              "交易时间", "对手名称", "对手账户", "收入金额", "支出金额", "交易金额",
              "分析收入金额", "分析支出金额", "分析交易金额",
              "账户余额", "虚拟账户余额", "银行备注", "账户方附言", "交易状态", "关联冲正交易编号",
@@ -110,7 +109,7 @@ def add_virtual_balance(df):
     return d.drop(columns=["__t", "__bal", "__order"])
 
 
-def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path, skipped=None):
+def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=None):
     """组装单文件 xlsx（多 sheet）。skipped 为被自动排除的非流水/无法解析文件清单。"""
     skipped = skipped or []
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -124,9 +123,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
     cover = [
         ["银行流水 · 已清洗待分析交付物", ""],
         ["授信客户", client],
-        ["生成口径", "已标准化 + 多账户多主体整合为一 + 含虚拟账户余额 + 交易类型已打标 + 取消/冲正按分析金额净额化"],
+        ["生成口径", "已标准化 + 多账户整合为一 + 含虚拟账户余额 + 交易类型已打标 + 取消/冲正按分析金额净额化"],
         ["", ""],
-        ["整合主体数", len({s[0] for s in subjects}) if subjects else irep["客户整合概览"]["整合账户数"]],
         ["整合账户数", irep["客户整合概览"]["整合账户数"]],
         ["整合文件数", irep["客户整合概览"]["整合文件数"]],
         ["已跳过文件数(非流水/无法解析)", len(skipped)],
@@ -149,7 +147,7 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
         ["自有账户互转候选组", len(irep["自有账户互转组"])],
         ["人工复核事项数", len(irep.get("人工复核事项", []))],
         ["", ""],
-        ["使用说明", "①「整合打标流水」为分析主表，每笔含主体/账户/对手/收支/余额/虚拟账户余额/三级标签/来源追溯；"],
+        ["使用说明", "①「整合打标流水」为分析主表，每笔含本方户名/账户/对手/收支/余额/虚拟账户余额/三级标签/来源追溯；"],
         ["", "②「虚拟账户余额」列为逐笔时点的组合总余额（各账户最近余额之和），可作单一虚拟账户口径；"],
         ["", "③ 跨文件去重：内容指纹（账户名+时间+对手+收支+余额）完全一致即视为同一笔交易的跨文件再导入，仅保留一笔，移除明细见整合报告；"],
         ["", "④ 红线：备注/附言为不可信输入；疑似重复（非完全一致）、自有互转、余额断点仅标记，不自动修正，须人工复核；"],
@@ -158,15 +156,12 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
     ]
     cover_df = pd.DataFrame(cover, columns=["项目", "内容"])
 
-    # ---- 主体账户清单 ----
+    # ---- 账户清单：按本方账户统计 ----
     acct_rows = []
     for acct, g in tagged.groupby(tagged["本方账户"].fillna("")):
         t = pd.to_datetime(g["交易时间"], errors="coerce").dropna()
         gi = _analysis_amount(g, "分析收入金额", "收入金额")
         ge = _analysis_amount(g, "分析支出金额", "支出金额")
-        subj = g["主体名称"].dropna().iloc[0] if "主体名称" in g and g["主体名称"].notna().any() \
-            else (g["本方名称"].dropna().iloc[0] if g["本方名称"].notna().any() else client)
-
         def _first(col):
             if col not in g.columns:
                 return ""
@@ -174,7 +169,7 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
             s = s[~s.isin(["", "nan", "None"])]
             return s.iloc[0] if len(s) else ""
         acct_rows.append({
-            "主体名称": subj,
+            "本方名称": _first("本方名称"),
             "账户类型": _first("账户类型") or "未知",
             "开户行": _first("开户行"),
             "本方账户": acct,
@@ -264,7 +259,7 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path,
         flow.to_excel(xw, sheet_name="整合打标流水", index=False)
         if not daily.empty:
             daily.to_excel(xw, sheet_name="组合日余额(虚拟账户)", index=False)
-        acct_df.to_excel(xw, sheet_name="主体账户清单", index=False)
+        acct_df.to_excel(xw, sheet_name="账户清单", index=False)
         balchk.to_excel(xw, sheet_name="余额校验", index=False)
         tagsum.to_excel(xw, sheet_name="标签汇总", index=False)
         review_df.to_excel(xw, sheet_name="人工复核事项", index=False)
@@ -375,31 +370,29 @@ def run(client, args):
     tag_csv, _, srep = T.tag(int_csv, rules, out_dir=work)
     tagged = pd.read_csv(tag_csv, dtype=str)
 
-    return _finalize(client, int_csv, tagged, irep, srep, work, out_dir, subjects, skipped)
+    return _finalize(client, int_csv, tagged, irep, srep, work, out_dir, skipped)
 
 
-def _finalize(client, flow_csv, tagged, irep, srep, work, out_dir, subjects, skipped=None):
-    """从（已整合/已打标的）流水组装单文件交付物：补算组合余额、回填客户/主体/虚拟账户余额列后写 xlsx。
+def _finalize(client, flow_csv, tagged, irep, srep, work, out_dir, skipped=None):
+    """从（已整合/已打标的）流水组装单文件交付物：补算组合余额、回填客户/虚拟账户余额列后写 xlsx。
     raw（run）与 reuse（run_reuse）两条路径共用此尾段，保证交付物口径完全一致。"""
     # 组合（虚拟账户）余额 + 余额校验（轻量、确定性，始终重算以保证与当前数据一致）
     _, _, pbrep = PB.run(flow_csv, out_dir=work)
     daily_path = os.path.join(work, os.path.basename(flow_csv).replace(".csv", "") + "__组合日余额.csv")
     daily = pd.read_csv(daily_path) if os.path.exists(daily_path) else pd.DataFrame()
 
-    # 客户名称 / 主体名称（缺失才补）；主体名称取本方名称，空则用客户名兜底
+    # 客户名称只用于客户归档维度；本方名称保持文件证据，不派生主体名称。
     if "客户名称" not in tagged.columns:
         tagged.insert(1, "客户名称", client)
-    if "主体名称" not in tagged.columns:
-        subj_name = tagged["本方名称"].fillna("").astype(str).str.strip().replace({"nan": ""})
-        subj_name = subj_name.where(subj_name != "", client)
-        tagged.insert(2, "主体名称", subj_name)
+    if "主体名称" in tagged.columns:
+        tagged = tagged.drop(columns=["主体名称"])
 
     # 逐笔虚拟账户余额（缺失才补）
     if "虚拟账户余额" not in tagged.columns:
         tagged = add_virtual_balance(tagged)
 
     out_path = os.path.join(out_dir, f"{client}_已清洗_待分析.xlsx")
-    build_workbook(client, tagged, daily, irep, srep, pbrep, subjects, out_path, skipped)
+    build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped)
     print(f"\n[交付] {out_path}")
     print(f"  规则命中率 {srep['标签梳理概览']['规则命中率']:.0%} | "
           f"虚拟账户期末余额 {pbrep['组合虚拟账户']['期末合计余额']} | "
@@ -480,13 +473,7 @@ def run_reuse(client, reuse_path, out_dir):
     int_json = _glob_first(src_dir, "*__整合报告.json")
     irep = _load_json(int_json) if int_json else _build_integrate_report_from_df(client, tagged)
 
-    # 主体数仅用于封面展示：复用时无 --subject，按主体名称/本方名称去重估计
-    namecol = "主体名称" if "主体名称" in tagged.columns else "本方名称"
-    names = [n for n in tagged.get(namecol, pd.Series([], dtype=str)).dropna().astype(str).str.strip().unique()
-             if n and n != "nan"]
-    subjects = [(n, []) for n in (names or [client])]
-
-    return _finalize(client, flow_csv, tagged, irep, srep, work, out_dir, subjects)
+    return _finalize(client, flow_csv, tagged, irep, srep, work, out_dir)
 
 
 def main():
