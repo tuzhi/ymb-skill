@@ -27,6 +27,19 @@ ROUTER_SPEC.loader.exec_module(router)
 
 
 class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
+    def test_matched_jxrcb_fingerprint_is_authoritative_for_standardized_bank(self):
+        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(path), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(report["文件画像"]["decision"], "matched")
+        self.assertEqual(report["文件画像"]["开户行识别来源"], "router")
+        self.assertEqual(report["文件画像"]["确认银行"], "江西农商银行")
+        self.assertEqual({row["开户行"] for row in rows}, {"江西农商银行"})
+
     def test_abc_and_jxrcb_routes_are_separate(self):
         abc = router.route_pdf(
             "中国农业银行账户活期交易明细清单 "

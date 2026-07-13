@@ -132,49 +132,40 @@ SYNONYMS = {
 # 不可信字段（仅作辅助证据，不决定账户归属）
 UNTRUSTED = {"银行备注", "账户方附言"}
 
-# ---- 开户行推断词典 -----------------------------------------------------------
-# (规范行名, [同义/简称...])。按列表顺序匹配，命中即返回，故把更具体/更易混淆的放前面：
-# 区域行（三湘/长沙/上饶/江西…）和「农商/农信/邮储」先于工农中建交等大行简称，避免「农行/中行」误命中。
-BANK_PATTERNS = [
-    ("湖南三湘银行", ["三湘银行", "三湘"]),
-    ("长沙银行", ["长沙银行"]),
-    ("上饶银行", ["上饶银行"]),
-    ("江西银行", ["江西银行"]),
-    ("中国邮政储蓄银行", ["邮政储蓄", "邮储银行", "邮储"]),
-    ("农村商业银行", ["农村商业银行", "农商银行", "农商行"]),
-    ("农村信用社", ["农村信用", "农信社", "信用社", "农村合作银行"]),
-    ("村镇银行", ["村镇银行"]),
-    ("上海浦东发展银行", ["浦东发展银行", "浦发银行", "浦发"]),
-    ("中国工商银行", ["工商银行", "工行"]),
-    ("中国农业银行", ["农业银行", "农行"]),
-    ("中国建设银行", ["建设银行", "建行"]),
-    ("交通银行", ["交通银行", "交行"]),
-    ("中国银行", ["中国银行", "中行"]),
-    ("招商银行", ["招商银行", "招行"]),
-    ("中信银行", ["中信银行", "中信"]),
-    ("中国民生银行", ["民生银行", "民生"]),
-    ("兴业银行", ["兴业银行", "兴业"]),
-    ("中国光大银行", ["光大银行", "光大"]),
-    ("平安银行", ["平安银行"]),
-    ("广发银行", ["广发银行", "广发"]),
-    ("华夏银行", ["华夏银行", "华夏"]),
-    ("北京银行", ["北京银行"]),
-    ("上海银行", ["上海银行"]),
-    ("南京银行", ["南京银行"]),
-    ("宁波银行", ["宁波银行"]),
-    ("杭州银行", ["杭州银行"]),
-]
+_BANK_ALIAS_RULES = None
+
+
+def load_bank_alias_rules():
+    """从 routing YAML 加载银行规范名及别名，较长别名优先匹配。"""
+    global _BANK_ALIAS_RULES
+    if _BANK_ALIAS_RULES is not None:
+        return _BANK_ALIAS_RULES
+    path = os.path.join(os.path.dirname(__file__), "readers", "routing", "bank_aliases.yaml")
+    with open(path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    aliases = data.get("bank_aliases") if isinstance(data, dict) else None
+    if not isinstance(aliases, dict):
+        raise ValueError(f"invalid bank alias config: {path}")
+    rules = []
+    for canonical, values in aliases.items():
+        if not canonical or not isinstance(values, list):
+            raise ValueError(f"invalid bank alias entry: {canonical!r}")
+        for alias in values:
+            normalized = _norm(alias)
+            if normalized:
+                rules.append((normalized, str(canonical).strip()))
+    _BANK_ALIAS_RULES = sorted(rules, key=lambda item: len(item[0]), reverse=True)
+    return _BANK_ALIAS_RULES
 
 
 def infer_bank(*texts):
-    """从文件名/抬头/表头等文本里推断开户行规范名。命中不了返回 ""。"""
+    """使用 YAML 别名配置规范化银行名；命中不了返回 ""。"""
     text = _norm(" ".join(str(t) for t in texts if t))
     if not text:
         return ""
-    for canonical, syns in BANK_PATTERNS:
-        for s in syns:
-            if s in text:
-                return canonical
+    for alias, canonical in load_bank_alias_rules():
+        if alias in text:
+            return canonical
     return ""
 
 # 分页导出时夹在数据中的小计/页眉页脚噪声行关键词。
@@ -1005,7 +996,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         route_info.get("account_type", ""),
     )
 
-    # 开户行：人工参数 > 表头前固定元数据 > Router 稳定模板。文件名和交易行内容均不参与。
+    # 开户行：人工参数 > matched Router YAML > 表头前固定元数据。文件名和交易行内容均不参与。
     upper_text = " ".join(str(c) for r in rows[:header_idx + 1] for c in (r or []) if c)
     route_bank = str(route_info.get("bank") or "").strip()
     router_bank = route_bank if route_bank and route_bank not in {"未识别", "未知"} else ""
@@ -1014,17 +1005,14 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     if bank:
         bank_name = infer_bank(bank) or bank
         bank_infer_source = "参数"
-    else:
-        bank_name = infer_bank(preamble, upper_text)
-        if bank_name:
-            bank_infer_source = "metadata"
-    if not bank_name and route_info.get("fingerprint_id") == "md5:f25d1960686525515cc3c5d3eb69ad59":
-        bank_name = "农村商业银行"
-        bank_infer_source = "router"
-    if not bank_name and router_bank:
+    elif route_info.get("decision") == "matched" and router_bank:
         if "银行" in router_bank and router_bank not in {"微信支付", "支付宝"}:
             bank_name = router_bank
             bank_infer_source = "router"
+    if not bank_name:
+        bank_name = infer_bank(preamble, upper_text)
+        if bank_name:
+            bank_infer_source = "metadata"
 
     # ---- 列 -> 标准字段 映射 ----
     overrides = overrides or {}

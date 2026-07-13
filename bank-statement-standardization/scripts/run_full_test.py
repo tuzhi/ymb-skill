@@ -150,7 +150,7 @@ def main(argv=None):
     parser.add_argument("--testdata-root", default=str(DEFAULT_TESTDATA))
     parser.add_argument("--output-root", help="默认是 testdata 同级 testoutput")
     parser.add_argument("--run-id", help="默认使用 YYYYMMDDHHMMSS")
-    parser.add_argument("--sleep-seconds", type=float, default=0.5, help="每处理完一个客户交付物后的暂停秒数，默认 0.5 秒")
+    parser.add_argument("--sleep-seconds", type=float, default=2, help="每处理完一个客户交付物后的暂停秒数，默认 0.5 秒")
     args = parser.parse_args(argv)
 
     testdata_root = Path(args.testdata_root)

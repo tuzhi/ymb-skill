@@ -16,6 +16,11 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_bank_aliases_are_loaded_from_yaml_without_python_patterns(self):
+        self.assertFalse(hasattr(standardize, "BANK_PATTERNS"))
+        self.assertEqual(standardize.infer_bank("开户行：中国工商银行"), "中国工商银行")
+        self.assertEqual(standardize.infer_bank("开户行：工行南昌支行"), "中国工商银行")
+
     def test_internal_transaction_profile_infers_bank_without_changing_router_bank(self):
         records = []
         for idx, memo in enumerate(("非分期贷款放款", "非分期贷款扣款", "非分期贷款扣款")):
