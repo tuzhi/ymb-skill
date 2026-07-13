@@ -214,13 +214,15 @@ class OrchestratorManifestTest(unittest.TestCase):
 
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.stage_manifest_path = str(runtime)
+            runner.manifest_path = str(runtime)
+            runner.manifest = json.loads(runtime.read_text(encoding="utf-8"))
 
             stage_id, spec = runner.first_pending_stage()
 
             self.assertEqual(stage_id, "stage_1_standardize")
             self.assertEqual(spec, {"status": ""})
 
-    def test_stage_1_ignores_token_vault_archive_name_and_keeps_alias_only(self):
+    def test_stage_1_keeps_fixed_client_and_does_not_accept_upstream_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             bundle = tmp_path / "tokenized_batch_bundle"
@@ -255,7 +257,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.args = SimpleNamespace(
                 folder=str(bundle),
                 client="tokenized_batch_bundle",
-                force_name=False,
                 account_type=None,
                 client_arg_provided=False,
                 client_explicit=False,
@@ -271,11 +272,10 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(result["mode"], "manifest_declared_standardized_input")
             self.assertEqual(result["processed_files"], 2)
             self.assertEqual(result["upstream_manifest"]["schema_version"], "bank-statement-standardization.manifest/v1")
-            self.assertEqual(runner.args.client, "陈某001")
-            self.assertEqual(runner.manifest["client"], "陈某001")
+            self.assertEqual(runner.args.client, "tokenized_batch_bundle")
+            self.assertEqual(runner.manifest["client"], "tokenized_batch_bundle")
             self.assertNotIn("archive_name", result["upstream_manifest"])
             self.assertEqual(result["upstream_manifest"]["archive_id"], "tv_20260612_fa8d03d0")
-            self.assertEqual(result["upstream_manifest"]["client_alias"], "陈某001")
             self.assertTrue(result["upstream_manifest"]["archive_name_present"])
             self.assertTrue((work / "001_raw-a__standardized.csv").is_file())
             self.assertTrue((work / "002_raw-b__standardized.csv").is_file())
@@ -283,31 +283,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertTrue((work / "002_raw-b__mapping.json").is_file())
             validation = orchestrator.V.validate_standardize(str(work))
             self.assertEqual(validation["standardized_files"], 2)
-
-    def test_unconfirmed_technical_client_name_warns(self):
-        runner = orchestrator.Runner.__new__(orchestrator.Runner)
-        runner.args = SimpleNamespace(
-            client="tokenized_batch_bundle",
-            client_explicit=False,
-        )
-        runner.manifest = {"client": "tokenized_batch_bundle", "warnings": []}
-        runner.write_manifest = lambda: None
-        events = []
-        runner.emit = lambda level, code, message, **extra: events.append(
-            {"level": level, "code": code, "message": message, **extra}
-        )
-
-        runner.apply_upstream_archive_metadata(
-            {
-                "archive_name": "真实客户名称"
-            }
-        )
-
-        self.assertEqual(runner.args.client, "tokenized_batch_bundle")
-        self.assertEqual(events[0]["level"], "WARNING")
-        self.assertEqual(events[0]["code"], "CLIENT_NAME_UNCONFIRMED")
-        self.assertNotIn("真实客户名称", str(events[0]))
-        self.assertTrue(events[0]["upstream_archive_name_present"])
 
     def test_copy_stage_manifest_resets_runtime_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -340,16 +315,17 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.template_manifest_path = str(template)
             runner.stage_manifest_path = str(runtime)
+            runner.manifest_path = str(runtime)
 
             runner.copy_stage_manifest()
 
             data = json.loads(runtime.read_text(encoding="utf-8"))
             stage = data["stage_1_standardize"]
             self.assertFalse(stage["ai_fallback_used"])
-            self.assertEqual(stage["ai_fallback_dir"], "")
             self.assertEqual(stage["ai_fallback_artifacts"], [])
-            self.assertEqual(stage["started_at"], "")
-            self.assertIsNone(stage["duration_seconds"])
+            self.assertNotIn("ai_fallback_dir", stage)
+            self.assertNotIn("started_at", stage)
+            self.assertNotIn("duration_seconds", stage)
             self.assertEqual(stage["status"], "")
             self.assertEqual(stage["ai_fallback_info"], "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。")
 

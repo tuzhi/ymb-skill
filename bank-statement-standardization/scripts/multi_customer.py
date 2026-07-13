@@ -14,9 +14,9 @@ multi_customer.py — 多客户标准化流水整合与验证（阶段四，对�
 
 用法：
   python multi_customer.py --batch 批次名 \
-      --customer "客户名:整合或打标csv[:客户编号]" [--customer ...] \
+      --client "客户名:整合或打标csv[:客户编号]" [--client ...] \
       [--out-dir DIR]
-  也可：--customer "客户名:目录"  自动取该目录下 *__整合流水.csv 或 *__打标流水.csv
+  也可：--client "客户名:目录"  自动取该目录下 *__整合流水.csv 或 *__打标流水.csv
 
 输出：
   <批次名>__多客户底表.csv
@@ -257,11 +257,11 @@ def multi(batch, specs, out_dir=None):
 def main():
     ap = argparse.ArgumentParser(description="多客户标准化流水整合与验证")
     ap.add_argument("--batch", required=True)
-    ap.add_argument("--customer", action="append", required=True,
+    ap.add_argument("--client", action="append", required=True,
                     help='格式 "客户名:csv或目录[:客户编号]"，可重复')
     ap.add_argument("--out-dir")
     args = ap.parse_args()
-    out_csv, out_json, report = multi(args.batch, args.customer, out_dir=args.out_dir)
+    out_csv, out_json, report = multi(args.batch, args.client, out_dir=args.out_dir)
     o = report["批次概览"]
     x = report["跨客户校验"]
     print(f"[OK] 批次 {args.batch}: {o['客户数量']} 客户 / {o['交易数量']} 笔 / 质量评分 {o['整体质量评分']}")

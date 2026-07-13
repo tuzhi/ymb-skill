@@ -17,7 +17,7 @@ ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流
   - 低置信项进入人工复核，不自动沉淀为模板。
 
 用法：
-  python standardize.py <原始文件> [--out-dir DIR] [--customer 户名兜底值]
+  python standardize.py <原始文件> [--out-dir DIR]
       [--bank 银行名] [--account-type 对公|个人|未知] [--header-row N]
       [--map 原始列=标准字段 ...]   # 人工覆盖自动映射
 
@@ -953,9 +953,8 @@ def adopt_standardized_input(path, out_dir=None):
     return csv_path, json_path, report
 
 
-def standardize(path, out_dir=None, customer=None, bank=None,
-                account_type=None, header_row=None, overrides=None,
-                force_customer=False):
+def standardize(path, out_dir=None, bank=None,
+                account_type=None, header_row=None, overrides=None):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
@@ -1010,8 +1009,6 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         route_info.get("preamble_extractors"),
         route_info.get("column_mapping"),
     )
-    if customer and (force_customer or not acct["本方名称"]):
-        acct["本方名称"] = customer
     account_type, account_type_source, account_type_card_bin = resolve_account_type(
         manual_account_type,
         acct["本方账户"],
@@ -1240,7 +1237,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
         row_self_name = conditional_values.get("本方名称") or cell(field_to_cols.get("本方名称", []))
         # 抬头和数据列都没有账号时，才在行级写入文件隔离占位账号，避免跨文件错误合并。
         self_acct = row_self_acct or acct["本方账户"] or f"未识别账户#{stem}"
-        cust = customer if force_customer and customer else (row_self_name or acct["本方名称"] or customer)
+        cust = row_self_name or acct["本方名称"]
 
         # 交易金额 = 收入金额(空→0) − 支出金额(空→0)，带符号（流入为正、流出为负）；
         # 两者皆空（本行未解析出金额）时留空，不臆造 0。
@@ -1285,7 +1282,7 @@ def standardize(path, out_dir=None, customer=None, bank=None,
     record_account = infer_account_from_records(std_records)
     if record_account.get("本方账户"):
         acct["本方账户"] = record_account["本方账户"]
-    if record_account.get("本方名称") and not (force_customer and customer):
+    if record_account.get("本方名称"):
         acct["本方名称"] = record_account["本方名称"]
     counterparty_account_type, counterparty_account_type_stats = infer_account_type_from_counterparties(std_records)
     inferred_bank, internal_transaction_profile = infer_bank_from_internal_transactions(std_records)
@@ -1451,9 +1448,6 @@ def main():
     ap = argparse.ArgumentParser(description="单文件银行流水标准化")
     ap.add_argument("file")
     ap.add_argument("--out-dir")
-    ap.add_argument("--customer")
-    ap.add_argument("--force-customer", action="store_true",
-                    help="强制用 --customer 覆盖原始文件识别出的本方名称；默认 --customer 仅作缺失兜底")
     ap.add_argument("--bank")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--header-row", type=int)
@@ -1469,9 +1463,8 @@ def main():
 
     try:
         csv_path, json_path, report = standardize(
-            args.file, out_dir=args.out_dir, customer=args.customer, bank=args.bank,
-            account_type=args.account_type, header_row=args.header_row, overrides=overrides,
-            force_customer=args.force_customer)
+            args.file, out_dir=args.out_dir, bank=args.bank,
+            account_type=args.account_type, header_row=args.header_row, overrides=overrides)
     except NotABankStatement as e:
         sys.exit(f"[SKIP] {os.path.basename(args.file)}：{e.reason}")
 

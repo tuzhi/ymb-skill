@@ -32,8 +32,6 @@ DONE = "DONE"
 ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
-MAX_JOINED_CLIENT_NAME_PART_LEN = 20
-TECHNICAL_ARCHIVE_NAMES = {"tokenized_batch_bundle", "batch", "bundle"}
 SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests", "build"}
 SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
 DEFAULT_SKILL_NAME = "bank-statement-standardization"
@@ -167,144 +165,49 @@ def load_parent_run_context(run_root, parent_run_id):
         raise RuntimeError(f"parent run 不存在：{parent_dir}")
 
     stage_manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
-    run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
+    # 兼容历史 run；新 run 的运行上下文已合并到 manifest.json。
+    legacy_run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
     inherited_fallbacks = []
+    stage_statuses = []
+    parent_error = ""
     for stage_id, spec in stage_manifest.items():
         if not str(stage_id).startswith("stage_"):
             continue
         if not isinstance(spec, dict):
             continue
+        status = spec.get("status", "")
+        stage_statuses.append(status)
         if not (spec.get("ai_fallback_used") or spec.get("ai_fallback_dir") or spec.get("ai_fallback_artifacts")):
             continue
+        fallback_dir = os.path.join(parent_dir, "fallback", stage_id)
+        fallback_request = read_json_if_exists(os.path.join(fallback_dir, "fallback_request.json"), {})
+        if status == ERROR and not parent_error:
+            parent_error = str(fallback_request.get("error") or "")
         inherited_fallbacks.append({
             "stage": stage_id,
             "name": spec.get("name", ""),
             "script": spec.get("script", ""),
             "validator": spec.get("validator", ""),
-            "parent_status": spec.get("status", ""),
-            "parent_fallback_dir": spec.get("ai_fallback_dir", ""),
+            "parent_status": status,
+            "parent_fallback_dir": fallback_dir,
             "parent_fallback_artifacts": spec.get("ai_fallback_artifacts", []),
         })
+
+    if any(status == ERROR for status in stage_statuses):
+        parent_status = "error"
+    elif stage_statuses and all(status == DONE for status in stage_statuses):
+        parent_status = "success"
+    else:
+        parent_status = "running"
 
     return {
         "parent_run_id": parent_run_id,
         "parent_run_dir": parent_dir,
-        "parent_status": run_manifest.get("status", ""),
-        "parent_error": run_manifest.get("error", ""),
+        "parent_client": stage_manifest.get("client") or legacy_run_manifest.get("client", ""),
+        "parent_status": legacy_run_manifest.get("status") or parent_status,
+        "parent_error": legacy_run_manifest.get("error") or parent_error,
         "inherited_fallbacks": inherited_fallbacks,
     }
-
-
-def parse_balance(value):
-    text = str(value or "").strip()
-    if not text or text.lower() in {"nan", "none"}:
-        return None
-    text = text.replace(",", "").replace("，", "").replace("￥", "").replace("¥", "")
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
-def is_archive_name_candidate(name):
-    text = str(name or "").strip()
-    if not text or text.lower() in {"nan", "none"}:
-        return False
-    if text in {"称", "户名", "账户名称", "本方名称"}:
-        return False
-    if any(mark in text for mark in ("/", "\\", "*", "＊")):
-        return False
-    if re.search(r"\d{6,}", text):
-        return False
-    if re.fullmatch(r"[A-Za-z0-9_\- ]+", text) and not is_english_person_name(text):
-        return False
-    return True
-
-
-def is_english_person_name(text):
-    """允许有账户/余额证据支撑的英文个人姓名作为归档名。"""
-    parts = [part for part in re.split(r"\s+", str(text or "").strip()) if part]
-    if len(parts) < 2:
-        return False
-    return all(re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", part) for part in parts)
-
-
-def is_technical_archive_name(name):
-    text = str(name or "").strip().lower()
-    if not text:
-        return False
-    if text in TECHNICAL_ARCHIVE_NAMES:
-        return True
-    return text.startswith(("tokenized_", "batch_", "bundle_")) or text.endswith("_batch_bundle")
-
-
-def rank_client_name_candidates(work_roots):
-    """按本方账户聚合归档名候选；只使用有本方账户和账户余额的标准化行。"""
-    by_account = {}
-    for work_root in work_roots:
-        for root, _, files in os.walk(work_root):
-            for filename in files:
-                if not filename.endswith("__standardized.csv"):
-                    continue
-                path = os.path.join(root, filename)
-                with open(path, "r", encoding="utf-8-sig", newline="") as f:
-                    for row in csv.DictReader(f):
-                        name = (row.get("本方名称") or "").strip()
-                        account = (row.get("本方账户") or "").strip()
-                        balance = parse_balance(row.get("账户余额"))
-                        if not account or balance is None or not is_archive_name_candidate(name):
-                            continue
-                        source = (row.get("来源文件名") or filename).strip()
-                        bucket = by_account.setdefault(account, {})
-                        stats = bucket.setdefault(name, {"rows": 0, "sources": set()})
-                        stats["rows"] += 1
-                        if source:
-                            stats["sources"].add(source)
-
-    candidates = {}
-    for account, names in by_account.items():
-        if not names:
-            continue
-        name, account_stats = max(names.items(), key=lambda item: (item[1]["rows"], len(item[1]["sources"]), item[0]))
-        stats = candidates.setdefault(name, {"accounts": set(), "rows": 0, "sources": set()})
-        stats["accounts"].add(account)
-        stats["rows"] += account_stats["rows"]
-        stats["sources"].update(account_stats["sources"])
-
-    ranked = []
-    for name, stats in candidates.items():
-        account_count = len(stats["accounts"])
-        source_count = len(stats["sources"])
-        row_count = stats["rows"]
-        ranked.append({
-            "name": name,
-            "account_count": account_count,
-            "balance_row_count": row_count,
-            "source_file_count": source_count,
-            "score": account_count * 100 + source_count * 10 + min(row_count, 99),
-        })
-    return sorted(ranked, key=lambda item: (-item["score"], -item["account_count"], -item["source_file_count"], item["name"]))
-
-
-def joined_short_client_name_candidates(ranked):
-    names = []
-    for item in ranked:
-        name = item.get("name", "").strip()
-        if name and len(name) <= MAX_JOINED_CLIENT_NAME_PART_LEN and name not in names:
-            names.append(name)
-    return "_".join(names) if names else None
-
-
-def infer_unique_client_name(work_roots):
-    ranked = rank_client_name_candidates(work_roots)
-    if not ranked:
-        return None, ranked
-    if len(ranked) == 1:
-        return ranked[0]["name"], ranked
-    top, second = ranked[0], ranked[1]
-    if top["score"] >= second["score"] * 2 and top["account_count"] > second["account_count"]:
-        return top["name"], ranked
-    return joined_short_client_name_candidates(ranked), ranked
 
 
 def inventory(folder):
@@ -530,38 +433,29 @@ class Runner:
         self.out_dir = os.path.join(self.run_dir, "artifacts")
         self.receipt_dir = os.path.join(self.run_dir, "receipts")
         self.event_path = os.path.join(self.run_dir, "events.jsonl")
-        self.stage_manifest_path = os.path.join(self.run_dir, "manifest.json")
-        self.manifest_path = os.path.join(self.run_dir, "run_manifest.json")
+        self.manifest_path = os.path.join(self.run_dir, "manifest.json")
+        # 兼容少量内部/测试调用；两者现在指向同一份事实来源。
+        self.stage_manifest_path = self.manifest_path
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
+        self.warning_events = []
+        self.receipt_sequence = 0
         self.original_input_folder = os.path.abspath(args.folder)
+        parent_context = load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None
+        if parent_context and parent_context.get("parent_client"):
+            parent_client = parent_context["parent_client"]
+            if args.client_arg_provided and args.client != parent_client:
+                raise RuntimeError(
+                    f"父运行客户名称不一致：父运行={parent_client}，本次显式参数={args.client}"
+                )
+            args.client = parent_client
         self.input_dir, self.input_snapshot_details = prepare_input_snapshot(self.original_input_folder, self.run_dir)
         self.args.folder = self.input_dir
         self.copy_stage_manifest()
-        self.manifest = {
-            "run_id": self.run_id,
-            "status": "running",
-            "mode": "production",
-            "started_at": now(),
-            "skill": self.skill_metadata["name"],
-            "skill_version": self.skill_metadata["version"],
-            "client": args.client,
-            "client_arg_provided": args.client_arg_provided,
-            "client_confirmed": args.client_explicit,
-            "original_input_folder": self.original_input_folder,
-            "input_folder": self.input_dir,
-            "error_bundle_mode": args.error_bundle_mode,
-            "python": platform.python_version(),
-            "model": os.environ.get("SKILL_ACTIVE_MODEL", ""),
-            "parent_run_id": args.parent_run_id or "",
-            "rerun_reason": args.rerun_reason or "",
-            "parent_run": load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None,
-            "skill_source": collect_skill_source_snapshot(self.skill_dir),
-            "stages": [],
-            "warnings": [],
-            "input_inventory": inventory(self.input_dir),
-            "input_snapshot": self.input_snapshot_details,
-        }
+        self.manifest["client"] = args.client
+        self.manifest["parent_run_id"] = args.parent_run_id or ""
+        self.manifest["rerun_reason"] = args.rerun_reason or ""
+        self.manifest["skipped_inputs"] = []
         self.write_manifest()
 
     def copy_stage_manifest(self):
@@ -569,69 +463,39 @@ class Runner:
             raise RuntimeError(f"缺少 skill 资源模板 {MANIFEST_TEMPLATE_RELATIVE_PATH}：{self.template_manifest_path}")
         with open(self.template_manifest_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        self.write_stage_manifest(self.sanitize_stage_manifest_template(data))
+        self.manifest = self.sanitize_stage_manifest_template(data)
+        self.write_manifest()
 
     def sanitize_stage_manifest_template(self, data):
-        """Reset runtime-only fields before creating a new run manifest."""
+        """Reset runtime-only fields before creating a new runtime manifest."""
         for stage_id, spec in data.items():
             if not str(stage_id).startswith("stage_"):
                 continue
             spec["ai_fallback_used"] = False
-            spec["ai_fallback_dir"] = ""
             spec["ai_fallback_artifacts"] = []
-            spec["started_at"] = ""
-            spec["duration_seconds"] = None
             spec["status"] = ""
+            spec.pop("ai_fallback_dir", None)
+            spec.pop("started_at", None)
+            spec.pop("duration_seconds", None)
         return data
 
-    def read_stage_manifest(self):
-        with open(self.stage_manifest_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def write_stage_manifest(self, data):
-        with open(self.stage_manifest_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
     def update_stage_status(self, stage_id, status):
-        data = self.read_stage_manifest()
-        if stage_id not in data:
+        if stage_id not in self.manifest:
             raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        data[stage_id]["status"] = status
-        self.write_stage_manifest(data)
+        self.manifest[stage_id]["status"] = status
+        self.write_manifest()
 
-    def mark_stage_started(self, stage_id):
-        data = self.read_stage_manifest()
-        if stage_id not in data:
+    def mark_stage_ai_fallback_used(self, stage_id, artifacts=None):
+        if stage_id not in self.manifest:
             raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        if not data[stage_id].get("started_at"):
-            data[stage_id]["started_at"] = now()
-        self.write_stage_manifest(data)
-
-    def mark_stage_done(self, stage_id):
-        data = self.read_stage_manifest()
-        if stage_id not in data:
-            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        finished_at = datetime.now(LOCAL_TZ)
-        started_at = data[stage_id].get("started_at")
-        if started_at:
-            started_dt = datetime.fromisoformat(started_at)
-            data[stage_id]["duration_seconds"] = round((finished_at - started_dt).total_seconds(), 3)
-        else:
-            data[stage_id]["duration_seconds"] = None
-        self.write_stage_manifest(data)
-
-    def mark_stage_ai_fallback_used(self, stage_id, fallback_dir, artifacts=None):
-        data = self.read_stage_manifest()
-        if stage_id not in data:
-            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        data[stage_id]["ai_fallback_used"] = True
-        data[stage_id]["ai_fallback_dir"] = fallback_dir
-        data[stage_id]["ai_fallback_artifacts"] = artifacts or data[stage_id].get("ai_fallback_artifacts", [])
-        self.write_stage_manifest(data)
+        self.manifest[stage_id]["ai_fallback_used"] = True
+        self.manifest[stage_id]["ai_fallback_artifacts"] = (
+            artifacts or self.manifest[stage_id].get("ai_fallback_artifacts", [])
+        )
+        self.write_manifest()
 
     def first_pending_stage(self):
-        data = self.read_stage_manifest()
-        for stage_id, spec in data.items():
+        for stage_id, spec in self.manifest.items():
             if not str(stage_id).startswith("stage_"):
                 continue
             status = spec.get("status", "")
@@ -652,16 +516,14 @@ class Runner:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
         print(f"[{level}][{code}] {message}")
         if level == "WARNING":
-            self.manifest["warnings"].append(event)
-        self.write_manifest()
+            self.warning_events.append(event)
 
     def receipt(self, stage, status, details=None):
         row = {"stage": stage, "status": status, "at": now(), "details": details or {}}
-        path = os.path.join(self.receipt_dir, f"{len(self.manifest['stages']) + 1:02d}-{stage}.json")
+        self.receipt_sequence += 1
+        path = os.path.join(self.receipt_dir, f"{self.receipt_sequence:02d}-{stage}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(row, f, ensure_ascii=False, indent=2)
-        self.manifest["stages"].append(row)
-        self.write_manifest()
 
     def work_dir(self):
         return os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
@@ -778,14 +640,12 @@ class Runner:
                 "rows": row_count,
             })
 
-        self.apply_upstream_archive_metadata(upstream_manifest)
         self.manifest["skipped_inputs"] = []
         self.manifest["upstream_manifest"] = {
             "path": manifest_path,
             "schema_version": upstream_manifest.get("schema_version", ""),
             "producer": upstream_manifest.get("producer", ""),
             "archive_id": upstream_manifest.get("archive_id", ""),
-            "client_alias": upstream_manifest.get("client_alias", ""),
             "archive_name_present": bool(str(upstream_manifest.get("archive_name") or "").strip()),
             "stage_1_standardize": self.declared_stage_1(upstream_manifest),
         }
@@ -796,47 +656,6 @@ class Runner:
             "processed_files": len(processed),
             "standardized": processed,
         }
-
-    def apply_upstream_archive_metadata(self, upstream_manifest):
-        if self.args.client_explicit:
-            return
-        alias = str(upstream_manifest.get("client_alias") or "").strip()
-        if alias and not is_technical_archive_name(alias):
-            self.set_client_name(
-                alias,
-                code="CLIENT_ALIAS_FROM_UPSTREAM_MANIFEST",
-                message=f"已从上游 Token Vault manifest 接收非敏归档别名：{alias}",
-            )
-            return
-        if is_technical_archive_name(self.args.client):
-            self.emit(
-                "WARNING",
-                "CLIENT_NAME_UNCONFIRMED",
-                f"上游 manifest 未提供可用的非敏归档别名，当前仅保留技术目录名：{self.args.client}",
-                upstream_archive_name_present=bool(str(upstream_manifest.get("archive_name") or "").strip()),
-                upstream_archive_id=upstream_manifest.get("archive_id", ""),
-            )
-
-    def set_client_name(self, client, *, code, message, extra=None, warning=False):
-        old_client = self.args.client
-        if client == old_client:
-            return
-        old_work = os.path.join(self.out_dir, "_工作区", safe_name(old_client))
-        new_work = os.path.join(self.out_dir, "_工作区", safe_name(client))
-        old_xlsx = os.path.join(self.out_dir, f"{old_client}_已清洗_待分析.xlsx")
-        new_xlsx = os.path.join(self.out_dir, f"{client}_已清洗_待分析.xlsx")
-        if os.path.exists(old_xlsx):
-            os.replace(old_xlsx, new_xlsx)
-        if os.path.isdir(old_work) and os.path.abspath(old_work) != os.path.abspath(new_work):
-            os.replace(old_work, new_work)
-        self.args.client = client
-        self.manifest["client"] = client
-        self.write_manifest()
-        payload = extra or {}
-        if warning:
-            self.emit("WARNING", code, message, **payload)
-        else:
-            self.emit("INFO", code, message, **payload)
 
     def stage_1_standardize(self):
         work = self.work_dir()
@@ -861,9 +680,7 @@ class Runner:
                 csv_path, json_path, report = S.standardize(
                     path,
                     out_dir=work,
-                    customer=self.args.client if self.args.force_name else None,
                     account_type=self.args.account_type,
-                    force_customer=self.args.force_name,
                 )
                 processed.append({
                     "input": path,
@@ -882,22 +699,6 @@ class Runner:
 
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
         self.write_manifest()
-        if self.args.client_arg_provided and not self.args.client_explicit:
-            self.emit(
-                "WARNING",
-                "UNCONFIRMED_CLIENT_ARG_USED",
-                f"--client 未经 --client-confirmed 确认，仅作为临时归档名参与启动：{self.args.client}",
-                client_arg=self.args.client,
-            )
-        old_work = work
-        if not self.args.client_explicit:
-            self.refine_client_name()
-        new_work = self.work_dir()
-        if os.path.abspath(old_work) != os.path.abspath(new_work):
-            for row in processed:
-                for key in ("csv", "mapping"):
-                    if row[key].startswith(old_work):
-                        row[key] = new_work + row[key][len(old_work):]
         return {"processed_files": len(processed), "standardized": processed}
 
     def stage_2_integrate(self):
@@ -1044,10 +845,6 @@ class Runner:
         ]
         if self.args.account_type:
             cmd += ["--account-type", self.args.account_type]
-        if self.args.force_name:
-            cmd.append("--force-name")
-        if not self.args.client_explicit:
-            cmd.append("--infer-client-name")
         self.emit("INFO", "PIPELINE_START", "开始执行正式流水线", command=cmd)
         lines = []
         cp = subprocess.Popen(
@@ -1070,33 +867,6 @@ class Runner:
         if returncode:
             raise RuntimeError(f"业务流水线失败，退出码 {returncode}：{output[-1000:]}")
         self.receipt("package_deliverable", "ok", {"command": cmd})
-
-    def refine_client_name(self):
-        """客户名未经确认时，用主流程已解析出的唯一户名替换暂存目录名。"""
-        if self.args.client_explicit:
-            return
-        old_client = self.args.client
-        old_work = os.path.join(self.out_dir, "_工作区", safe_name(old_client))
-        work_roots = [old_work] if os.path.isdir(old_work) else []
-        if not work_roots:
-            work_roots = [
-                path for path in glob.glob(os.path.join(self.out_dir, "_工作区", "*"))
-                if os.path.isdir(path)
-            ]
-        client, ranked = infer_unique_client_name(work_roots)
-        if not client:
-            if ranked:
-                self.emit("WARNING", "CLIENT_NAME_AMBIGUOUS",
-                          f"未形成唯一高分归档名候选，保留输入文件夹名作为归档名：{old_client}",
-                          candidate_scores=ranked[:10])
-            return
-        if client == old_client:
-            return
-        self.set_client_name(
-            client,
-            code="CLIENT_NAME_INFERRED",
-            message=f"已从流水识别归档名：{client}",
-        )
 
     def validate(self):
         work = os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
@@ -1150,6 +920,7 @@ class Runner:
         fallback_dir = self.fallback_dir(stage_id)
         os.makedirs(fallback_dir, exist_ok=True)
         fallback_request = {
+            "client": self.args.client,
             "stage": stage_id,
             "name": spec.get("name", ""),
             "script": spec.get("script", ""),
@@ -1173,7 +944,7 @@ class Runner:
             max_retry=MAX_AI_FALLBACK_RETRY,
             error=str(exc),
         )
-        self.mark_stage_ai_fallback_used(stage_id, fallback_dir, fallback_artifacts)
+        self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
         self.update_stage_status(stage_id, ERROR)
         self.receipt(stage_id, "error", {
             "script": spec.get("script", ""),
@@ -1181,7 +952,6 @@ class Runner:
             "validator": spec.get("validator", ""),
             "ai_fallback_refs": spec.get("ai_fallback_refs", []),
             "ai_fallback_used": True,
-            "ai_fallback_dir": fallback_dir,
             "ai_fallback_artifacts": fallback_artifacts,
             "error": str(exc),
         })
@@ -1191,7 +961,6 @@ class Runner:
             stage_id, spec = self.first_pending_stage()
             if not stage_id:
                 return
-            self.mark_stage_started(stage_id)
             self.emit(
                 "INFO",
                 "STAGE_START",
@@ -1214,7 +983,6 @@ class Runner:
                     "validator": spec.get("validator", ""),
                     "result": validate_result,
                 })
-                self.mark_stage_done(stage_id)
                 self.update_stage_status(stage_id, DONE)
                 self.emit("INFO", "STAGE_DONE", f"阶段 {stage_id} 已通过脚本和检测", stage=stage_id)
             except Exception as exc:
@@ -1228,32 +996,16 @@ class Runner:
             tag = V.validate_tag(self.work_dir())
             final = V.validate_final(self.out_dir, self.args.client, tagged_rows=tag["tagged_rows"])
             self.receipt("validate_final", "ok", final)
-            self.manifest.update({
-                "status": "success", "finished_at": now(),
-                "artifact_inventory": inventory(self.out_dir),
-                "deliverable": final["deliverable"],
-                "stage_manifest": self.stage_manifest_path,
-            })
-            self.write_manifest()
             self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{final['deliverable']}")
-            if self.manifest["warnings"]:
+            if self.warning_events:
                 bundle = self.bundle_path("WARNING")
-                self.manifest["warning_bundle"] = bundle
-                self.write_manifest()
                 self.emit("INFO", "WARNING_BUNDLE_READY", f"告警任务已完成归档：{bundle}")
                 self.bundle("WARNING")
             return 0
         except Exception as exc:
             with open(os.path.join(self.run_dir, "traceback.txt"), "w", encoding="utf-8") as f:
                 f.write(traceback.format_exc())
-            self.manifest.update({
-                "status": "error", "finished_at": now(), "error": str(exc),
-                "artifact_inventory": inventory(self.out_dir),
-            })
-            self.write_manifest()
             bundle = self.bundle_path("ERROR")
-            self.manifest["error_bundle"] = bundle
-            self.write_manifest()
             self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}；错误包：{bundle}")
             self.bundle("ERROR")
             return 1
@@ -1264,13 +1016,10 @@ def main():
     ap = argparse.ArgumentParser(description="银行流水标准化正式生产编排器")
     ap.add_argument("command", choices=["run"], help="正式执行流水线")
     ap.add_argument("--client",
-                    help="临时归档名；只有同时传 --client-confirmed 时才视为人工确认名")
-    ap.add_argument("--client-confirmed", action="store_true",
-                    help="确认 --client 是人工核实后的真实归档名；未传时仍会优先使用流水证据推断")
+                    help="客户名称兼交付物归档名；未传时使用原始输入文件夹名称")
     ap.add_argument("--folder", required=True)
     ap.add_argument("--run-root", help="每次运行的独立归档目录，默认 ./runs")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
-    ap.add_argument("--force-name", action="store_true")
     ap.add_argument("--require-model",
                     help="可选：要求宿主通过 SKILL_ACTIVE_MODEL 提供并匹配模型 ID")
     ap.add_argument("--parent-run-id",
@@ -1281,11 +1030,6 @@ def main():
                     help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full")
     args = ap.parse_args()
     args.client_arg_provided = bool(args.client)
-    if args.client_confirmed and not args.client_arg_provided:
-        ap.error("--client-confirmed 必须与 --client 同时使用")
-    if args.force_name and not args.client_confirmed:
-        ap.error("--force-name 会影响本方名称兜底/覆盖，必须同时传 --client 和 --client-confirmed")
-    args.client_explicit = bool(args.client_confirmed)
     if not args.client:
         args.client = os.path.basename(os.path.abspath(args.folder).rstrip(os.sep)) or "未命名客户"
     return Runner(args).execute()

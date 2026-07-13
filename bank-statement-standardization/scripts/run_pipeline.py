@@ -22,7 +22,7 @@ import portfolio_balance as PB
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("customer")
+    ap.add_argument("client")
     ap.add_argument("folder")
     ap.add_argument("--bank")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
@@ -39,13 +39,12 @@ def main():
             msg += "；已跳过：" + "，".join(f"{n}（{w}）" for n, w in skipped)
         sys.exit(msg)
 
-    print(f"=== 客户：{args.customer}  候选流水文件 {len(raw_files)} 个 ===")
+    print(f"=== 客户：{args.client}  候选流水文件 {len(raw_files)} 个 ===")
     print("\n[阶段一] 单文件标准化与字段映射")
     for f in raw_files:
         try:
             csv_path, json_path, rep = S.standardize(
-                f, out_dir=out_dir, customer=args.customer,
-                bank=args.bank, account_type=args.account_type)
+                f, out_dir=out_dir, bank=args.bank, account_type=args.account_type)
             st = rep["标准化统计"]
             nrev = len(rep["人工复核事项"])
             print(f"  [OK] {os.path.basename(f)} -> {st['交易笔数']} 笔"
@@ -63,7 +62,7 @@ def main():
             print(f"  [SKIP] {n}：{w}")
 
     print("\n[阶段二] 单客户多文件整合与验证")
-    int_csv, int_json, irep = I.integrate(args.customer, [out_dir], out_dir=out_dir)
+    int_csv, int_json, irep = I.integrate(args.client, [out_dir], out_dir=out_dir)
     o = irep["客户整合概览"]
     print(f"  账户 {o['整合账户数']} / 交易 {o['整合交易数']} / 质量评分 {o['整体质量评分']} / "
           f"期间 {o['交易期间']['开始日期']}~{o['交易期间']['结束日期']}")

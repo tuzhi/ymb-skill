@@ -1,7 +1,7 @@
 {
   "skill": {
     "name": "bank-statement-standardization",
-    "version": "1.2.11"
+    "version": "1.2.12"
   },
   "stage_1_standardize": {
     "name": "单文件标准化与字段映射",
@@ -14,10 +14,7 @@
     "ai_fallback_info": "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。",
     "validator": "scripts/validate_stage.py::validate_standardize",
     "ai_fallback_used": false,
-    "ai_fallback_dir": "",
     "ai_fallback_artifacts": [],
-    "started_at": "",
-    "duration_seconds": null,
     "status": ""
   },
   "stage_2_integrate": {
@@ -29,10 +26,7 @@
     ],
     "validator": "scripts/validate_stage.py::validate_integrate",
     "ai_fallback_used": false,
-    "ai_fallback_dir": "",
     "ai_fallback_artifacts": [],
-    "started_at": "",
-    "duration_seconds": null,
     "status": ""
   },
   "stage_2b_portfolio_balance": {
@@ -44,10 +38,7 @@
     ],
     "validator": "scripts/validate_stage.py::validate_portfolio",
     "ai_fallback_used": false,
-    "ai_fallback_dir": "",
     "ai_fallback_artifacts": [],
-    "started_at": "",
-    "duration_seconds": null,
     "status": ""
   },
   "stage_3_tag": {
@@ -59,10 +50,7 @@
     ],
     "validator": "scripts/validate_stage.py::validate_tag",
     "ai_fallback_used": false,
-    "ai_fallback_dir": "",
     "ai_fallback_artifacts": [],
-    "started_at": "",
-    "duration_seconds": null,
     "status": ""
   },
   "stage_4_package": {
@@ -75,10 +63,7 @@
     ],
     "validator": "scripts/validate_stage.py::validate_final",
     "ai_fallback_used": false,
-    "ai_fallback_dir": "",
     "ai_fallback_artifacts": [],
-    "started_at": "",
-    "duration_seconds": null,
     "status": ""
   }
 }

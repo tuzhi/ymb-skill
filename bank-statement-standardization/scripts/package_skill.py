@@ -3,7 +3,7 @@
 """把当前 skill 打包成 .zip 归档。
 
 归档写入 <skill_dir>/dist，并以 skill 目录作为 zip 顶层目录。
-dist 目录和本打包脚本自身会被排除。
+源码测试、运行产物、原始流水、独立工具、dist 目录和本打包脚本自身会被排除。
 """
 import argparse
 import os
@@ -20,7 +20,21 @@ def _is_excluded(relative_path):
     parts = relative_path.parts
     if not parts:
         return True
-    if any(part in {"dist", "testdata", "runs", ".claude", "tests", "__pycache__", "build"} for part in parts):
+    if any(
+        part in {
+            "dist",
+            "testdata",
+            "testoutput",
+            "runs",
+            "原始流水数据",
+            "tools",
+            ".claude",
+            "tests",
+            "__pycache__",
+            "build",
+        }
+        for part in parts
+    ):
         return True
     if any(part.endswith(".egg-info") for part in parts):
         return True

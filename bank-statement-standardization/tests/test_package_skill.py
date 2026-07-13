@@ -10,10 +10,14 @@ PACKAGE_SCRIPT = SKILL_ROOT / "scripts" / "package_skill.py"
 
 
 class PackageSkillTest(unittest.TestCase):
-    def test_package_includes_shared_standardization_core(self):
+    def load_package_module(self):
         spec = importlib.util.spec_from_file_location("package_skill", PACKAGE_SCRIPT)
         package_skill = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(package_skill)
+        return package_skill
+
+    def test_package_includes_shared_standardization_core(self):
+        package_skill = self.load_package_module()
 
         with tempfile.TemporaryDirectory() as tmp:
             archive = Path(tmp) / "skill.zip"
@@ -30,6 +34,19 @@ class PackageSkillTest(unittest.TestCase):
             "ymb_standardization_core/core.py",
             names,
         )
+
+    def test_package_excludes_runtime_raw_data_and_independent_tools(self):
+        package_skill = self.load_package_module()
+
+        for path in (
+            "testdata/sample.xlsx",
+            "testoutput/run/final.xlsx",
+            "runs/run-id/manifest.json",
+            "原始流水数据/source.xlsx",
+            "tools/TransactionMemoryBenchmark.java",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(package_skill._is_excluded(Path(path)))
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ bank-statement-standardization/
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
-    ├── manifest.template.json # 阶段事实源模板：script / validator / ai_fallback_refs / fallback 产物 / started_at / duration_seconds / status
+    ├── manifest.template.json # 单一运行事实源模板：client / parent run / script / validator / AI fallback / status
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
@@ -53,13 +53,13 @@ python -m pip install -e ".[standardization]"
 # 仅拿到 Skill 分发包时，使用兼容安装清单安装一次
 python -m pip install -r requirements.txt
 
-# ★ 正式生产：只执行一次主入口。默认不传 --client，优先使用流水中识别出的唯一户名
+# ★ 正式生产：只执行一次主入口。默认不传 --client 时使用原始输入文件夹名称
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹"
 # 也可以直接传单个 zip；preflight 会解包到本次 runs/<run-id>/input 并记录解包清单
 python scripts/orchestrator.py run --folder "/path/to/客户流水.zip"
 
-# 只有用户明确确认归档名时，才传 --client-confirmed
-python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "已确认客户名" --client-confirmed
+# 显式客户名称同时作为交付物归档名；后续不会被上游别名或本方名称覆盖
+python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "客户名"
 
 # 调试时才直接调用内部业务入口
 python scripts/package_deliverable.py --client "客户名" --folder "/path/to/客户文件夹" --account-type 对公
@@ -72,8 +72,8 @@ python scripts/run_pipeline.py "客户名" "/path/to/客户文件夹" --account-
 
 # 多客户批量底表
 python scripts/multi_customer.py --batch "批次名" \
-  --customer "客户A:/path/A/_标准化产物:C001" \
-  --customer "客户B:/path/B/_标准化产物:C002"
+  --client "客户A:/path/A/_标准化产物:C001" \
+  --client "客户B:/path/B/_标准化产物:C002"
 ```
 
 逐阶段单独调用见 `SKILL.md`。
@@ -152,8 +152,7 @@ unzip bank-statement-standardization.zip -d ~/.kimi/skills/
 ```bash
 # 正式入口直接使用宿主机 Python
 python scripts/orchestrator.py run --folder "<某客户文件夹>"
-# 成功标志：runs/<run-id>/run_manifest.json 的 status 为 success；
-# runs/<run-id>/manifest.json 各阶段 status 均为 DONE，且 receipts/ 回执完整
+# 成功标志：runs/<run-id>/manifest.json 各阶段 status 均为 DONE，且 receipts/ 回执完整
 ```
 若客户端「技能列表/`/skills`」里能看到 `bank-statement-standardization`，即安装成功。
 
@@ -173,7 +172,7 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 
 - 字段统一中文；明细 CSV、报告 JSON。
 - 每笔交易可追溯：`交易唯一编号 / 来源文件名 / 来源行号`。
-- 正式入口中 `--client` 未配套 `--client-confirmed` 时只是临时归档名；AI 不得根据文件夹名、截图或描述构造确认客户名。原始户名可识别时不得覆盖。
+- 正式入口中 `--client` 是客户名称兼交付物归档名；未传时使用原始输入文件夹名。该值确定后不得由 AI、上游别名或流水本方名称覆盖；本方名称仍只来自银行文件证据。
 - 备注/附言/摘要不可信，仅作辅助证据。
 - **不自动修正、不自动删除、不自动合并**；余额断点、疑似重复、自有账户互转、跨客户共用账户等
   一律只标记、进人工复核。
@@ -185,7 +184,7 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 
 - 用 `--header-row N` 指定表头行；
 - 用 `--map "原始列名=标准字段"` 手工覆盖个别列；
-- `--customer` 默认仅在原始户名缺失时兜底；只有人工确认后才使用 `--force-customer` 强制覆盖；
+- 标准化入口不接收客户名称参数；`本方名称` 只允许来自文件证据；
 - 或在 `scripts/standardize.py` 的 `SYNONYMS` 词典里补充该行的列名同义词。
 
 ## 测试验证

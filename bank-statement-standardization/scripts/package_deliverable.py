@@ -37,8 +37,6 @@ import integrate as I
 import tag as T
 import portfolio_balance as PB
 
-MAX_JOINED_CLIENT_NAME_PART_LEN = 20
-
 # 格式初筛 / 产物识别 / 非流水排除 统一由 standardize 提供（S.screen_files / S.NotABankStatement）。
 
 # 主表列序：金额→账户余额→虚拟账户余额→银行备注/账户方附言→收支方向/标签→渠道/来源。
@@ -277,121 +275,6 @@ def _safe(name):
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in name)
 
 
-def _parse_balance(value):
-    text = str(value or "").strip()
-    if not text or text.lower() in {"nan", "none"}:
-        return None
-    text = text.replace(",", "").replace("，", "").replace("￥", "").replace("¥", "")
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
-def _is_archive_name_candidate(name):
-    text = str(name or "").strip()
-    if not text or text.lower() in {"nan", "none"}:
-        return False
-    if text in {"称", "户名", "账户名称", "本方名称"}:
-        return False
-    if any(mark in text for mark in ("/", "\\", "*", "＊")):
-        return False
-    if re.search(r"\d{6,}", text):
-        return False
-    if re.fullmatch(r"[A-Za-z0-9_\- ]+", text) and not _is_english_person_name(text):
-        return False
-    return True
-
-
-def _is_english_person_name(text):
-    """允许有账户/余额证据支撑的英文个人姓名作为归档名。"""
-    parts = [part for part in re.split(r"\s+", str(text or "").strip()) if part]
-    if len(parts) < 2:
-        return False
-    return all(re.fullmatch(r"[A-Za-z][A-Za-z.'-]*", part) for part in parts)
-
-
-def _rank_client_name_candidates_from_work(work):
-    """按账户聚合归档名候选；只使用有本方账户和账户余额的标准化行。"""
-    by_account = {}
-    for path in glob.glob(os.path.join(work, "*__standardized.csv")):
-        try:
-            df = pd.read_csv(
-                path,
-                dtype=str,
-                encoding="utf-8-sig",
-                usecols=lambda col: col in {"本方名称", "本方账户", "账户余额", "来源文件名"},
-            )
-        except ValueError:
-            continue
-        required = {"本方名称", "本方账户", "账户余额"}
-        if not required.issubset(df.columns):
-            continue
-        source_col = "来源文件名" if "来源文件名" in df.columns else None
-        for _, row in df.iterrows():
-            name = str(row.get("本方名称") or "").strip()
-            account = str(row.get("本方账户") or "").strip()
-            balance = _parse_balance(row.get("账户余额"))
-            if not account or balance is None or not _is_archive_name_candidate(name):
-                continue
-            source = str(row.get(source_col) or os.path.basename(path)).strip() if source_col else os.path.basename(path)
-            bucket = by_account.setdefault(account, {})
-            stats = bucket.setdefault(name, {"rows": 0, "sources": set()})
-            stats["rows"] += 1
-            if source:
-                stats["sources"].add(source)
-
-    candidates = {}
-    for account, names in by_account.items():
-        if not names:
-            continue
-        name, account_stats = max(names.items(), key=lambda item: (item[1]["rows"], len(item[1]["sources"]), item[0]))
-        stats = candidates.setdefault(name, {"accounts": set(), "rows": 0, "sources": set()})
-        stats["accounts"].add(account)
-        stats["rows"] += account_stats["rows"]
-        stats["sources"].update(account_stats["sources"])
-
-    ranked = []
-    for name, stats in candidates.items():
-        account_count = len(stats["accounts"])
-        source_count = len(stats["sources"])
-        row_count = stats["rows"]
-        ranked.append({
-            "name": name,
-            "account_count": account_count,
-            "balance_row_count": row_count,
-            "source_file_count": source_count,
-            "score": account_count * 100 + source_count * 10 + min(row_count, 99),
-        })
-    return sorted(ranked, key=lambda item: (-item["score"], -item["account_count"], -item["source_file_count"], item["name"]))
-
-
-def _joined_short_client_name_candidates(ranked):
-    names = []
-    for item in ranked:
-        name = item.get("name", "").strip()
-        if name and len(name) <= MAX_JOINED_CLIENT_NAME_PART_LEN and name not in names:
-            names.append(name)
-    return "_".join(names) if names else None
-
-
-def _infer_unique_client_name(work):
-    """从本轮标准化产物中提取唯一高分户名；优先使用银行账户证据。
-
-    微信/支付宝等支付流水通常没有可校验余额，也可能把交易参与人映射进「本方名称」。
-    这些名称只适合做主体/交易分析，不适合作为交付物归档名的首要证据。
-    """
-    ranked = _rank_client_name_candidates_from_work(work)
-    if not ranked:
-        return None
-    if len(ranked) == 1:
-        return ranked[0]["name"]
-    top, second = ranked[0], ranked[1]
-    if top["score"] >= second["score"] * 2 and top["account_count"] > second["account_count"]:
-        return top["name"]
-    return _joined_short_client_name_candidates(ranked)
-
-
 def _duplicate_source_stems(subjects):
     counts = {}
     for _subj, files in subjects:
@@ -456,16 +339,13 @@ def run(client, args):
     duplicate_stems = _duplicate_source_stems(subjects)
     print(f"=== 客户「{client}」：{len(subjects)} 个主体 ===")
 
-    # 阶段一：逐文件标准化。customer 默认仅作户名缺失兜底，保留文件中可识别的真实户名。
+    # 阶段一：逐文件标准化。本方名称只来自文件证据。
     n_files = 0
     for subj, files in subjects:
         for f, ctype in files:
             try:
-                # 多主体时用主体名作为本方名称兜底；单文件夹时不强制，交给嗅探/按行填充
-                cust = subj if args.subject else (args.client if args.folder and len(subjects) == 1 and args.force_name else None)
                 csv_path, json_path, rep = S.standardize(
-                    f, out_dir=work, customer=cust, account_type=ctype,
-                    force_customer=args.force_name)
+                    f, out_dir=work, account_type=ctype)
                 csv_path, json_path = _rename_duplicate_stem_artifacts(
                     f, csv_path, json_path, duplicate_stems
                 )
@@ -484,17 +364,6 @@ def run(client, args):
     if n_files == 0:
         detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "目录内无候选文件"
         sys.exit(f"客户「{client}」无可处理的银行流水文件。已跳过：{detail}")
-
-    if args.infer_client_name:
-        inferred = _infer_unique_client_name(work)
-        if inferred and inferred != client:
-            new_work = os.path.join(out_dir, "_工作区", _safe(inferred))
-            if os.path.isdir(new_work):
-                shutil.rmtree(new_work)
-            os.replace(work, new_work)
-            work = new_work
-            print(f"  [INFO] 已从流水识别归档名：{client} -> {inferred}")
-            client = inferred
 
     # 阶段二：整合（全部主体/账户合并为一）
     int_csv, int_json, irep = I.integrate(client, [work], out_dir=work)
@@ -630,10 +499,6 @@ def main():
                          "跳过重复跑标准化/整合/打标，直接组装交付物")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--out-dir")
-    ap.add_argument("--force-name", action="store_true",
-                    help="强制用传入名称覆盖原始文件识别出的本方名称；默认仅作缺失兜底")
-    ap.add_argument("--infer-client-name", action="store_true",
-                    help="标准化后若识别到唯一户名，则用它替换暂存目录名作为归档名")
     args = ap.parse_args()
     if not args.folder and not args.subject and not args.reuse:
         ap.error("需提供 --folder、--subject 或 --reuse 之一")

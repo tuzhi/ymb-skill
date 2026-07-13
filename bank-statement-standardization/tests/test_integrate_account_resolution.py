@@ -407,8 +407,6 @@ class BatchAccountResolutionTests(unittest.TestCase):
                 subject=None,
                 account_type="对公",
                 out_dir=tmp,
-                force_name=False,
-                infer_client_name=False,
             )
             package_deliverable.run(args.client, args)
             report_path = Path(tmp) / "_工作区" / args.client / f"{args.client}__整合报告.json"
