@@ -31,6 +31,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "preamble_extractors": route_evidence.get("preamble_extractors", []) if route_evidence else [],
         "conditional_mapping": route_evidence.get("conditional_mapping", []) if route_evidence else [],
         "extract_mapping": route_evidence.get("extract_mapping", []) if route_evidence else [],
+        "require_monetary_value": route_evidence.get("require_monetary_value", False) if route_evidence else False,
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
         "metadata_evidence": route_evidence.get("metadata_evidence", {}) if route_evidence else {},
@@ -136,6 +137,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "preamble_extractors": rule.preamble_extractors,
                 "conditional_mapping": rule.conditional_mapping,
                 "extract_mapping": rule.extract_mapping,
+                "require_monetary_value": rule.require_monetary_value,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
                 "style_evidence": match.get("style_evidence", []),
@@ -337,7 +339,11 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
     if reader_id == "pdfplumber_table":
-        return _extract_pdf_tables_default(pdf, column_transforms=column_transforms)
+        return _extract_pdf_tables_default(
+            pdf,
+            column_transforms=column_transforms,
+            word_filters=route_info.get("word_filters") or {},
+        )
     return []
 
 
@@ -421,10 +427,12 @@ def _append_pdf_table_rows(all_rows, table_rows, header_sig, column_transforms=N
     return header_sig
 
 
-def _extract_pdf_tables_default(pdf, column_transforms=None):
+def _extract_pdf_tables_default(pdf, column_transforms=None, word_filters=None):
     all_rows = []
     header_sig = None
     for page in pdf.pages:
+        if word_filters:
+            page = page.filter(lambda char: not _drop_word_filter_char(char, word_filters))
         for tbl in page.extract_tables():
             header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig, column_transforms=column_transforms)
     return all_rows
@@ -586,6 +594,12 @@ def _is_word_column_noise_word(word):
 def _drop_word_filter_char(char, word_filters):
     text = str(char.get("text") or "")
     for item in (word_filters or {}).get("drop_chars", []):
+        if item.get("rotated"):
+            matrix = char.get("matrix") or (1, 0, 0, 1)
+            if len(matrix) < 4 or (
+                abs(float(matrix[1])) <= 0.001 and abs(float(matrix[2])) <= 0.001
+            ):
+                continue
         chars = {str(value) for value in item.get("text_any", [])}
         if chars and text not in chars:
             continue

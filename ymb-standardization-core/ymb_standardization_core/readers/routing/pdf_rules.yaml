@@ -358,7 +358,7 @@
         地区: null
         收入/支出金额: 收入金额
   reader_id: pdfplumber_table
-- id: md5:90b7f0bdd1ba30c6488303e4c29eeb14
+- id: md5:d933e13d10427ffb9d2590d52325b15e
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -373,13 +373,18 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '卡号\s*([0-9*]+)'
     columns:
       all:
         电子版: null
         卡号: 本方账户
         户名: 本方名称
         交易日期: 交易日期
-        账号: 本方账户
+        账号: null
         储种: null
         序号: null
         币种: null
@@ -388,6 +393,21 @@
         收入/支出金额: 收入金额
         余额: 账户余额
         渠道: 交易渠道
+        对方户名: 对手名称
+        对方账号: null
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+    column_transforms:
+      对方户名:
+        newline: cjk_join
+      对方账号:
+        newline: remove_all
+    extract_mapping:
+    - source: 对方账号
+      field: 对手账户
+      pattern: '^([0-9*]{8,})$'
   reader_id: pdfplumber_table
 - id: md5:4bc420e58476b2ac78274d490018f216
   file_type: pdf
@@ -411,10 +431,10 @@
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户
-      pattern: '^(\d{8,})/.*$'
+      pattern: '^([A-Z0-9][A-Z0-9*]{7,})/.*$'
     - source: 对方账号与户名
       field: 对手名称
-      pattern: '^\d{8,}/'
+      pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
       replacement: ''
   reader_id: pdfplumber_table
 - id: md5:6db7b0df2ee808ba9fd0c559c836200e
@@ -677,7 +697,7 @@
       pattern: '(?<!\d)\d{8,}(?!\d)'
       replacement: ''
   reader_id: pdfplumber_text_lines
-- id: md5:a70735a0cf8fd249d144458896f7346c
+- id: md5:fbe787c6cef349a9808643ff449af6f3
   file_type: pdf
   bank: 兴业银行
   account_type: 个人
@@ -685,6 +705,11 @@
     identity:
       any:
       - 兴业银⾏交易流⽔
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[^：:]{0,10}[：:]\s*[-\d\s]*([\u4e00-\u9fff]{2,20})'
+    - field: 本方账户
+      pattern: '账号[^：:]{0,10}[：:]\s*(\d{6}\s*\*{4}\s*\d{4})'
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -696,8 +721,20 @@
         Transaction Type: null
         Transaction Amount: null
         Account Balance: null
-        Counterparty’s: null
-        Counterparty’s Account No.: null
+        Counterparty’s: 对手名称
+        Counterparty’s Account No.: 对手账户
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+    extract_mapping:
+    - source: Counterparty’s Account No.
+      field: 对手账户
+      pattern: '(?s)^.*?([0-9*]{8,}).*$'
+    - source: Counterparty’s Account No.
+      field: 对手账户
+      pattern: '(?s)^.*无.*$'
+      replacement: ''
   reader_id: pdfplumber_table
 - id: md5:cb2278ac12a08930475e412c101c28f6
   file_type: pdf

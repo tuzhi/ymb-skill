@@ -252,6 +252,54 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 self.assertEqual(report["字段映射"]["对手账户"]["原始字段"], "对方账号与户名")
                 self.assertEqual(report["字段映射"]["对手名称"]["原始字段"], "对方账号与户名")
 
+    def test_zeng_yao_xia_weipeng_owner_and_counterparty_fields(self):
+        folder = (
+            REPO_ROOT / "bank-statement-standardization" / "testdata"
+            / "曾耀夏伟鹏个人流水"
+        )
+        samples = [
+            ("夏伟鹏的交易明细20260422120619.pdf", 1325, "夏伟鹏", "622908 **** 2028"),
+            ("夏伟鹏的交易明细20260422120619.xlsx", 559, "夏伟鹏", "622908 **** 2028"),
+            ("曾耀招商密码350142.pdf", 1731, "曾耀", "6215581502003868833"),
+            ("曾耀建行.xls", 2984, "曾耀", "6217002020031660616"),
+            ("曾耀建行-0616.pdf", 3000, "曾耀", "6217002020031660616"),
+            ("曾耀建行0616.pdf", 474, "曾耀", "6217002020031660616"),
+        ]
+        if not all((folder / name).exists() for name, *_ in samples):
+            self.skipTest("本地未提供曾耀、夏伟鹏个人流水样本")
+
+        ccb_accounts = set()
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, (name, expected_rows, owner, account) in enumerate(samples):
+                out_dir = Path(tmp) / str(index)
+                csv_path, _json_path, _report = standardize.standardize(
+                    str(folder / name),
+                    out_dir=str(out_dir),
+                )
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                self.assertEqual(len(rows), expected_rows, name)
+                self.assertEqual({row["本方名称"] for row in rows}, {owner}, name)
+                self.assertEqual({row["本方账户"] for row in rows}, {account}, name)
+                self.assertFalse(
+                    any("/" in row["对手账户"] for row in rows),
+                    name,
+                )
+                self.assertFalse(
+                    any("\n" in row["对手名称"] for row in rows),
+                    name,
+                )
+                self.assertFalse(
+                    any("户          名" in row["交易时间"] for row in rows),
+                    name,
+                )
+                if name == "曾耀建行.xls":
+                    ccb_accounts = {row["对手账户"] for row in rows}
+
+        self.assertIn("4******9202", ccb_accounts)
+        self.assertIn("Z******0010", ccb_accounts)
+
     def test_cao_jian_pdfs_extract_owner_and_split_ccb_counterparty(self):
         folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曹吉安"
         abc = folder / "26060309491107220299.pdf"

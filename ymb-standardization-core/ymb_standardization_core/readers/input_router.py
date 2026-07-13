@@ -55,6 +55,7 @@ def _excel_candidate(rule, match):
         "preamble_extractors": rule.preamble_extractors,
         "conditional_mapping": rule.conditional_mapping,
         "extract_mapping": rule.extract_mapping,
+        "require_monetary_value": rule.require_monetary_value,
         "identity_evidence": match["identity_evidence"],
         "columns_evidence": match["columns_evidence"],
         "metadata_evidence": match.get("metadata_evidence", {}),

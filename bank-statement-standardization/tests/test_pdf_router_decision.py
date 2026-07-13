@@ -642,7 +642,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -699,7 +699,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -718,7 +718,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:90b7f0bdd1ba30c6488303e4c29eeb14'})
+        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -737,7 +737,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:a70735a0cf8fd249d144458896f7346c")
+        self.assertEqual(result["fingerprint_id"], "md5:fbe787c6cef349a9808643ff449af6f3")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")

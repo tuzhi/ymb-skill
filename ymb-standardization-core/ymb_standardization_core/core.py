@@ -654,6 +654,14 @@ def apply_extract_mapping(row, header, rules):
         source = _norm(rule.get("source"))
         pattern = str(rule.get("pattern") or "")
         value = raw_values.get(source, "")
+        if not value:
+            candidates = [
+                (len(raw_source), raw_value)
+                for raw_source, raw_value in raw_values.items()
+                if source in raw_source
+            ]
+            if candidates:
+                value = max(candidates)[1]
         if not source or not pattern or not value:
             continue
         match = re.search(pattern, value)
@@ -1064,8 +1072,17 @@ def standardize(path, out_dir=None, bank=None,
     route_column_mapping = {
         _norm(src): dst
         for src, dst in (route_info.get("column_mapping") or {}).items()
-        if src and dst
+        if src
     }
+    route_column_markers = sorted(
+        (
+            (source, field)
+            for source, field in route_column_mapping.items()
+            if field is not None and len(source) >= 8 and re.search(r"[A-Za-z]", source)
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
     conditional_source_columns = {
         _norm(source)
         for rule in (route_info.get("conditional_mapping") or [])
@@ -1091,13 +1108,26 @@ def standardize(path, out_dir=None, bank=None,
     for idx, col in enumerate(header):
         if not col:
             continue
+        normalized_col = _norm(col)
+        route_matched = normalized_col in route_column_mapping
+        route_field = route_column_mapping.get(normalized_col)
+        if not route_matched:
+            marker, route_field = next(
+                (
+                    (marker, field)
+                    for marker, field in route_column_markers
+                    if marker in normalized_col
+                ),
+                (None, None),
+            )
+            route_matched = marker is not None
         # 人工覆盖优先
         if col in overrides:
             field = overrides[col]
         elif _norm(idx) in overrides:
             field = overrides[_norm(idx)]
-        elif _norm(col) in route_column_mapping:
-            field = route_column_mapping[_norm(col)]
+        elif route_matched:
+            field = route_field
         elif _norm(col) in conditional_source_columns or _norm(col) in extract_source_columns:
             field = None
         else:
@@ -1258,8 +1288,15 @@ def standardize(path, out_dir=None, bank=None,
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
 
-        # 解析后仍全空（无时间、无任何金额、无余额）的行视为残留噪声丢弃
-        if (not t) and income is None and expense is None and txn is None and balance is None:
+        # 默认仅丢弃全空噪声；分段导出 Excel 可由 YAML 要求交易行必须含金额或余额。
+        no_monetary_value = income is None and expense is None and txn is None and balance is None
+        if no_monetary_value and (
+            not t
+            or (
+                route_info.get("require_monetary_value", False)
+                and not (opp_name or bank_memo or cust_memo or channel)
+            )
+        ):
             dropped_noise += 1
             continue
 

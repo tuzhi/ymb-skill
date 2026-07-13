@@ -32,6 +32,7 @@ class RouteRule:
     preamble_extractors: list = field(default_factory=list)
     conditional_mapping: list = field(default_factory=list)
     extract_mapping: list = field(default_factory=list)
+    require_monetary_value: bool = False
     has_fingerprint: bool = False
 
     def base_match_text(self, text, context=None):
@@ -305,12 +306,12 @@ def _column_mapping(fingerprint):
     mapping = {}
     for key, value in _columns_all(fingerprint).items():
         source = str(key).strip()
-        target = "" if value is None else str(value).strip()
-        if source and target:
-            mapping[source] = target
+        if not source:
+            continue
+        mapping[source] = None if value is None else str(value).strip()
     if not isinstance(mapping, dict):
         raise ValueError("column_mapping must be a dict")
-    return {str(key).strip(): str(value).strip() for key, value in mapping.items() if str(key).strip() and str(value).strip()}
+    return mapping
 
 
 def _preamble_mapping(fingerprint):
@@ -399,6 +400,10 @@ def _reader_options(item):
     if not isinstance(options, dict):
         raise ValueError("reader_options must be a dict")
     return options
+
+
+def _require_monetary_value(item):
+    return bool(_reader_options(item).get("require_monetary_value", False))
 
 
 def _column_transforms(item, fingerprint):
@@ -568,6 +573,7 @@ def load_pdf_route_rules():
             preamble_extractors=_preamble_extractors(fingerprint),
             conditional_mapping=_conditional_mapping(item),
             extract_mapping=_extract_mapping(item),
+            require_monetary_value=_require_monetary_value(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules
@@ -601,6 +607,7 @@ def load_excel_route_rules():
             preamble_extractors=_preamble_extractors(fingerprint),
             conditional_mapping=_conditional_mapping(item),
             extract_mapping=_extract_mapping(item),
+            require_monetary_value=_require_monetary_value(item),
             has_fingerprint=bool(fingerprint),
         ))
     return rules

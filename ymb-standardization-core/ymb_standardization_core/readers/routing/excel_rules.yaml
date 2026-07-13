@@ -597,10 +597,10 @@
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户
-      pattern: '^(\d{8,})/.*$'
+      pattern: '^([A-Z0-9][A-Z0-9*]{7,})/.*$'
     - source: 对方账号与户名
       field: 对手名称
-      pattern: '^\d{8,}/'
+      pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
       replacement: ''
   reader_id: openpyxl_grid
 - id: md5:4fb218cc43c550d1fffc02e114d1f6f4
@@ -1576,7 +1576,7 @@
         流水号: null
         操作员: null
   reader_id: openpyxl_grid
-- id: md5:89724cb13246318033be53f045021bef
+- id: md5:8cbc8639460e926a0add73c377bca475
   file_type: excel
   bank: 兴业银行
   account_type: 个人
@@ -1608,7 +1608,20 @@
         Account Balance: null
         对方户名: 对手名称
         Counterparty’s: null
-        对方账户/对方银行: 对手账户
+        对方账户/对方银行: null
+  reader_options:
+    require_monetary_value: true
+    extract_mapping:
+    - source: 对方户名
+      field: 对手名称
+      pattern: '(?s)^(.*)$'
+    - source: 对方账户/对方银行
+      field: 对手账户
+      pattern: '(?s)^.*?([0-9*]{8,}).*$'
+    - source: 对方账户/对方银行
+      field: 对手账户
+      pattern: '(?s)^.*无.*$'
+      replacement: ''
   reader_id: openpyxl_grid
 - id: md5:93783dc5cadc47278e89e6fe66b26b0f
   file_type: excel
