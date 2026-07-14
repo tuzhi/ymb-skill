@@ -1,6 +1,7 @@
 import csv
 import importlib.util
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -224,9 +225,13 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(len(rows), 337)
         self.assertEqual({row["本方名称"] for row in rows}, {"宋志鹏"})
         self.assertEqual({row["本方账户"] for row in rows}, {"6214853380229907"})
-        self.assertTrue(all(row["对手账户"] for row in rows))
+        self.assertEqual(sum(not row["对手账户"] for row in rows), 29)
+        self.assertFalse(any(re.search(r"\d{8,}", row["对手名称"]) for row in rows))
         self.assertEqual(rows[0]["对手账户"], "6227002022070397612")
-        self.assertEqual(rows[0]["对手名称"], "宋志鹏 招商银行第三方平台交易资金")
+        self.assertEqual(rows[0]["对手名称"], "宋志鹏")
+        multi_number = rows[2]
+        self.assertEqual(multi_number["对手账户"], "12591713522210004")
+        self.assertEqual(multi_number["对手名称"], "招商银行第三方平台交易资金")
         self.assertEqual(report["字段映射"]["对手账户"]["原始字段"], "对手信息")
         self.assertEqual(report["文件画像"]["extract_mapping"][0]["field"], "对手账户")
 

@@ -698,9 +698,16 @@
       field: 对手账户
       pattern: '^.*?(?<!\d)(\d{8,})(?!\d).*$'
     - source: 对手信息
+      field: 对手账户
+      pattern: '^.*(?<!\d)(\d{8,})(?!\d)\s*$'
+    - source: 对手信息
       field: 对手名称
       pattern: '(?<!\d)\d{8,}(?!\d)'
       replacement: ''
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^\s*(?<!\d)\d{8,}(?!\d)\s+(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
+      replacement: '\1'
   reader_id: pdfplumber_text_lines
 - id: md5:0a45d881baf8861f2799735ca60e0652
   file_type: pdf
