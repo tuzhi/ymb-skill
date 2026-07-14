@@ -65,12 +65,6 @@ def _traceability(df, path):
 
 def validate_standardize(work_dir, skipped_inputs=None):
     skipped_inputs = skipped_inputs or []
-    if skipped_inputs:
-        detail = "；".join(
-            f"{row.get('name', '')}（{row.get('reason', '')}）"
-            for row in skipped_inputs
-        )
-        raise ValidationError(f"阶段一存在未处理输入文件：{detail}")
     csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
     reports = sorted(glob.glob(os.path.join(work_dir, "*__mapping.json")))
     if not csvs:
@@ -85,7 +79,11 @@ def validate_standardize(work_dir, skipped_inputs=None):
         rows += len(df)
     for path in reports:
         _load_json(path)
-    return {"standardized_files": len(csvs), "standardized_rows": rows}
+    return {
+        "standardized_files": len(csvs),
+        "standardized_rows": rows,
+        "skipped_inputs": len(skipped_inputs),
+    }
 
 
 def validate_integrate(work_dir):

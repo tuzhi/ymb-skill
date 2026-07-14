@@ -337,9 +337,9 @@
         对方账号: 对手账户
         渠道: 交易渠道
   reader_id: openpyxl_grid
-- id: md5:49395dabf42e9dfd5d535d7d00cb0586
+- id: md5:342420b81a93cd9db8b3740aaf94f61c
   file_type: excel
-  bank: 未识别
+  bank: 北京银行
   account_type: 对公
   fingerprint:
     identity:
@@ -357,17 +357,23 @@
         借方发生额: 支出金额
         贷方发生额: 收入金额
         余额: 账户余额
-        对手方: null
-        对手方账号: null
+        对手方: 对手名称
+        对手方账号: 对手账户
         对手方银行: null
         收款人: null
-        收款账号: 本方账户
+        收款账号: null
         用途: 银行备注
         备注: 银行备注
         凭证号: null
         摘要: 银行备注
         流水号: null
         操作员: null
+  reader_options:
+    conditional_mapping:
+    - if:
+        收款账号: 本方账户
+      map:
+        收款人: 本方名称
   reader_id: openpyxl_grid
 - id: md5:3cb7f851a70871a6d8cf223a797e2b27
   file_type: excel
@@ -1364,10 +1370,10 @@
         摘要: 银行备注
         交易用途: 银行备注
   reader_id: openpyxl_grid
-- id: md5:598c8cbfb4c4fbd925edc592073165ac
+- id: md5:84a8614651d8e779b66865cb175843ff
   file_type: excel
-  bank: 未识别
-  account_type: 未知
+  bank: 九江银行
+  account_type: 对公
   fingerprint:
     metadata:
       all:
@@ -1384,7 +1390,7 @@
         交易时间: 交易时间
         交易金额: 交易金额
         本方账号: 本方账户
-        本方子账号序号: 本方账户
+        本方子账号序号: null
         收入: 收入金额
         支出: 支出金额
         余额: 账户余额
@@ -1518,7 +1524,7 @@
   reader_id: openpyxl_grid
 - id: md5:78ac9f1789fbdddc6e51bfaaedf92a57
   file_type: excel
-  bank: 未识别
+  bank: 中国农业银行
   account_type: 对公
   fingerprint:
     identity:
@@ -1541,9 +1547,9 @@
         对方户名: 对手名称
         对方开户行: null
   reader_id: openpyxl_grid
-- id: md5:c376523d256e4f519d1a34503c4c7217
+- id: md5:735c6ce874c006fd599044ce8af7c5fd
   file_type: excel
-  bank: 未识别
+  bank: 北京银行
   account_type: 对公
   fingerprint:
     metadata:
@@ -1564,17 +1570,24 @@
         借方发生额: 支出金额
         贷方发生额: 收入金额
         余额: 账户余额
-        对手方: null
-        对手方账号: null
+        对手方: 对手名称
+        对手方账号: 对手账户
         对手方银行: null
         收款人: null
-        收款账号: 本方账户
+        收款账号: null
         用途: 银行备注
         备注: 银行备注
         凭证号: null
         摘要: 银行备注
         流水号: null
         操作员: null
+  reader_options:
+    conditional_mapping:
+    - if:
+        贷方发生额: __nonzero__
+      map:
+        收款人: 本方名称
+        收款账号: 本方账户
   reader_id: openpyxl_grid
 - id: md5:8cbc8639460e926a0add73c377bca475
   file_type: excel

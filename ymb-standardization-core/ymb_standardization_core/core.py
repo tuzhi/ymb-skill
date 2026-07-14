@@ -631,9 +631,14 @@ def apply_conditional_mapping(row, header, standard_values, rules):
     for rule in rules or []:
         source, target = next(iter(rule["if"].items()))
         left = raw_values.get(_norm(source), "")
-        right = str(current.get(target) or "").strip()
-        if not left or _norm(left) != _norm(right):
-            continue
+        if target == "__nonzero__":
+            amount = parse_amount(left)
+            if amount in (None, 0):
+                continue
+        else:
+            right = str(current.get(target) or "").strip()
+            if not left or _norm(left) != _norm(right):
+                continue
         for raw_field, standard_field in rule["map"].items():
             value = raw_values.get(_norm(raw_field), "")
             if value:
@@ -923,6 +928,50 @@ def infer_account_from_records(records):
         key=lambda item: (item[1]["balance_rows"], item[1]["rows"], len(item[1]["sources"]), item[0][1], item[0][0]),
     )
     return {"本方账户": account, "本方名称": name}
+
+
+def complete_unique_file_identity(records):
+    """同一文件只有一个明确本方账号时，用其补齐该文件的未知账号与空户名。"""
+    accounts = {
+        str(row.get("本方账户") or "").strip()
+        for row in records
+        if str(row.get("本方账户") or "").strip()
+        and not str(row.get("本方账户") or "").startswith("未识别账户#")
+    }
+    if len(accounts) != 1:
+        return False
+    account = next(iter(accounts))
+    names = {
+        str(row.get("本方名称") or "").strip()
+        for row in records
+        if str(row.get("本方账户") or "").strip() == account
+        and str(row.get("本方名称") or "").strip()
+    }
+    name = next(iter(names)) if len(names) == 1 else ""
+    changed = False
+    for row in records:
+        row_account = str(row.get("本方账户") or "").strip()
+        if not row_account or row_account.startswith("未识别账户#"):
+            row["本方账户"] = account
+            changed = True
+        if name and not str(row.get("本方名称") or "").strip():
+            row["本方名称"] = name
+            changed = True
+    return changed
+
+
+def refresh_unique_ids(records):
+    """本方身份补齐后重算内容指纹，保证跨文件去重仍使用最终标准字段。"""
+    seen = Counter()
+    for row in records:
+        fingerprint = build_fingerprint(
+            row.get("本方名称"), row.get("本方账户"), row.get("交易时间"),
+            row.get("对手名称"), row.get("对手账户"), row.get("收入金额"),
+            row.get("支出金额"), row.get("账户余额"),
+        )
+        occurrence = seen[fingerprint]
+        seen[fingerprint] += 1
+        row["交易唯一编号"] = build_unique_id(fingerprint, occurrence)
 
 
 def is_standardized_input_name(path):
@@ -1352,6 +1401,9 @@ def standardize(path, out_dir=None, bank=None,
             "来源文件名": fname,
             "来源行号": raw_offset + ri,
         })
+
+    if complete_unique_file_identity(std_records):
+        refresh_unique_ids(std_records)
 
     # ---- 整理行序，使余额连续性最佳（保留原始对账口径） ----
     # 块重排/按余额链重建、保留同时刻多笔的相对顺序、来源行号不变可追溯。使输出为可对账的正序，
