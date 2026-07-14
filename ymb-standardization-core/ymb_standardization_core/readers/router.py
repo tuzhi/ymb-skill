@@ -359,7 +359,7 @@ def _is_cjk_char(value):
 
 
 def _join_cjk_fragments(parts):
-    cjk_join_punctuation = "（【《〈“‘"
+    cjk_join_punctuation = "，。；：！？、（【《〈“‘"
     cjk_closing_punctuation = "）】》〉”’"
     output = ""
     for part in parts:
@@ -368,7 +368,7 @@ def _join_cjk_fragments(parts):
         if not output:
             output = part
         elif (
-            _is_cjk_char(output[-1])
+            (_is_cjk_char(output[-1]) or output[-1] in cjk_join_punctuation)
             and (_is_cjk_char(part[0]) or part[0] in cjk_join_punctuation or part[0] in cjk_closing_punctuation)
         ):
             output += part
@@ -411,8 +411,15 @@ def _clean_pdf_table_cells(row, headers=None, column_transforms=None):
 
 
 def _append_pdf_table_rows(all_rows, table_rows, header_sig, column_transforms=None):
+    headers = all_rows[0] if header_sig and all_rows else []
+    transform_columns = set((column_transforms or {}).keys())
+    if transform_columns:
+        for candidate in [*reversed(all_rows), *table_rows]:
+            candidate_headers = _clean_pdf_table_cells(candidate)
+            if transform_columns.intersection(candidate_headers):
+                headers = candidate_headers
+                break
     for r in table_rows:
-        headers = all_rows[0] if header_sig and all_rows else []
         cells = _clean_pdf_table_cells(r, headers=headers, column_transforms=column_transforms)
         if not any(cells):
             continue

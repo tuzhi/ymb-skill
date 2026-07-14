@@ -24,6 +24,23 @@ from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  #
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_pdf_table_column_transform_uses_actual_header_after_preamble(self):
+        rows = [
+            ["交易明细对应时间段", "2025-01-01 至 2025-12-31", ""],
+            ["交易单号", "交易时间", "交易对方"],
+            ["1001", "2025-01-01 12:00:00", "做路沿石，\n火烧板，吸\n水砖，"],
+        ]
+        output = []
+
+        router._append_pdf_table_rows(
+            output,
+            rows,
+            None,
+            column_transforms={"交易对方": {"newline": "cjk_join"}},
+        )
+
+        self.assertEqual(output[2][2], "做路沿石，火烧板，吸水砖，")
+
     def test_pdfplumber_table_rows_can_use_pdfplumber_line_table_reader(self):
         path = (
             ROOT / "testdata" / "斑马商业对公流水"
@@ -282,7 +299,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
             "md5:eb90af33b5f89117b801f28b10fdc111",
             "md5:0488448d0f1d96413a25254a500aab29",
-            "md5:a18a99243ad411aa342820d09cbcdaf1",
+            "md5:4527aeee91f28ca227c3473dadf8575c",
         ]:
             self.assertIn(fingerprint_id, by_id)
         self.assertEqual(rules[0].bank, "中国农业银行")
@@ -295,7 +312,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(by_id["md5:0488448d0f1d96413a25254a500aab29"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
-            self.assertIn(marker, by_id["md5:a18a99243ad411aa342820d09cbcdaf1"].column_markers)
+            self.assertIn(marker, by_id["md5:4527aeee91f28ca227c3473dadf8575c"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
         rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "pdf_rules.yaml"
@@ -347,7 +364,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:a18a99243ad411aa342820d09cbcdaf1")
+        self.assertEqual(result["fingerprint_id"], "md5:4527aeee91f28ca227c3473dadf8575c")
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["decision"], "matched")
 

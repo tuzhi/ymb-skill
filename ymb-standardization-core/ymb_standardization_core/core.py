@@ -1108,9 +1108,8 @@ def standardize(path, out_dir=None, bank=None,
         bank_name = infer_bank(bank) or bank
         bank_infer_source = "参数"
     elif route_info.get("decision") == "matched" and router_bank:
-        if "银行" in router_bank and router_bank not in {"微信支付", "支付宝"}:
-            bank_name = router_bank
-            bank_infer_source = "router"
+        bank_name = router_bank
+        bank_infer_source = "router"
     if not bank_name:
         bank_name = infer_bank(preamble, upper_text)
         if bank_name:

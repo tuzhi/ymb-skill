@@ -475,7 +475,7 @@
         对方账户名: 对手名称
         对方卡号/账号: 对手账户
   reader_id: pdfplumber_table
-- id: md5:957cfc1778ee509bcd6d25b8efa32b3a
+- id: md5:9858d002b7a09dd4d28147128a08c637
   file_type: pdf
   bank: 中国邮政储蓄银行
   account_type: 个人
@@ -484,10 +484,15 @@
       any:
       - 邮储银行历史明细
       - 中国邮政储蓄银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '卡号/账号[:：]\s*([0-9*]+)'
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
     columns:
       all:
         交易时间: 交易时间
-        子账号: 本方账户
+        子账号: null
         储种: null
         币种: null
         钞汇: null
@@ -971,7 +976,7 @@
       对方户名:
         newline: cjk_join
   reader_id: pdfplumber_coordinate_table
-- id: md5:a18a99243ad411aa342820d09cbcdaf1
+- id: md5:4527aeee91f28ca227c3473dadf8575c
   file_type: pdf
   bank: 微信支付
   account_type: 个人
@@ -982,6 +987,8 @@
     preamble_extractors:
     - field: 本方名称
       pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
+    - field: 本方账户
+      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息如下'
     columns:
       all:
         兹证明: null
@@ -995,6 +1002,10 @@
         金额(元): 交易金额
         交易对方: 对手名称
         商户单号: null
+  reader_options:
+    column_transforms:
+      交易对方:
+        newline: cjk_join
   reader_id: pdfplumber_table
 - id: md5:6ff5c74e874af5159f4934d97ce035f8
   file_type: pdf
