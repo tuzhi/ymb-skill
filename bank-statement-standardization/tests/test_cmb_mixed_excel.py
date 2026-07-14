@@ -21,10 +21,18 @@ class CmbMixedExcelTests(unittest.TestCase):
         )
         pdf_source = source.with_suffix(".pdf")
         with tempfile.TemporaryDirectory() as tmp:
-            csv_path, _mapping, report = standardize(str(source), out_dir=tmp)
+            csv_path, mapping_path, report = standardize(str(source), out_dir=tmp)
             frame = pd.read_csv(csv_path, dtype=str)
-            pdf_csv, _pdf_mapping, _pdf_report = standardize(str(pdf_source), out_dir=tmp)
+            pdf_csv, pdf_mapping, _pdf_report = standardize(str(pdf_source), out_dir=tmp)
             pdf_frame = pd.read_csv(pdf_csv, dtype=str)
+
+            self.assertEqual(Path(csv_path).name, f"{source.stem}__xlsx__standardized.csv")
+            self.assertEqual(Path(pdf_csv).name, f"{source.stem}__pdf__standardized.csv")
+            self.assertEqual(Path(mapping_path).name, f"{source.stem}__xlsx__mapping.json")
+            self.assertEqual(Path(pdf_mapping).name, f"{source.stem}__pdf__mapping.json")
+            self.assertNotEqual(csv_path, pdf_csv)
+            self.assertTrue(Path(csv_path).is_file())
+            self.assertTrue(Path(pdf_csv).is_file())
 
         self.assertEqual(report["文件画像"]["reader_id"], "openpyxl_cmb_mixed_grid")
         self.assertEqual(len(frame), 835)

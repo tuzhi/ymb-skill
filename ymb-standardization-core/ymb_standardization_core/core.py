@@ -22,8 +22,8 @@ ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流
       [--map 原始列=标准字段 ...]   # 人工覆盖自动映射
 
 输出（默认写到原始文件同目录的 standardized/ 下）：
-  <stem>__standardized.csv      标准化流水
-  <stem>__mapping.json          字段映射报告（Prompt 1 结构）
+  <stem>__<ext>__standardized.csv      标准化流水
+  <stem>__<ext>__mapping.json          字段映射报告（Prompt 1 结构）
 """
 import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
@@ -1573,9 +1573,10 @@ def standardize(path, out_dir=None, bank=None,
     if out_dir is None:
         out_dir = os.path.join(os.path.dirname(path), "standardized")
     os.makedirs(out_dir, exist_ok=True)
-    stem = os.path.splitext(fname)[0]
-    csv_path = os.path.join(out_dir, f"{stem}__standardized.csv")
-    json_path = os.path.join(out_dir, f"{stem}__mapping.json")
+    stem, source_ext = os.path.splitext(fname)
+    artifact_stem = f"{stem}__{source_ext.lower().lstrip('.') or 'file'}"
+    csv_path = os.path.join(out_dir, f"{artifact_stem}__standardized.csv")
+    json_path = os.path.join(out_dir, f"{artifact_stem}__mapping.json")
 
     pd.DataFrame(std_records, columns=OUTPUT_FIELDS).to_csv(csv_path, index=False, encoding="utf-8-sig")
     with open(json_path, "w", encoding="utf-8") as f:

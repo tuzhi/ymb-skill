@@ -668,7 +668,6 @@ class Runner:
             return declared_result
 
         raw_files, skipped = S.screen_files(sorted(glob.glob(os.path.join(self.args.folder, "*"))))
-        duplicate_stems = S.duplicate_source_stems(raw_files)
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
         self.write_manifest()
         if not raw_files:
@@ -682,9 +681,6 @@ class Runner:
                     path,
                     out_dir=work,
                     account_type=self.args.account_type,
-                )
-                csv_path, json_path = S.rename_duplicate_artifacts(
-                    path, csv_path, json_path, duplicate_stems
                 )
                 processed.append({
                     "input": path,

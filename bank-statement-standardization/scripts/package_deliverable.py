@@ -280,9 +280,6 @@ def run(client, args):
     os.makedirs(work, exist_ok=True)
 
     subjects, skipped = gather_subjects(args)
-    duplicate_stems = S.duplicate_source_stems(
-        [f for _subj, files in subjects for f, _ctype in files]
-    )
     print(f"=== 客户「{client}」：{len(subjects)} 个主体 ===")
 
     # 阶段一：逐文件标准化。本方名称只来自文件证据。
@@ -292,9 +289,6 @@ def run(client, args):
             try:
                 csv_path, json_path, rep = S.standardize(
                     f, out_dir=work, account_type=ctype)
-                csv_path, json_path = S.rename_duplicate_artifacts(
-                    f, csv_path, json_path, duplicate_stems
-                )
                 n_files += 1
                 st = rep["标准化统计"]
                 print(f"  [OK] [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")
