@@ -963,7 +963,7 @@
         对方户名: 对手名称
         对方账号: 对手账户
   reader_id: openpyxl_grid
-- id: md5:dd3805e73618f143a1c11086995468dd
+- id: md5:9231dc17dc7e1836b2ee4b072578b3e2
   file_type: excel
   bank: 招商银行
   account_type: 个人
@@ -972,6 +972,11 @@
       any:
       - 招商银行交易流水
       - Transaction Statement of China Merchants Bank
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[:：]\s*([\u4e00-\u9fff]{2,20})'
+    - field: 本方账户
+      pattern: '账号[:：]\s*([0-9*]+)'
     columns:
       all:
         户: 本方名称
@@ -983,7 +988,7 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
-  reader_id: openpyxl_grid
+  reader_id: openpyxl_cmb_mixed_grid
 - id: md5:e0c9c0799dd30d32ec34a26ccb9e8270
   file_type: excel
   bank: 微信支付

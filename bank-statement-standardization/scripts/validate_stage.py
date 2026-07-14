@@ -63,6 +63,20 @@ def _traceability(df, path):
             raise ValidationError(f"来源追溯字段存在空值：{path}：{col} 空值 {int(empty.sum())} 行")
 
 
+def _transaction_times(df, path):
+    values = df["交易时间"].fillna("").astype(str).str.strip()
+    normalized = values.str.replace(r"\s+", " ", regex=True).str.lower()
+    header_values = {
+        "date", "transaction date", "transaction time", "记账日期", "交易日期", "交易时间",
+    }
+    invalid = normalized.isin(header_values)
+    if invalid.any():
+        samples = "、".join(values[invalid].drop_duplicates().head(3))
+        raise ValidationError(
+            f"交易时间存在无法解析的表头/噪声：{path}：{int(invalid.sum())} 行（{samples}）"
+        )
+
+
 def validate_standardize(work_dir, skipped_inputs=None):
     skipped_inputs = skipped_inputs or []
     csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
@@ -76,6 +90,7 @@ def validate_standardize(work_dir, skipped_inputs=None):
         df = _load_csv(path)
         _require_columns(df, STD_REQUIRED, path)
         _traceability(df, path)
+        _transaction_times(df, path)
         rows += len(df)
     for path in reports:
         _load_json(path)

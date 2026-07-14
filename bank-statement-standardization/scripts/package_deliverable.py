@@ -28,7 +28,7 @@ package_deliverable.py — 生成「<客户名>_已清洗_待分析.xlsx」单�
   <out-dir>/<客户名>_已清洗_待分析.xlsx
   （中间标准化产物落在 <out-dir>/_工作区/，可留存追溯）
 """
-import argparse, glob, json, os, re, sys
+import argparse, glob, json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
@@ -270,57 +270,6 @@ def _safe(name):
     return "".join(c if c not in '\\/:*?"<>|' else "_" for c in name)
 
 
-def _duplicate_source_stems(subjects):
-    counts = {}
-    for _subj, files in subjects:
-        for f, _ctype in files:
-            stem = os.path.splitext(os.path.basename(f))[0]
-            counts[stem] = counts.get(stem, 0) + 1
-    return {stem for stem, count in counts.items() if count > 1}
-
-
-def _source_extension_slug(source_path):
-    ext = os.path.splitext(os.path.basename(str(source_path)))[1].lower().lstrip(".")
-    slug = re.sub(r"[^a-z0-9]+", "_", ext).strip("_")
-    return slug or "file"
-
-
-def _next_available_artifact_path(path):
-    path = os.fspath(path)
-    if not os.path.exists(path):
-        return path
-    base, ext = os.path.splitext(path)
-    index = 2
-    while True:
-        candidate = f"{base}_{index}{ext}"
-        if not os.path.exists(candidate):
-            return candidate
-        index += 1
-
-
-def _rename_duplicate_stem_artifacts(source_path, csv_path, json_path, duplicate_stems):
-    source_path = os.fspath(source_path)
-    csv_path = os.fspath(csv_path)
-    json_path = os.fspath(json_path) if json_path else None
-    stem = os.path.splitext(os.path.basename(source_path))[0]
-    if stem not in duplicate_stems:
-        return csv_path, json_path
-
-    suffix = _source_extension_slug(source_path)
-    csv_target = _next_available_artifact_path(
-        os.path.join(os.path.dirname(csv_path), f"{stem}__{suffix}__standardized.csv")
-    )
-    os.replace(csv_path, csv_target)
-
-    json_target = None
-    if json_path and os.path.exists(json_path):
-        json_target = _next_available_artifact_path(
-            os.path.join(os.path.dirname(json_path), f"{stem}__{suffix}__mapping.json")
-        )
-        os.replace(json_path, json_target)
-    return csv_target, json_target
-
-
 def run(client, args):
     import shutil
     out_dir = args.out_dir or os.getcwd()
@@ -331,7 +280,9 @@ def run(client, args):
     os.makedirs(work, exist_ok=True)
 
     subjects, skipped = gather_subjects(args)
-    duplicate_stems = _duplicate_source_stems(subjects)
+    duplicate_stems = S.duplicate_source_stems(
+        [f for _subj, files in subjects for f, _ctype in files]
+    )
     print(f"=== 客户「{client}」：{len(subjects)} 个主体 ===")
 
     # 阶段一：逐文件标准化。本方名称只来自文件证据。
@@ -341,7 +292,7 @@ def run(client, args):
             try:
                 csv_path, json_path, rep = S.standardize(
                     f, out_dir=work, account_type=ctype)
-                csv_path, json_path = _rename_duplicate_stem_artifacts(
+                csv_path, json_path = S.rename_duplicate_artifacts(
                     f, csv_path, json_path, duplicate_stems
                 )
                 n_files += 1

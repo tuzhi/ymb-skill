@@ -1,3 +1,5 @@
+import re
+
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
 TEXT_TABLE_FINGERPRINTS = {
@@ -1176,6 +1178,8 @@ def _is_noise_text_table_line(line):
     text = str(line or "").strip()
     if not text:
         return True
+    if re.match(r"^\d+/\d+$", text):
+        return True
     noise_markers = (
         "Transaction Statement",
         "Account No",
@@ -1191,8 +1195,10 @@ def _is_noise_text_table_line(line):
         "合同ID号",
         "版本:",
         "发布时间:",
+        "温馨提示",
+        "记账日期 货币 交易金额 联机余额 交易摘要 对手信息",
     )
-    return any(marker in text for marker in noise_markers)
+    return text == "Transaction" or any(marker in text for marker in noise_markers)
 
 
 def _parse_currency_text_row(line):
@@ -1279,13 +1285,32 @@ def _extract_pdf_text_table_rows(text, text_table_kind):
     if text_table_kind == "currency":
         header = ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"]
         rows = [header]
+        pending = []
         for raw_line in str(text or "").splitlines():
             line = raw_line.strip()
+            if "温馨提示" in line:
+                pending = []
+                break
             parsed = _parse_currency_text_row(line)
             if parsed:
+                if pending:
+                    continuation = " ".join(pending).strip()
+                    if not parsed[-1]:
+                        parsed[-1] = continuation
+                    elif len(rows) > 1:
+                        rows[-1][-1] = (rows[-1][-1] + " " + continuation).strip()
+                    pending = []
                 rows.append(parsed)
-            elif len(rows) > 1 and line and not _is_noise_text_table_line(line):
-                rows[-1][-1] = (rows[-1][-1] + " " + line).strip()
+            elif _is_noise_text_table_line(line):
+                if pending and len(rows) > 1:
+                    continuation = " ".join(pending).strip()
+                    if not re.fullmatch(r"[—_-]{5,}", continuation):
+                        rows[-1][-1] = (rows[-1][-1] + " " + continuation).strip()
+                pending = []
+            elif len(rows) > 1 and line and not re.fullmatch(r"[—_-]{5,}", line):
+                pending.append(line)
+        if pending and len(rows) > 1:
+            rows[-1][-1] = (rows[-1][-1] + " " + " ".join(pending)).strip()
         return rows if len(rows) > 1 else []
 
     if text_table_kind == "cmbc_personal":
@@ -1300,8 +1325,6 @@ def _extract_pdf_text_table_rows(text, text_table_kind):
             if parsed:
                 rows.append(parsed)
             elif len(rows) > 1 and line and not _is_noise_text_table_line(line):
-                import re
-
                 voucher_continuation = re.match(r"^(\d{4,})(?:\s+(.*))?$", line)
                 if voucher_continuation and rows[-1][1]:
                     rows[-1][1] = (rows[-1][1] + voucher_continuation.group(1)).strip()

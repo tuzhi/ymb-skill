@@ -26,16 +26,22 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
     def test_duplicate_stem_standardized_artifacts_keep_source_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
+            duplicate_stems = package_deliverable.S.duplicate_source_stems([
+                work / "subject-a" / "同名流水.pdf",
+                work / "subject-b" / "同名流水.xlsx",
+            ])
+            self.assertEqual(duplicate_stems, {"同名流水"})
+
             csv_path = work / "同名流水__standardized.csv"
             json_path = work / "同名流水__mapping.json"
             csv_path.write_text("来源文件名\n同名流水.pdf\n", encoding="utf-8-sig")
             json_path.write_text("{}", encoding="utf-8")
 
-            renamed_csv, renamed_json = package_deliverable._rename_duplicate_stem_artifacts(
+            renamed_csv, renamed_json = package_deliverable.S.rename_duplicate_artifacts(
                 Path(tmp) / "同名流水.pdf",
                 csv_path,
                 json_path,
-                {"同名流水"},
+                duplicate_stems,
             )
 
             self.assertEqual(Path(renamed_csv).name, "同名流水__pdf__standardized.csv")

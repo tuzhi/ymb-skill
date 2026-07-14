@@ -41,10 +41,14 @@ def main():
 
     print(f"=== 客户：{args.client}  候选流水文件 {len(raw_files)} 个 ===")
     print("\n[阶段一] 单文件标准化与字段映射")
+    duplicate_stems = S.duplicate_source_stems(raw_files)
     for f in raw_files:
         try:
             csv_path, json_path, rep = S.standardize(
                 f, out_dir=out_dir, bank=args.bank, account_type=args.account_type)
+            csv_path, json_path = S.rename_duplicate_artifacts(
+                f, csv_path, json_path, duplicate_stems
+            )
             st = rep["标准化统计"]
             nrev = len(rep["人工复核事项"])
             print(f"  [OK] {os.path.basename(f)} -> {st['交易笔数']} 笔"
