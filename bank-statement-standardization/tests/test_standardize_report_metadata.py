@@ -339,6 +339,28 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertIn("4******9202", ccb_accounts)
         self.assertIn("Z******0010", ccb_accounts)
 
+    def test_abc_xlsx_extracts_owner_and_account_from_preamble(self):
+        excel = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "丰城市利华金属制品有限公司"
+            / "2025.5.1-2025.5.31农行.xlsx"
+        )
+        if not excel.exists():
+            self.skipTest("本地未提供丰城市利华农行 XLSX 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 644)
+        self.assertEqual({row["本方名称"] for row in rows}, {"丰城市利华金属制品有限公司"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"14-081501040001694"})
+        self.assertEqual(report["文件画像"]["本方名称"], "丰城市利华金属制品有限公司")
+        self.assertEqual(report["文件画像"]["本方账户"], "14-081501040001694")
+
     def test_changhao_bank_owner_account_and_counterparty_fields(self):
         folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "昌浩公司流水"
         samples = [

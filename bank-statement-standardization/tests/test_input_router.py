@@ -54,6 +54,14 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["file_type"], "excel")
         self.assertEqual(result.route_info["bank"], "中国农业银行")
         self.assertEqual(result.route_info["account_type"], "对公")
+        self.assertEqual(result.route_info["fingerprint_id"], "md5:67782b663739efc4e1fe6abab80507cf")
+        self.assertEqual(
+            result.route_info["preamble_extractors"],
+            [
+                {"field": "本方账户", "pattern": r"账号[:：]\s*([0-9-]+)"},
+                {"field": "本方名称", "pattern": r"户名[:：]\s*(.+?)\s+币种[:：]"},
+            ],
+        )
 
     def test_legacy_abc_xls_uses_specialized_excel_route(self):
         module = load_input_router()

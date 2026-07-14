@@ -1,4 +1,4 @@
-- id: md5:d22af808fd5c4c01357fc0b41a2b029b
+- id: md5:67782b663739efc4e1fe6abab80507cf
   file_type: excel
   bank: 中国农业银行
   account_type: 对公
@@ -7,6 +7,11 @@
       any:
       - 账户明细
       - 中国农业银行账户活期交易明细清单
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '账号[:：]\s*([0-9-]+)'
+    - field: 本方名称
+      pattern: '户名[:：]\s*(.+?)\s+币种[:：]'
     columns:
       all:
         序号: null
