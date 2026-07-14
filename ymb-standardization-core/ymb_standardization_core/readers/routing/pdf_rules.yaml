@@ -30,7 +30,7 @@
       对手信息:
         newline: cjk_join
   reader_id: pdfplumber_coordinate_table
-- id: md5:0bdf0854f29ad6928e2fdd0da1d52dc5
+- id: md5:58cf5d000d5fe58b0247e61150522ba9
   file_type: pdf
   bank: 江西农商银行
   account_type: 个人
@@ -42,6 +42,11 @@
       any:
       - 江西·农商银行
       - 江西农商银行
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[:：]?\s*(.+?)\s*账\s*号[:：]'
+    - field: 本方账户
+      pattern: '账\s*号[:：]?\s*([0-9*]+)'
     columns:
       all:
         江西·农商银行交易流水: null
@@ -983,7 +988,7 @@
       对方户名:
         newline: cjk_join
   reader_id: pdfplumber_coordinate_table
-- id: md5:4527aeee91f28ca227c3473dadf8575c
+- id: md5:a13c8439b61942e06e33a571713bd85c
   file_type: pdf
   bank: 微信支付
   account_type: 个人
@@ -995,7 +1000,7 @@
     - field: 本方名称
       pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
     - field: 本方账户
-      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息如下'
+      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息如\s*下'
     columns:
       all:
         兹证明: null

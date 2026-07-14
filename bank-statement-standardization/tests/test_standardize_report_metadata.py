@@ -209,6 +209,40 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "对手名称": "",
         })
 
+    def test_dai_jinwang_pdfs_extract_owner_and_real_accounts(self):
+        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "戴金旺"
+        samples = [
+            (
+                folder / "微信支付交易明细证明(20250520-20260519)_20260520094427.pdf",
+                3404,
+                "戴金旺",
+                "wxid_q7atqd3k4x2822",
+                "微信支付",
+            ),
+            (
+                folder / "江西·农商银行(2026年06月09日20时43分53秒).pdf",
+                463,
+                "戴金旺",
+                "6226820031001918612",
+                "江西农商银行",
+            ),
+        ]
+        if not all(path.exists() for path, *_ in samples):
+            self.skipTest("本地未提供戴金旺 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for index, (path, expected_rows, owner, account, bank) in enumerate(samples):
+                csv_path, _json_path, _report = standardize.standardize(
+                    str(path), out_dir=str(Path(tmp) / str(index))
+                )
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                self.assertEqual(len(rows), expected_rows, path.name)
+                self.assertEqual({row["本方名称"] for row in rows}, {owner}, path.name)
+                self.assertEqual({row["本方账户"] for row in rows}, {account}, path.name)
+                self.assertEqual({row["开户行"] for row in rows}, {bank}, path.name)
+
     def test_zeng_xiaoyuan_cmb_pdf_extracts_owner_account_and_counterparty_account(self):
         pdf = (
             REPO_ROOT / "bank-statement-standardization" / "testdata" / "曾小园"
