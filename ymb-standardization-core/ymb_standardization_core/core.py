@@ -99,7 +99,7 @@ STD_FIELDS = [
 OUTPUT_FIELDS = [
     "交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
     "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
-    "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号",
+    "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号", "__对手开户行",
 ]
 
 # ---- 表头列名 -> 标准字段 同义词词典 -----------------------------------------
@@ -947,6 +947,15 @@ def complete_unique_file_identity(records):
         if str(row.get("本方账户") or "").strip() == account
         and str(row.get("本方名称") or "").strip()
     }
+    if not names:
+        account_digits = "".join(char for char in account if char.isdigit())
+        names = {
+            str(row.get("对手名称") or "").strip()
+            for row in records
+            if account_digits
+            and "".join(char for char in str(row.get("对手账户") or "") if char.isdigit()) == account_digits
+            and str(row.get("对手名称") or "").strip()
+        }
     name = next(iter(names)) if len(names) == 1 else ""
     changed = False
     for row in records:
@@ -1335,6 +1344,7 @@ def standardize(path, out_dir=None, bank=None,
                     else cell(field_to_cols.get("对手账户", [])))
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
+        counterparty_bank = cell(field_to_cols.get("__对手开户行", []))
 
         # 默认仅丢弃全空噪声；分段导出 Excel 可由 YAML 要求交易行必须含金额或余额。
         no_monetary_value = income is None and expense is None and txn is None and balance is None
@@ -1399,6 +1409,7 @@ def standardize(path, out_dir=None, bank=None,
             "交易渠道": channel,
             "来源文件名": fname,
             "来源行号": raw_offset + ri,
+            "__对手开户行": counterparty_bank,
         })
 
     if complete_unique_file_identity(std_records):

@@ -47,6 +47,136 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
 
 
 class BatchAccountResolutionTests(unittest.TestCase):
+    def test_reciprocal_transfer_restores_unknown_account_and_monthly_suffix_group(self):
+        known = transaction(
+            "北京银行.xlsx", "20000080375000116971117", "2026-03-30 08:08:07", "1000.00",
+            "江西昌浩实业有限公司", "149799090000014882",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "80000.00"
+        known["__对手开户行"] = "宜春农村商业银行股份有限公司"
+
+        direct = transaction(
+            "2026年3月农商行（4882）.xls", "未识别账户#三月", "2026-03-30 08:08:07", "81000.00",
+            NAME, "2000008037500011697111",
+        )
+        direct["本方名称"] = ""
+        direct["开户行"] = ""
+        direct["收入金额"] = "80000.00"
+        direct["支出金额"] = ""
+
+        monthly = transaction(
+            "2026年2月农商行（4882）.xls", "未识别账户#二月", "2026-02-01 10:00:00", "100.00",
+        )
+        monthly["本方名称"] = ""
+        monthly["开户行"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, direct, monthly])
+        )
+
+        rural = resolved[resolved["来源文件名"].str.contains("4882")]
+        self.assertEqual(set(rural["本方账户"]), {"149799090000014882"})
+        self.assertEqual(set(rural["本方名称"]), {"江西昌浩实业有限公司"})
+        self.assertEqual(set(rural["开户行"]), {"宜春农村商业银行"})
+        self.assertEqual(report["补全文件数"], 2)
+        self.assertEqual(report["末四位归并文件数"], 1)
+
+    def test_reciprocal_transfer_requires_counterparty_corroboration(self):
+        known = transaction(
+            "known.xlsx", "6222000000000001", "2026-01-01 10:00:00", "1000.00",
+            "目标公司", "149799090000014882",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "100.00"
+        unknown = transaction(
+            "unknown.xls", "未识别账户#unknown", "2026-01-01 10:00:00", "100.00",
+            "无关对手", "9999999999999999",
+        )
+        unknown["本方名称"] = ""
+        unknown["开户行"] = ""
+        unknown["收入金额"] = "100.00"
+        unknown["支出金额"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, unknown])
+        )
+
+        self.assertIn("未识别账户#unknown", set(resolved["本方账户"]))
+        self.assertEqual(report["补全文件数"], 0)
+
+    def test_reciprocal_transfer_rejects_prefix_only_account_match(self):
+        known = transaction(
+            "known.xlsx", "20000080375000116971117", "2026-01-01 10:00:00", "1000.00",
+            "目标公司", "149799090000014882",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "100.00"
+        unknown = transaction(
+            "unknown.xls", "未识别账户#unknown", "2026-01-01 10:00:00", "100.00",
+            "名称不一致", "2000008037500011697111",
+        )
+        unknown["本方名称"] = ""
+        unknown["开户行"] = ""
+        unknown["收入金额"] = "100.00"
+        unknown["支出金额"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, unknown])
+        )
+
+        self.assertIn("未识别账户#unknown", set(resolved["本方账户"]))
+        self.assertEqual(report["补全文件数"], 0)
+
+    def test_reciprocal_transfer_accepts_exact_account_when_name_is_missing(self):
+        known = transaction(
+            "known.xlsx", "6222000000000001", "2026-01-01 10:00:00", "1000.00",
+            "目标公司", "149799090000014882",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "100.00"
+        unknown = transaction(
+            "unknown.xls", "未识别账户#unknown", "2026-01-01 10:00:00", "100.00",
+            "", "6222000000000001",
+        )
+        unknown["本方名称"] = ""
+        unknown["开户行"] = ""
+        unknown["收入金额"] = "100.00"
+        unknown["支出金额"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, unknown])
+        )
+
+        self.assertEqual(set(resolved[resolved["来源文件名"] == "unknown.xls"]["本方账户"]),
+                         {"149799090000014882"})
+        self.assertEqual(report["补全文件数"], 1)
+
+    def test_verified_legal_entity_identity_promotes_account_type_to_corporate(self):
+        rows = [
+            transaction("unknown.xls", "149719090000097738", "2026-01-01 10:00:00", "100.00"),
+            transaction("inferred.xls", "149719090000097738", "2026-01-02 10:00:00", "150.00"),
+        ]
+        for row, account_type in zip(rows, ("未知", "拟对公")):
+            row["本方名称"] = "江西昌浩实业有限公司"
+            row["账户类型"] = account_type
+
+        resolved, report = integrate.complete_account_type_by_verified_identity(pd.DataFrame(rows))
+
+        self.assertEqual(set(resolved["账户类型"]), {"对公"})
+        self.assertEqual(report["补全账户数"], 1)
+        self.assertEqual(report["补全交易数"], 2)
+
+    def test_natural_person_identity_does_not_promote_account_type(self):
+        row = transaction("personal.xls", "6217994240007322914", "2026-01-01 10:00:00", "100.00")
+        row["本方名称"] = "陈桂森"
+        row["账户类型"] = "未知"
+
+        resolved, report = integrate.complete_account_type_by_verified_identity(pd.DataFrame([row]))
+
+        self.assertEqual(resolved.iloc[0]["账户类型"], "未知")
+        self.assertEqual(report["补全账户数"], 0)
+
     def test_same_explicit_account_completes_missing_name_and_bank(self):
         rows = [
             transaction("known.pdf", "237019600000017553", "2025-01-01 10:00:00", "1100.00"),

@@ -28,7 +28,7 @@ package_deliverable.py — 生成「<客户名>_已清洗_待分析.xlsx」单�
   <out-dir>/<客户名>_已清洗_待分析.xlsx
   （中间标准化产物落在 <out-dir>/_工作区/，可留存追溯）
 """
-import argparse, glob, json, os, sys
+import argparse, glob, json, os, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd
@@ -168,9 +168,19 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=N
             s = g[col].dropna().astype(str).str.strip()
             s = s[~s.isin(["", "nan", "None"])]
             return s.iloc[0] if len(s) else ""
+        def _account_type():
+            if "账户类型" not in g.columns:
+                return "未知"
+            values = set(g["账户类型"].dropna().astype(str).str.strip()) - {"", "nan", "None"}
+            known = values & {"个人", "对公"}
+            if len(known) > 1:
+                return "冲突"
+            if len(known) == 1:
+                return next(iter(known))
+            return "拟对公" if "拟对公" in values else "未知"
         acct_rows.append({
             "本方名称": _first("本方名称"),
-            "账户类型": _first("账户类型") or "未知",
+            "账户类型": _account_type(),
             "开户行": _first("开户行"),
             "本方账户": acct,
             "交易笔数": len(g),
@@ -298,6 +308,9 @@ def run(client, args):
             except Exception as e:
                 skipped.append((os.path.basename(f), f"解析失败：{e}"))
                 print(f"  ! {os.path.basename(f)} 失败：{e}")
+            sleep_seconds = getattr(args, "sleep_seconds", 0)
+            if sleep_seconds:
+                time.sleep(sleep_seconds)
 
     if skipped:
         print(f"  [已跳过 {len(skipped)} 个非流水/无法解析文件]")
@@ -431,6 +444,8 @@ def main():
                          "跳过重复跑标准化/整合/打标，直接组装交付物")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
     ap.add_argument("--out-dir")
+    ap.add_argument("--sleep-seconds", type=float, default=0,
+                    help="每处理完一个候选流水文件后的暂停秒数")
     args = ap.parse_args()
     if not args.folder and not args.subject and not args.reuse:
         ap.error("需提供 --folder、--subject 或 --reuse 之一")

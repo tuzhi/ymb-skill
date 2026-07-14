@@ -15,7 +15,6 @@ import csv
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -86,7 +85,7 @@ def _copy_deliverables(work_dir, run_dir, index):
     return copied
 
 
-def package_one_client(index, client_dir, run_dir, temp_root):
+def package_one_client(index, client_dir, run_dir, temp_root, sleep_seconds=0):
     client = client_dir.name
     logs_dir = run_dir / "_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -103,6 +102,8 @@ def package_one_client(index, client_dir, run_dir, temp_root):
         str(client_dir),
         "--out-dir",
         str(work_dir),
+        "--sleep-seconds",
+        str(sleep_seconds),
     ]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log_path.write_text(proc.stdout, encoding="utf-8")
@@ -135,11 +136,9 @@ def run_package_deliverables(testdata_root, run_dir, temp_root=None, sleep_secon
     rows = []
     clients = iter_client_dirs(testdata_root)
     for index, client_dir in enumerate(clients, 1):
-        row = package_one_client(index, client_dir, run_dir, temp_root)
+        row = package_one_client(index, client_dir, run_dir, temp_root, sleep_seconds)
         rows.append(row)
         print(f"{index:03d} {row['client']} {row['status']} {row['file_count']}", flush=True)
-        if sleep_seconds and index < len(clients):
-            time.sleep(float(sleep_seconds))
     return write_summary_csv(run_dir, rows), rows
 
 
@@ -150,7 +149,8 @@ def main(argv=None):
     parser.add_argument("--testdata-root", default=str(DEFAULT_TESTDATA))
     parser.add_argument("--output-root", help="默认是 testdata 同级 testoutput")
     parser.add_argument("--run-id", help="默认使用 YYYYMMDDHHMMSS")
-    parser.add_argument("--sleep-seconds", type=float, default=2, help="每处理完一个客户交付物后的暂停秒数，默认 0.5 秒")
+    parser.add_argument("--sleep-seconds", type=float, default=0.5,
+                        help="每处理完一个候选流水文件后的暂停秒数，默认 0.5 秒")
     args = parser.parse_args(argv)
 
     testdata_root = Path(args.testdata_root)

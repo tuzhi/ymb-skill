@@ -20,7 +20,7 @@ integrate.py — 单客户多流水文件整合与验证（阶段二，对应 Pr
   <客户名>__整合流水.csv     合并后的标准化明细（已排序、带账户分组）
   <客户名>__整合报告.json    Prompt 2 结构的整合与校验报告
 """
-import argparse, glob, hashlib, json, os, sys, unicodedata
+import argparse, glob, hashlib, json, os, re, sys, unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from itertools import combinations
@@ -140,6 +140,202 @@ def _source_col(df):
     return ""
 
 
+def _accounts_equal(left, right):
+    """账号确权只接受清洗后的完整数字串精确相等。"""
+    a = "".join(char for char in _clean_text(left) if char.isdigit())
+    b = "".join(char for char in _clean_text(right) if char.isdigit())
+    return bool(a and b and a == b)
+
+
+def _reciprocal_lookup_key(row, reverse=False):
+    time = _clean_text(row.get("交易时间"))
+    income = _overlap_amount(row.get("收入金额"))
+    expense = _overlap_amount(row.get("支出金额"))
+    if not time or bool(income) == bool(expense):
+        return None
+    direction = "收入" if income else "支出"
+    if reverse:
+        direction = "支出" if direction == "收入" else "收入"
+    return time, direction, income or expense
+
+
+def infer_identity_from_reciprocal_transfers(df):
+    """用同批次另一账户的反向互转记录补齐本方账号、户名和开户行。
+
+    证据必须同时满足：时间和金额反向一致，且目标行的对手名称能与证据行本方名称精确互证；
+    名称有一侧缺失时，才允许用完整账号精确相等代替。长账号前缀关系不能单独触发身份推断。
+    对手开户行只作为阶段二内部证据，最终标准流水不会输出该内部列。
+    """
+    result = df.copy()
+    report = {"补全文件数": 0, "补全交易数": 0, "补全明细": [], "末四位归并文件数": 0}
+    if result.empty or not {"本方名称", "本方账户", "开户行"}.issubset(result.columns):
+        return result, report
+    source_col = _source_col(result)
+    if not source_col:
+        return result, report
+
+    evidence_by_key = defaultdict(list)
+    for index, row in result.iterrows():
+        self_account = _explicit_account(row.get("本方账户"))
+        opponent_account = _explicit_account(row.get("对手账户"))
+        key = _reciprocal_lookup_key(row, reverse=True)
+        if self_account and opponent_account and key:
+            evidence_by_key[key].append((index, row))
+
+    touched_sources = set()
+    for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True, dropna=False):
+        candidates = []
+        for _, row in rows.iterrows():
+            key = _reciprocal_lookup_key(row)
+            if not key:
+                continue
+            for evidence_index, evidence in evidence_by_key.get(key, []):
+                if _clean_text(evidence.get(source_col)) == source:
+                    continue
+                opponent_name = _identity_text(row.get("对手名称"))
+                evidence_name = _identity_text(evidence.get("本方名称"))
+                name_match = bool(opponent_name and evidence_name and opponent_name == evidence_name)
+                exact_account_match = _accounts_equal(row.get("对手账户"), evidence.get("本方账户"))
+                identity_match = name_match or (
+                    (not opponent_name or not evidence_name) and exact_account_match
+                )
+                if not identity_match:
+                    continue
+                target_account = _explicit_account(evidence.get("对手账户"))
+                if not target_account:
+                    continue
+                bank_text = _clean_text(evidence.get("__对手开户行"))
+                canonical_bank = S.infer_bank(bank_text) if bank_text else ""
+                if canonical_bank in {"农村商业银行", "农村信用社", "村镇银行"}:
+                    canonical_bank = ""
+                candidates.append({
+                    "account": target_account,
+                    "name": _clean_text(evidence.get("对手名称")),
+                    "bank": canonical_bank,
+                    "evidence_id": _clean_text(evidence.get("交易唯一编号")),
+                })
+        accounts = sorted({item["account"] for item in candidates})
+        if len(accounts) != 1:
+            continue
+        account = accounts[0]
+        matched = [item for item in candidates if item["account"] == account]
+        names = {_identity_text(item["name"]): item["name"] for item in matched if _identity_text(item["name"])}
+        banks = {_identity_bank(item["bank"]): item["bank"] for item in matched if _identity_bank(item["bank"])}
+        name = next(iter(names.values())) if len(names) == 1 else ""
+        bank = next(iter(banks.values())) if len(banks) == 1 else ""
+        indices = rows.index.tolist()
+        changed_fields = []
+        if rows["本方账户"].map(_is_unknown_account).all():
+            result.loc[indices, "本方账户"] = account
+            changed_fields.append("本方账户")
+        if name and not any(_clean_text(value) for value in rows["本方名称"]):
+            result.loc[indices, "本方名称"] = name
+            changed_fields.append("本方名称")
+        if bank and not any(_identity_bank(value) for value in rows["开户行"]):
+            result.loc[indices, "开户行"] = bank
+            changed_fields.append("开户行")
+        if not changed_fields:
+            continue
+        touched_sources.add(source)
+        report["补全交易数"] += len(indices)
+        report["补全明细"].append({
+            "来源文件": sorted({_clean_text(value) for value in rows["来源文件名"] if _clean_text(value)}),
+            "本方账户": account,
+            "本方名称": name,
+            "开户行": bank,
+            "补全字段": changed_fields,
+            "证据交易唯一编号列表": sorted({item["evidence_id"] for item in matched if item["evidence_id"]}),
+            "归并方式": "跨账户反向互转记录",
+        })
+
+    # 已确认账号还可从批次内其它流水的“对手账号/对手开户行”获得银行元数据。
+    verified_accounts = sorted({
+        _explicit_account(value) for value in result["本方账户"] if _explicit_account(value)
+    })
+    for account in verified_accounts:
+        own_mask = result["本方账户"].map(_explicit_account) == account
+        counterpart = result[result["对手账户"].map(lambda value: _accounts_equal(value, account))]
+        names = {
+            _identity_text(value): _clean_text(value)
+            for value in pd.concat([result.loc[own_mask, "本方名称"], counterpart["对手名称"]])
+            if _identity_text(value)
+        }
+        banks = {}
+        for value in pd.concat([
+            result.loc[own_mask, "开户行"],
+            counterpart.get("__对手开户行", pd.Series(dtype=str)),
+        ]):
+            canonical = S.infer_bank(_clean_text(value)) if _clean_text(value) else ""
+            if canonical and canonical not in {"农村商业银行", "农村信用社", "村镇银行"}:
+                banks[_identity_bank(canonical)] = canonical
+        name = next(iter(names.values())) if len(names) == 1 else ""
+        bank = next(iter(banks.values())) if len(banks) == 1 else ""
+        for source, rows in result[own_mask].groupby(
+            result.loc[own_mask, source_col].map(_clean_text), sort=True, dropna=False
+        ):
+            fields = []
+            if name and not any(_clean_text(value) for value in rows["本方名称"]):
+                result.loc[rows.index, "本方名称"] = name
+                fields.append("本方名称")
+            if bank and not any(_identity_bank(value) for value in rows["开户行"]):
+                result.loc[rows.index, "开户行"] = bank
+                fields.append("开户行")
+            if not fields:
+                continue
+            if source not in touched_sources:
+                report["补全交易数"] += len(rows)
+            touched_sources.add(source)
+            report["补全明细"].append({
+                "来源文件": sorted({_clean_text(value) for value in rows["来源文件名"] if _clean_text(value)}),
+                "本方账户": account,
+                "本方名称": name,
+                "开户行": bank,
+                "补全字段": fields,
+                "证据交易唯一编号列表": [],
+                "归并方式": "批次对手账号元数据唯一匹配",
+            })
+
+    # 分月文件本身没有抬头账号时，用文件名中明确标注的末四位与本批次已验证账号做唯一匹配。
+    profiles = {}
+    explicit = result[result["本方账户"].map(_explicit_account) != ""].copy()
+    explicit["__explicit_account"] = explicit["本方账户"].map(_explicit_account)
+    for account, rows in explicit.groupby("__explicit_account", sort=True):
+        names = {_identity_text(value): _clean_text(value) for value in rows["本方名称"] if _identity_text(value)}
+        banks = {_identity_bank(value): _clean_text(value) for value in rows["开户行"] if _identity_bank(value)}
+        if len(names) == 1 and len(banks) == 1:
+            profiles[account] = (next(iter(names.values())), next(iter(banks.values())))
+    unknown = result[result["本方账户"].map(_is_unknown_account)]
+    for source, rows in unknown.groupby(unknown[source_col].map(_clean_text), sort=True, dropna=False):
+        source_text = " ".join({_clean_text(value) for value in rows["来源文件名"] if _clean_text(value)})
+        matches = [
+            account for account in profiles
+            if len(_account_key(account)) >= 4
+            and re.search(rf"(?<!\d){re.escape(_account_key(account)[-4:])}(?!\d)", source_text)
+        ]
+        if len(matches) != 1:
+            continue
+        account = matches[0]
+        name, bank = profiles[account]
+        indices = rows.index.tolist()
+        result.loc[indices, "本方账户"] = account
+        result.loc[indices, "本方名称"] = name
+        result.loc[indices, "开户行"] = bank
+        touched_sources.add(source)
+        report["补全交易数"] += len(indices)
+        report["末四位归并文件数"] += 1
+        report["补全明细"].append({
+            "来源文件": sorted({_clean_text(value) for value in rows["来源文件名"] if _clean_text(value)}),
+            "本方账户": account,
+            "本方名称": name,
+            "开户行": bank,
+            "补全字段": ["本方账户", "本方名称", "开户行"],
+            "证据交易唯一编号列表": [],
+            "归并方式": "来源文件标注末四位与批次已验证账号唯一匹配",
+        })
+    report["补全文件数"] = len(touched_sources)
+    return result, report
+
+
 def complete_metadata_by_explicit_account(df):
     """同批次相同明确账号之间补齐缺失的本方名称和银行，不覆盖冲突值。"""
     result = df.copy()
@@ -188,6 +384,53 @@ def complete_metadata_by_explicit_account(df):
             })
     report["补全文件数"] = len(touched_sources)
     return result.drop(columns=["__account_key"]), report
+
+
+LEGAL_ENTITY_NAME_MARKERS = ("有限责任公司", "股份有限公司", "有限公司", "农民专业合作社", "合作社")
+
+
+def complete_account_type_by_verified_identity(df):
+    """明确账号对应唯一法定企业户名时，将空白/未知/拟对公提升为对公。
+
+    本方名称必须来自标准字段中的账户身份链；自然人名称、名称冲突或已有个人证据均不改写。
+    """
+    result = df.copy()
+    report = {"补全账户数": 0, "补全交易数": 0, "补全明细": []}
+    if result.empty or not {"本方账户", "本方名称", "账户类型"}.issubset(result.columns):
+        return result, report
+
+    result["__verified_account"] = result["本方账户"].map(_explicit_account)
+    for account, rows in result[result["__verified_account"] != ""].groupby("__verified_account", sort=True):
+        names = {
+            _identity_text(value): _clean_text(value)
+            for value in rows["本方名称"]
+            if _identity_text(value)
+        }
+        if len(names) != 1:
+            continue
+        name = next(iter(names.values()))
+        if not any(marker in name for marker in LEGAL_ENTITY_NAME_MARKERS):
+            continue
+        known_types = {
+            _clean_text(value) for value in rows["账户类型"]
+            if _clean_text(value) in {"个人", "对公"}
+        }
+        if "个人" in known_types:
+            continue
+        fill_mask = rows["账户类型"].map(_clean_text).isin({"", "未知", "拟对公"})
+        indices = rows.index[fill_mask]
+        if len(indices) == 0:
+            continue
+        result.loc[indices, "账户类型"] = "对公"
+        report["补全账户数"] += 1
+        report["补全交易数"] += len(indices)
+        report["补全明细"].append({
+            "本方账户": account,
+            "本方名称": name,
+            "补全交易数": len(indices),
+            "判断依据": "明确本方账号对应唯一法定企业户名",
+        })
+    return result.drop(columns=["__verified_account"]), report
 
 
 def _source_bank_judgment(rows):
@@ -776,6 +1019,20 @@ def _first_nonempty(g, col):
     return s.iloc[0] if len(s) else ""
 
 
+def _account_type_summary(g):
+    if "账户类型" not in g.columns:
+        return "未知"
+    values = {_clean_text(value) for value in g["账户类型"] if _clean_text(value)}
+    known = values & {"个人", "对公"}
+    if len(known) > 1:
+        return "冲突"
+    if len(known) == 1:
+        return next(iter(known))
+    if "拟对公" in values:
+        return "拟对公"
+    return "未知"
+
+
 def account_index(df):
     idx = []
     for acct, g in df.groupby(df["本方账户"].fillna("")):
@@ -784,7 +1041,7 @@ def account_index(df):
             "本方账户": acct or "(空)",
             "本方名称": g["本方名称"].dropna().iloc[0] if g["本方名称"].notna().any() else "",
             "开户行": _first_nonempty(g, "开户行"),
-            "账户类型": _first_nonempty(g, "账户类型") or "未知",
+            "账户类型": _account_type_summary(g),
             "来源文件": sorted(g["来源文件名"].unique().tolist()),
             "交易数": int(len(g)),
             "交易期间": {
@@ -800,13 +1057,15 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     self_accounts = self_accounts or []
     raw_count = int(len(df))
 
-    # 相同明确账号先互补本方名称/银行；随后将两份高重合、账号都未知的配套文件归到共享虚拟账户。
+    # 先用同批次反向互转记录恢复缺失身份；再按明确账号互补名称/银行。
+    df, reciprocal_identity = infer_identity_from_reciprocal_transfers(df)
     df, metadata_completion = complete_metadata_by_explicit_account(df)
     df, unknown_pairing = pair_unknown_account_sources(df)
 
     # 阶段一只判断单文件证据；阶段二可利用同批次其它文件的明确账号和交易重合证据补全未知账号。
     # 账号参与交易唯一编号内容指纹，因此必须在跨文件去重前重算编号。
     df, account_resolution = resolve_batch_accounts(df)
+    df, account_type_completion = complete_account_type_by_verified_identity(df)
     df = regenerate_transaction_ids(df)
     account_resolution = finalize_account_resolution_report(df, account_resolution)
     unknown_pairing = finalize_pair_report(df, unknown_pairing)
@@ -907,6 +1166,8 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "余额校验范围": "按本方账户分别校验",
         },
         "同账号元数据补全": metadata_completion,
+        "账号主体账户类型补全": account_type_completion,
+        "批次互转身份补全": reciprocal_identity,
         "批次未知账户配对": unknown_pairing,
         "批次内账号归并": account_resolution,
         "跨文件去重": dedup_info,

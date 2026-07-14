@@ -337,7 +337,7 @@
         对方账号: 对手账户
         渠道: 交易渠道
   reader_id: openpyxl_grid
-- id: md5:342420b81a93cd9db8b3740aaf94f61c
+- id: md5:0c9233159f7de668efeadd3ac4b78d90
   file_type: excel
   bank: 北京银行
   account_type: 对公
@@ -359,7 +359,7 @@
         余额: 账户余额
         对手方: 对手名称
         对手方账号: 对手账户
-        对手方银行: null
+        对手方银行: __对手开户行
         收款人: null
         收款账号: null
         用途: 银行备注
@@ -1552,7 +1552,7 @@
         对方户名: 对手名称
         对方开户行: null
   reader_id: openpyxl_grid
-- id: md5:735c6ce874c006fd599044ce8af7c5fd
+- id: md5:f8b6d9ad36448b09fa5e01fea0252165
   file_type: excel
   bank: 北京银行
   account_type: 对公
@@ -1577,7 +1577,7 @@
         余额: 账户余额
         对手方: 对手名称
         对手方账号: 对手账户
-        对手方银行: null
+        对手方银行: __对手开户行
         收款人: null
         收款账号: null
         用途: 银行备注
