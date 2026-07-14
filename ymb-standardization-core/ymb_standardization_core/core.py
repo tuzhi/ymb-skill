@@ -1287,6 +1287,9 @@ def standardize(path, out_dir=None, bank=None,
             t = ""
 
         bank_memo = cell(field_to_cols.get("银行备注", []))
+        # extract_mapping 也可映射收支方向；先于金额拆分执行，避免原始方向为
+        # “其他”等非标准值时丢失金额。具体业务词仍由各 reader YAML 配置。
+        extract_values = apply_extract_mapping(row, header, extract_mapping_rules)
         income = expense = txn = None
         if amount_mode == "分列":
             raw_inc = parse_amount(cell(field_to_cols.get("收入金额", [])))
@@ -1312,7 +1315,8 @@ def standardize(path, out_dir=None, bank=None,
                 else:
                     expense = abs(txn)
         elif amount_mode == "方向+金额":
-            direction = cell(field_to_cols.get("收支方向", []))
+            direction = (extract_values.get("收支方向")
+                         or cell(field_to_cols.get("收支方向", [])))
             amt = parse_amount(cell(field_to_cols.get("交易金额", [])
                                     or field_to_cols.get("收入金额", [])
                                     or field_to_cols.get("支出金额", [])))
@@ -1335,7 +1339,6 @@ def standardize(path, out_dir=None, bank=None,
             {"本方账户": acct["本方账户"], "本方名称": acct["本方名称"]},
             route_info.get("conditional_mapping") or [],
         )
-        extract_values = apply_extract_mapping(row, header, extract_mapping_rules)
         derived_values = {**extract_values, **conditional_values}
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
         opp_name = (derived_values["对手名称"] if "对手名称" in derived_values

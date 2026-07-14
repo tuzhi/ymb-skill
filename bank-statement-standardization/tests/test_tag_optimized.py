@@ -137,10 +137,16 @@ class TagOptimizedTest(unittest.TestCase):
     def test_baby_balance_product_rules_tag_as_internal_transfer(self):
         buckets = load_rules(ROOT / "assets" / "tag_rules.csv")
 
-        for direction, amount_col in [("收入", "收入金额"), ("支出", "支出金额")]:
+        cases = [
+            ("收入", "收入金额", "零钱通转出-到零钱"),
+            ("支出", "支出金额", "转入零钱通-来自零钱"),
+            ("收入", "收入金额", "零钱充值"),
+            ("支出", "支出金额", "零钱提现"),
+        ]
+        for direction, amount_col, memo in cases:
             row = pd.Series({
                 "对手名称": "",
-                "银行备注": "零钱通转出-到零钱" if direction == "收入" else "转入零钱通-来自零钱",
+                "银行备注": memo,
                 "账户方附言": "",
                 "收入金额": "100" if amount_col == "收入金额" else "",
                 "支出金额": "100" if amount_col == "支出金额" else "",

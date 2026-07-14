@@ -1015,6 +1015,23 @@
         交易对方: 对手名称
         商户单号: null
   reader_options:
+    extract_mapping:
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱充值$
+      replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱提现$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^转入零钱通.*$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱通转出.*$
+      replacement: 收入
     column_transforms:
       交易对方:
         newline: cjk_join

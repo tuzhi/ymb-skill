@@ -635,6 +635,30 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             self.assertEqual(report["文件画像"]["counterparty_profile"]["enterprise_counterparty_count"], 6)
             self.assertEqual(report["文件画像"]["counterparty_profile"]["valid_counterparty_count"], 20)
 
+    def test_wechat_yaml_direction_mapping_restores_other_amounts(self):
+        pdf = REPO_ROOT / "bank-statement-standardization" / "testdata" / "邓子威" / "邓微信.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供邓子威微信流水样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, _report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        cases = {
+            "零钱提现": ("支出", 19),
+            "零钱充值": ("收入", 8),
+            "转入零钱通": ("支出", 3),
+        }
+        for keyword, (direction, expected_count) in cases.items():
+            matched = [row for row in rows if keyword in row["银行备注"]]
+            self.assertEqual(len(matched), expected_count)
+            self.assertTrue(all(row["交易金额"] for row in matched))
+            amount_field = "收入金额" if direction == "收入" else "支出金额"
+            opposite_field = "支出金额" if direction == "收入" else "收入金额"
+            self.assertTrue(all(row[amount_field] for row in matched))
+            self.assertTrue(all(not row[opposite_field] for row in matched))
+
 
 if __name__ == "__main__":
     unittest.main()
