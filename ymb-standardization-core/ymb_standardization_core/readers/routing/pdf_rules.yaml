@@ -702,7 +702,7 @@
       pattern: '(?<!\d)\d{8,}(?!\d)'
       replacement: ''
   reader_id: pdfplumber_text_lines
-- id: md5:fbe787c6cef349a9808643ff449af6f3
+- id: md5:0a45d881baf8861f2799735ca60e0652
   file_type: pdf
   bank: 兴业银行
   account_type: 个人
@@ -724,8 +724,8 @@
         Transaction Time: null
         Accounting Date: null
         Transaction Type: null
-        Transaction Amount: null
-        Account Balance: null
+        Transaction Amount: 交易金额
+        Account Balance: 账户余额
         Counterparty’s: 对手名称
         Counterparty’s Account No.: 对手账户
   reader_options:

@@ -47,6 +47,63 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
 
 
 class BatchAccountResolutionTests(unittest.TestCase):
+    def test_same_source_pdf_xlsx_rows_align_one_to_one_with_time_precision_difference(self):
+        rows = []
+        for idx in range(20):
+            account = f"620000000000{idx:04d}"
+            pdf = transaction(
+                "同源流水.pdf", "622908 **** 2028", f"2026-04-01 10:{idx:02d}:00",
+                "", f"对手{idx}", account,
+            )
+            xlsx = transaction(
+                "同源流水.xlsx", "622908 **** 2028", f"2026-04-01 10:{idx:02d}:30",
+                "", f"对手{idx}", account,
+            )
+            pdf["收入金额"] = xlsx["收入金额"] = "100.00"
+            pdf["支出金额"] = xlsx["支出金额"] = ""
+            pdf["账户余额"] = xlsx["账户余额"] = ""
+            pdf["来源行号"] = xlsx["来源行号"] = str(idx + 1)
+            rows.extend([pdf, xlsx])
+        unique_pdf = transaction(
+            "同源流水.pdf", "622908 **** 2028", "2026-04-02 10:00:00", "",
+            "PDF独有", "6299999999999999",
+        )
+        unique_pdf["收入金额"] = "88.00"
+        unique_pdf["支出金额"] = ""
+        unique_pdf["账户余额"] = ""
+        rows.append(unique_pdf)
+
+        aligned, report = integrate.align_same_source_cross_format(pd.DataFrame(rows))
+
+        self.assertEqual(len(aligned), 21)
+        self.assertEqual(report["移除笔数"], 20)
+        self.assertEqual(report["来源组"][0]["较小来源覆盖率"], 1.0)
+        self.assertTrue(report["来源组"][0]["自动折叠"])
+        self.assertEqual((aligned["来源文件名"] == "同源流水.pdf").sum(), 1)
+
+    def test_same_source_cross_format_does_not_fold_when_coverage_is_below_gate(self):
+        rows = []
+        for idx in range(21):
+            opponent_account = f"620000000000{idx:04d}" if idx < 20 else ""
+            for source, second in (("同源流水.pdf", 0), ("同源流水.xlsx", 30)):
+                row = transaction(
+                    source, "622908 **** 2028", f"2026-04-01 10:{idx:02d}:{second:02d}",
+                    "", f"对手{idx}", opponent_account,
+                )
+                row["收入金额"] = "100.00"
+                row["支出金额"] = ""
+                row["账户余额"] = ""
+                rows.append(row)
+
+        aligned, report = integrate.align_same_source_cross_format(pd.DataFrame(rows))
+
+        self.assertEqual(len(aligned), 42)
+        self.assertEqual(report["移除笔数"], 0)
+        self.assertFalse(report["来源组"][0]["自动折叠"])
+        self.assertIn("覆盖率低于", report["来源组"][0]["未启用原因"])
+        self.assertEqual(report["来源组"][0]["待核查候选数"], 1)
+        self.assertEqual(report["待核查候选"][0]["未自动折叠原因"], "缺少完整对手账户")
+
     def test_reciprocal_transfer_restores_unknown_account_and_monthly_suffix_group(self):
         known = transaction(
             "北京银行.xlsx", "20000080375000116971117", "2026-03-30 08:08:07", "1000.00",

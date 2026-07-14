@@ -754,7 +754,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:fbe787c6cef349a9808643ff449af6f3")
+        self.assertEqual(result["fingerprint_id"], "md5:0a45d881baf8861f2799735ca60e0652")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")

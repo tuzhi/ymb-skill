@@ -21,8 +21,10 @@ integrate.py — 单客户多流水文件整合与验证（阶段二，对应 Pr
   <客户名>__整合报告.json    Prompt 2 结构的整合与校验报告
 """
 import argparse, glob, hashlib, json, os, re, sys, unicodedata
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from itertools import combinations
 
 try:
@@ -899,6 +901,247 @@ def dedup_cross_file(df):
     return kept.reset_index(drop=True), info
 
 
+def _source_format(source):
+    return os.path.splitext(_clean_text(source))[1].lower()
+
+
+def _source_stem(source):
+    stem = os.path.splitext(os.path.basename(_clean_text(source)))[0]
+    return _identity_text(stem)
+
+
+def _cross_format_amount_key(row):
+    """返回跨格式对齐使用的（方向, 金额分值）；方向不明确时拒绝参与。"""
+    def cents(value):
+        text = _clean_text(value).replace(",", "")
+        if not text:
+            return None
+        try:
+            amount = Decimal(text).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, ValueError):
+            return None
+        return int(amount * 100)
+
+    income = cents(row.get("收入金额"))
+    expense = cents(row.get("支出金额"))
+    income = income if income not in (None, 0) else None
+    expense = expense if expense not in (None, 0) else None
+    if bool(income) == bool(expense):
+        return None
+    return ("收入", abs(income)) if income else ("支出", abs(expense))
+
+
+def _cross_format_match_key(row):
+    amount = _cross_format_amount_key(row)
+    opponent_account = "".join(
+        char for char in _clean_text(row.get("对手账户")) if char.isdigit()
+    )
+    time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+    if amount is None or len(opponent_account) < 8 or pd.isna(time):
+        return None
+    return (*amount, opponent_account), time
+
+
+def _source_identity(rows):
+    accounts = {
+        _identity_text(value) for value in rows["本方账户"]
+        if _clean_text(value) and not _is_unknown_account(value)
+    }
+    banks = {
+        _identity_bank(value) for value in rows["开户行"]
+        if _identity_bank(value)
+    }
+    return accounts, banks
+
+
+def align_same_source_cross_format(df, min_matches=20, min_coverage=0.98, max_seconds=60):
+    """逐笔折叠同名 PDF 与 XLS/XLSX 的强匹配交易。
+
+    仅在同一文件名主体、同一已知本方账户、银行不冲突，且较小来源覆盖率达到门槛时启用。
+    强匹配键为方向、金额分值、完整数字对手账户，再要求时间差不超过 max_seconds；只有双方
+    候选都唯一的一对一记录才会匹配。结构化表格记录保留，PDF 独有记录始终保留。
+    """
+    info = {
+        "规则版本": "same-source-cross-format-v1",
+        "折叠组数": 0,
+        "移除笔数": 0,
+        "来源组": [],
+        "明细": [],
+        "待核查候选": [],
+    }
+    if df.empty or not {"来源文件名", "本方账户", "开户行"}.issubset(df.columns):
+        return df, info
+
+    result = df.copy()
+    sources = sorted({_clean_text(value) for value in result["来源文件名"] if _clean_text(value)})
+    by_stem = defaultdict(list)
+    for source in sources:
+        if _source_format(source) in {".pdf", ".xls", ".xlsx"}:
+            by_stem[_source_stem(source)].append(source)
+
+    remove_indices = set()
+    for stem, group_sources in sorted(by_stem.items()):
+        pdf_sources = [source for source in group_sources if _source_format(source) == ".pdf"]
+        table_sources = [source for source in group_sources if _source_format(source) in {".xls", ".xlsx"}]
+        if len(pdf_sources) != 1 or len(table_sources) != 1:
+            continue
+
+        pdf_source, table_source = pdf_sources[0], table_sources[0]
+        pdf_rows = result[result["来源文件名"].fillna("").eq(pdf_source)]
+        table_rows = result[result["来源文件名"].fillna("").eq(table_source)]
+        pdf_accounts, pdf_banks = _source_identity(pdf_rows)
+        table_accounts, table_banks = _source_identity(table_rows)
+        account_ok = len(pdf_accounts) == 1 and pdf_accounts == table_accounts
+        bank_ok = not pdf_banks or not table_banks or pdf_banks == table_banks
+        group_report = {
+            "文件名主体": stem,
+            "PDF来源": pdf_source,
+            "表格来源": table_source,
+            "PDF笔数": int(len(pdf_rows)),
+            "表格笔数": int(len(table_rows)),
+            "强匹配笔数": 0,
+            "较小来源覆盖率": 0.0,
+            "歧义记录数": 0,
+            "待核查候选数": 0,
+            "自动折叠": False,
+            "未启用原因": "",
+        }
+        if not account_ok or not bank_ok:
+            group_report["未启用原因"] = "本方账户不一致或开户行冲突"
+            info["来源组"].append(group_report)
+            continue
+
+        pdf_keys = {}
+        table_keys = {}
+        pdf_index = defaultdict(list)
+        table_index = defaultdict(list)
+        for index, row in pdf_rows.iterrows():
+            matched = _cross_format_match_key(row)
+            if matched:
+                pdf_keys[index] = matched
+                pdf_index[matched[0]].append((index, matched[1]))
+        for index, row in table_rows.iterrows():
+            matched = _cross_format_match_key(row)
+            if matched:
+                table_keys[index] = matched
+                table_index[matched[0]].append((index, matched[1]))
+
+        pdf_candidates = defaultdict(set)
+        table_candidates = defaultdict(set)
+        for key in set(pdf_index) & set(table_index):
+            table_entries = sorted(table_index[key], key=lambda item: item[1])
+            table_times = [item[1] for item in table_entries]
+            for pdf_index_value, pdf_time in pdf_index[key]:
+                lower = pdf_time - timedelta(seconds=max_seconds)
+                upper = pdf_time + timedelta(seconds=max_seconds)
+                start = bisect_left(table_times, lower)
+                end = bisect_right(table_times, upper)
+                for table_index_value, _table_time in table_entries[start:end]:
+                    pdf_candidates[pdf_index_value].add(table_index_value)
+                    table_candidates[table_index_value].add(pdf_index_value)
+
+        pairs = []
+        ambiguous = set()
+        for pdf_index_value, candidates in pdf_candidates.items():
+            if len(candidates) != 1:
+                ambiguous.add(pdf_index_value)
+                ambiguous.update(candidates)
+                continue
+            table_index_value = next(iter(candidates))
+            if len(table_candidates[table_index_value]) != 1:
+                ambiguous.add(pdf_index_value)
+                ambiguous.add(table_index_value)
+                continue
+            pairs.append((pdf_index_value, table_index_value))
+
+        # 缺少完整对手账户时绝不自动折叠；若方向、金额、时间窗口仍互相唯一，只登记待核查候选。
+        weak_pdf = defaultdict(list)
+        weak_table = defaultdict(list)
+        for index, row in pdf_rows.iterrows():
+            if index in pdf_keys:
+                continue
+            amount = _cross_format_amount_key(row)
+            time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+            if amount and not pd.isna(time):
+                weak_pdf[amount].append((index, time))
+        for index, row in table_rows.iterrows():
+            if index in table_keys:
+                continue
+            amount = _cross_format_amount_key(row)
+            time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+            if amount and not pd.isna(time):
+                weak_table[amount].append((index, time))
+        weak_candidates = []
+        for amount in set(weak_pdf) & set(weak_table):
+            for pdf_index_value, pdf_time in weak_pdf[amount]:
+                candidates = [
+                    (table_index_value, table_time)
+                    for table_index_value, table_time in weak_table[amount]
+                    if abs((pdf_time - table_time).total_seconds()) <= max_seconds
+                ]
+                if len(candidates) != 1:
+                    continue
+                table_index_value, table_time = candidates[0]
+                reverse = [
+                    other_pdf_index
+                    for other_pdf_index, other_pdf_time in weak_pdf[amount]
+                    if abs((other_pdf_time - table_time).total_seconds()) <= max_seconds
+                ]
+                if len(reverse) == 1:
+                    weak_candidates.append((pdf_index_value, table_index_value, pdf_time, table_time, amount))
+
+        group_report["待核查候选数"] = len(weak_candidates)
+        for pdf_index_value, table_index_value, pdf_time, table_time, amount in weak_candidates:
+            pdf_row = result.loc[pdf_index_value]
+            table_row = result.loc[table_index_value]
+            info["待核查候选"].append({
+                "PDF交易唯一编号": _clean_text(pdf_row.get("交易唯一编号")),
+                "表格交易唯一编号": _clean_text(table_row.get("交易唯一编号")),
+                "PDF来源文件": pdf_source,
+                "表格来源文件": table_source,
+                "收支方向": amount[0],
+                "金额分值": amount[1],
+                "时间差秒": abs((pdf_time - table_time).total_seconds()),
+                "未自动折叠原因": "缺少完整对手账户",
+            })
+
+        smaller_count = min(len(pdf_rows), len(table_rows))
+        coverage = len(pairs) / smaller_count if smaller_count else 0.0
+        group_report["强匹配笔数"] = len(pairs)
+        group_report["较小来源覆盖率"] = round(coverage, 6)
+        group_report["歧义记录数"] = len(ambiguous)
+        if len(pairs) < min_matches:
+            group_report["未启用原因"] = f"强匹配不足{min_matches}笔"
+        elif coverage < min_coverage:
+            group_report["未启用原因"] = f"较小来源覆盖率低于{min_coverage:.0%}"
+        else:
+            group_report["自动折叠"] = True
+            info["折叠组数"] += len(pairs)
+            info["移除笔数"] += len(pairs)
+            for pdf_index_value, table_index_value in pairs:
+                remove_indices.add(pdf_index_value)
+                pdf_row = result.loc[pdf_index_value]
+                table_row = result.loc[table_index_value]
+                pdf_time = pdf_keys[pdf_index_value][1]
+                table_time = table_keys[table_index_value][1]
+                info["明细"].append({
+                    "重复组编号": f"XF-{len(info['明细']) + 1:06d}",
+                    "保留交易唯一编号": _clean_text(table_row.get("交易唯一编号")),
+                    "保留来源文件": table_source,
+                    "移除交易唯一编号": _clean_text(pdf_row.get("交易唯一编号")),
+                    "移除来源文件": pdf_source,
+                    "收支方向": pdf_keys[pdf_index_value][0][0],
+                    "金额分值": pdf_keys[pdf_index_value][0][1],
+                    "对手账户": pdf_keys[pdf_index_value][0][2],
+                    "时间差秒": abs((pdf_time - table_time).total_seconds()),
+                })
+        info["来源组"].append(group_report)
+
+    if remove_indices:
+        result = result.drop(index=sorted(remove_indices))
+    return result.reset_index(drop=True), info
+
+
 def balance_check(df):
     """按本方账户分别做余额连续性校验。返回报告列表。"""
     results = []
@@ -1070,8 +1313,17 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     account_resolution = finalize_account_resolution_report(df, account_resolution)
     unknown_pairing = finalize_pair_report(df, unknown_pairing)
 
-    # 跨文件/重复导入去重：折叠内容指纹（交易唯一编号）完全相同的交易，仅保留一笔（移除明细记入报告）。
-    df, dedup_info = dedup_cross_file(df)
+    # 同名 PDF 与 XLS/XLSX 先按强证据逐笔一对一对齐；再折叠内容指纹完全相同的重复导入。
+    # 前者解决秒/毫秒精度、PDF 文本空格等格式差异，后者继续处理完全一致交易。
+    df, cross_format_info = align_same_source_cross_format(df)
+    df, exact_dedup_info = dedup_cross_file(df)
+    dedup_info = {
+        "折叠组数": cross_format_info["折叠组数"] + exact_dedup_info["折叠组数"],
+        "移除笔数": cross_format_info["移除笔数"] + exact_dedup_info["移除笔数"],
+        "明细": exact_dedup_info["明细"],
+        "同源跨格式逐笔对齐": cross_format_info,
+        "完全相同内容指纹折叠": exact_dedup_info,
+    }
 
     # 先恢复「每个文件标准化后的余额正序」（去重会按编号哈希打乱顺序），再做账户级连续性重排——
     # 使「日内原序」候选的兜底序是文件内余额序、而非哈希乱序。
@@ -1114,12 +1366,26 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "证据交易唯一编号列表": item["证据交易唯一编号列表"],
             "建议动作": "结合账户类型、余额链或原始对账单确认本方账号",
         })
+    for item in cross_format_info["待核查候选"]:
+        review.append({
+            "事项类型": "同源跨格式疑似重复",
+            "复核原因": item["未自动折叠原因"],
+            "证据交易唯一编号列表": [
+                item["PDF交易唯一编号"], item["表格交易唯一编号"],
+            ],
+            "建议动作": "核对原始 PDF/XLSX；确认同笔后人工合并",
+        })
 
     blocking = []
     warnings = []
     if dedup_info["移除笔数"]:
-        warnings.append(f"跨文件去重折叠 {dedup_info['移除笔数']} 笔完全相同交易"
+        warnings.append(f"跨文件去重折叠 {dedup_info['移除笔数']} 笔重复交易"
                         f"（{dedup_info['折叠组数']} 组）")
+    if cross_format_info["待核查候选"]:
+        warnings.append(
+            f"存在 {len(cross_format_info['待核查候选'])} 组同源跨格式疑似重复，"
+            "因缺少完整对手账户未自动折叠"
+        )
     if any(b["校验状态"] == "预警" for b in bal):
         warnings.append("存在余额断点，需人工复核")
     if dups:
@@ -1159,8 +1425,9 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "排序口径": "余额是对账真值。每个账户的跨文件交易在「原序/整体翻转/按日期升序/余额链重建」中"
                        "选余额断点最少的行序——既保留各文件原始对账口径，又正确跨文件归并、消除"
                        "倒序/日内倒序/同秒多笔/内部记账序≠时间戳导致的伪断点；不以交易时间硬排。",
-            "跨文件去重规则": "交易唯一编号（内容指纹：本方名称/账户+时间+对手+收支金额+余额）完全相同即视为"
-                          "同一笔交易的跨文件再导入，仅保留一笔；保留优先级：结构化表格>PDF、字段更全、行号更小",
+            "跨文件去重规则": "同名 PDF/XLS(X) 先按方向、金额分值、完整对手账户及60秒时间窗做互相唯一的逐笔对齐，"
+                          "且至少20笔、较小来源覆盖率≥98%才自动折叠；随后按交易唯一编号折叠完全相同交易。"
+                          "两类规则均优先保留结构化表格，来源独有和歧义记录不删除",
             "疑似重复判断规则": ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称"],
             "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天、对手为本方名称/账户；仅标记不删除",
             "余额校验范围": "按本方账户分别校验",
@@ -1170,6 +1437,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
         "批次互转身份补全": reciprocal_identity,
         "批次未知账户配对": unknown_pairing,
         "批次内账号归并": account_resolution,
+        "同源跨格式逐笔对齐": cross_format_info,
         "跨文件去重": dedup_info,
         "疑似重复交易组": dups,
         "自有账户互转组": selfs,
