@@ -47,6 +47,56 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
 
 
 class BatchAccountResolutionTests(unittest.TestCase):
+    def test_balance_continuous_volumes_merge_as_one_logical_account(self):
+        rows = []
+        specs = (
+            ("交易明细111.pdf", "2025-06-16 11:20:42", "198.70", "", "30000.00"),
+            ("交易明细+B.pdf", "2025-06-17 12:34:01", "978.70", "780.00", ""),
+            ("交易明细+A.pdf", "2026-01-28 17:08:19", "1538.70", "560.00", ""),
+        )
+        for source, time, balance, income, expense in specs:
+            row = transaction(source, f"未识别账户#{Path(source).stem}", time, balance)
+            row["本方名称"] = ""
+            row["开户行"] = "上饶银行"
+            row["收入金额"] = income
+            row["支出金额"] = expense
+            row["收入金额_num"] = float(income) if income else float("nan")
+            row["支出金额_num"] = float(expense) if expense else float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = "md5:srbank"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(resolved["本方账户"].nunique(), 1)
+        self.assertTrue(resolved["本方账户"].iloc[0].startswith("批次虚拟账户#上饶银行#SERIES-"))
+        self.assertEqual(report["已归并组数"], 1)
+        self.assertEqual(report["已归并文件数"], 3)
+        self.assertEqual(len(report["归并明细"][0]["balance_links"]), 2)
+
+    def test_filename_family_does_not_merge_when_balance_boundary_breaks(self):
+        rows = []
+        for source, time, balance, income in (
+            ("交易明细+A.pdf", "2025-01-01 10:00:00", "100.00", "100.00"),
+            ("交易明细+B.pdf", "2025-01-02 10:00:00", "999.00", "50.00"),
+        ):
+            row = transaction(source, f"未识别账户#{source}", time, balance)
+            row["开户行"] = "上饶银行"
+            row["收入金额"] = income
+            row["支出金额"] = ""
+            row["收入金额_num"] = float(income)
+            row["支出金额_num"] = float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = "md5:srbank"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(resolved["本方账户"].nunique(), 2)
+        self.assertEqual(report["已归并组数"], 0)
+
     def test_same_source_pdf_xlsx_rows_align_one_to_one_with_time_precision_difference(self):
         rows = []
         for idx in range(20):

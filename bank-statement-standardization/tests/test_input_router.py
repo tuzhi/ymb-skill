@@ -912,6 +912,17 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国民生银行")
         self.assertEqual(route["account_type"], "个人")
+        self.assertEqual(route["fingerprint_id"], "md5:907beda6d95ea54b2f6e380193726787")
+        self.assertEqual(
+            route["preamble_extractors"],
+            [
+                {"field": "本方名称", "pattern": r"客户姓名[:：]\s*([^\s]+)"},
+                {"field": "本方账户", "pattern": r"客户账号[:：]\s*(\d{8,})"},
+            ],
+        )
+        self.assertEqual(len(route["extract_mapping"]), 2)
+        self.assertEqual(route["extract_mapping"][0]["field"], "对手账户")
+        self.assertEqual(route["extract_mapping"][1]["field"], "对手名称")
         self.assertGreater(len(result.rows), 10)
         self.assertEqual(
             result.rows[0],

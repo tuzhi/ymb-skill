@@ -536,9 +536,9 @@
         交易用途: 银行备注
         会计日期: 交易日期
   reader_id: pdfplumber_table
-- id: md5:b175ebd2e387d181fe3c4a5fbdfa998d
+- id: md5:6a5112d8308bc6c15bc9e8da752c1bcf
   file_type: pdf
-  bank: 未识别
+  bank: 上饶银行
   account_type: 对公
   fingerprint:
     metadata:
@@ -549,10 +549,12 @@
       all:
       - text: 交易明细
         font: STSong-Light
-        size_min: 23
-        size_max: 25
-        top_max: 60
+        size_min: 24
+        size_max: 24
+        bold: false
+        top_max: 50
         centered: true
+        center_tolerance: 0.03
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -923,7 +925,7 @@
         余额: 账户余额
         时间戳: null
   reader_id: pdfplumber_table
-- id: md5:831325d33aa7b01f10771881ffc3ae76
+- id: md5:907beda6d95ea54b2f6e380193726787
   file_type: pdf
   bank: 中国民生银行
   account_type: 个人
@@ -931,6 +933,11 @@
     identity:
       any:
       - 个人账户对账单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '客户账号[:：]\s*(\d{8,})'
     columns:
       all:
         中国民生银行: null
@@ -940,6 +947,15 @@
         交易金额: 交易金额
         账户余额: 账户余额
         对方户名/账号: 对手名称
+  reader_options:
+    extract_mapping:
+    - source: 对方户名/账号
+      field: 对手账户
+      pattern: '^.*?/\s*(\d{8,})(?:\s+.*)?$'
+    - source: 对方户名/账号
+      field: 对手名称
+      pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
+      replacement: '\1'
   reader_id: pdfplumber_text_lines
 - id: md5:099d6dd5362e8052b2b079fac6ebf6e0
   file_type: pdf

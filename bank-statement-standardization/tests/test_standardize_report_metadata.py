@@ -594,6 +594,32 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(report["文件画像"]["本方账户"], "791912215110008")
         self.assertEqual(report["文件画像"]["本方名称"], "斑马（南昌）商业有限公司")
 
+    def test_cmbc_personal_pdf_extracts_customer_name_and_account_from_preamble(self):
+        pdf = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "范新春"
+            / "20260527134259699999991324503110064813999998417140.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供民生银行个人账户对账单 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 976)
+        self.assertEqual({row["本方名称"] for row in rows}, {"范新春"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"6216917800007827"})
+        alipay_rows = [row for row in rows if row["对手账户"] == "20884029356388680156"]
+        self.assertEqual(len(alipay_rows), 53)
+        self.assertTrue(any(row["对手名称"] == "范新春" for row in alipay_rows))
+        self.assertFalse(any("20884029356388680156" in row["对手名称"] for row in rows))
+        self.assertEqual(report["文件画像"]["本方名称"], "范新春")
+        self.assertEqual(report["文件画像"]["本方账户"], "6216917800007827")
+
     def test_enterprise_counterparty_ratio_marks_probable_corporate(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

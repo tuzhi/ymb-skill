@@ -560,7 +560,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "未识别")
 
-    def test_corporate_online_transaction_detail_pdf_does_not_infer_bank(self):
+    def test_srbank_corporate_online_transaction_detail_pdf_route(self):
         text = (
             "交易明细 序号 交易流水号 交易时间 对方户名 对方账号 对方账户开户网点 "
             "支出 收入 账户余额 批次号 总笔数 附言 摘要 "
@@ -576,9 +576,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:b175ebd2e387d181fe3c4a5fbdfa998d'})
+        self.assertEqual(result["fingerprint_id"], "md5:6a5112d8308bc6c15bc9e8da752c1bcf")
         self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["bank"], "未识别")
+        self.assertEqual(result["bank"], "上饶银行")
 
     def test_icbc_account_detail_pdf_allows_title_and_header_on_separate_lines(self):
         lines = [

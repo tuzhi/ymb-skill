@@ -585,6 +585,126 @@ def pair_unknown_account_sources(df, min_overlap=3, min_ratio=0.9):
     return result, report
 
 
+def _filename_series_family(value):
+    """文件名只用于召回同类分卷候选。"""
+    stem = unicodedata.normalize("NFKC", os.path.splitext(os.path.basename(_clean_text(value)))[0])
+    compact = re.sub(r"\s+", "", stem).casefold()
+    return re.sub(
+        r"(?:[+_\-][a-z]|(?<=[\u4e00-\u9fff])[a-z]|(?:part|第)\d+(?:部分|卷)?|\d+)$",
+        "", compact, flags=re.IGNORECASE,
+    ).rstrip("+_-")
+
+
+def _cents(value):
+    try:
+        return int(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def merge_balance_continuous_sources(df):
+    """同 fingerprint、银行、账户类型和文件名家族下，以精确余额链归并相邻分卷。"""
+    result = df.copy()
+    report = {"已归并组数": 0, "已归并文件数": 0, "已归并交易数": 0, "归并明细": []}
+    source_col = _source_col(result)
+    required = {"本方账户", "本方名称", "开户行", "账户类型", "来源文件名",
+                "__fingerprint_id", "__t", "__fileseq"}
+    if result.empty or not source_col or not required.issubset(result.columns):
+        return result, report
+
+    buckets = defaultdict(list)
+    for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True):
+        fingerprint = _first_nonempty(rows, "__fingerprint_id")
+        filename = _first_nonempty(rows, "来源文件名")
+        family = _filename_series_family(filename)
+        banks = {_identity_bank(value) for value in rows["开户行"] if _identity_bank(value)}
+        types = {_clean_text(value) for value in rows["账户类型"]
+                 if _clean_text(value) in {"个人", "对公"}}
+        if not fingerprint or len(family) < 4 or len(banks) != 1 or len(types) != 1:
+            continue
+        ordered = rows.sort_values("__fileseq", kind="mergesort")
+        usable = ordered[
+            ordered["账户余额_num"].notna()
+            & (ordered["收入金额_num"].notna() ^ ordered["支出金额_num"].notna())
+        ]
+        times = rows["__t"].dropna()
+        if usable.empty or times.empty:
+            continue
+        buckets[(fingerprint, next(iter(banks)), next(iter(types)), family)].append({
+            "source": _clean_text(source), "rows": rows, "filename": filename,
+            "first": usable.iloc[0], "last": usable.iloc[-1],
+            "start": times.min(), "end": times.max(),
+            "accounts": {_explicit_account(value) for value in rows["本方账户"]
+                         if _explicit_account(value)},
+            "names": {_identity_text(value): _clean_text(value)
+                      for value in rows["本方名称"] if _identity_text(value)},
+        })
+
+    def boundary(left, right):
+        accounts = left["accounts"] | right["accounts"]
+        names = set(left["names"]) | set(right["names"])
+        if len(accounts) > 1 or len(names) > 1 or left["end"] > right["start"]:
+            return None
+        previous = _cents(left["last"].get("账户余额_num"))
+        next_balance = _cents(right["first"].get("账户余额_num"))
+        income = _cents(right["first"].get("收入金额_num"))
+        expense = _cents(right["first"].get("支出金额_num"))
+        if previous is None or next_balance is None or (income is None) == (expense is None):
+            return None
+        amount = income if income is not None else -expense
+        if amount == 0 or previous + amount != next_balance:
+            return None
+        return {
+            "from": left["filename"], "to": right["filename"],
+            "previous_balance": previous / 100, "next_amount": amount / 100,
+            "next_balance": next_balance / 100, "difference": 0.0,
+            "_indices": [left["last"].name, right["first"].name],
+        }
+
+    def merge_chain(key, members, links):
+        if len(members) < 2:
+            return
+        fingerprint, _bank_key, account_type, family = key
+        accounts = {account for member in members for account in member["accounts"]}
+        names = {name_key: name for member in members
+                 for name_key, name in member["names"].items()}
+        files = sorted(member["filename"] for member in members)
+        digest = hashlib.md5("\n".join([fingerprint, *files]).encode()).hexdigest()[:10]
+        series_id = f"SERIES-{digest}"
+        rows = pd.concat([member["rows"] for member in members])
+        bank = _first_nonempty(rows, "开户行")
+        account = next(iter(accounts)) if accounts else f"批次虚拟账户#{bank}#{series_id}"
+        result.loc[rows.index, "本方账户"] = account
+        if len(names) == 1:
+            result.loc[rows.index, "本方名称"] = next(iter(names.values()))
+        result.loc[rows.index, "开户行"] = bank
+        result.loc[rows.index, "账户类型"] = account_type
+        evidence_indices = [index for link in links for index in link.pop("_indices")]
+        report["归并明细"].append({
+            "source_series_id": series_id, "逻辑本方账户": account,
+            "成员文件": files, "fingerprint_id": fingerprint,
+            "filename_family": family, "balance_links": links,
+            "_证据行索引": evidence_indices,
+        })
+        report["已归并组数"] += 1
+        report["已归并文件数"] += len(members)
+        report["已归并交易数"] += len(rows)
+
+    for key, candidates in buckets.items():
+        candidates.sort(key=lambda item: (item["start"], item["source"]))
+        chain, links = [candidates[0]], []
+        for left, right in zip(candidates, candidates[1:]):
+            link = boundary(left, right)
+            if link:
+                chain.append(right)
+                links.append(link)
+            else:
+                merge_chain(key, chain, links)
+                chain, links = [right], []
+        merge_chain(key, chain, links)
+    return result, report
+
+
 def _match_explicit_account_by_overlap(source_rows, explicit_rows, min_overlap=3, min_ratio=0.9):
     source_key_rows = defaultdict(list)
     for index, row in source_rows.iterrows():
@@ -780,6 +900,13 @@ def finalize_pair_report(df, report):
     return report
 
 
+def finalize_series_report(df, report):
+    for item in report["归并明细"]:
+        indices = item.pop("_证据行索引", [])
+        item["证据交易唯一编号列表"] = df.loc[indices, "交易唯一编号"].tolist()
+    return report
+
+
 def regenerate_transaction_ids(df):
     """账号归并后按阶段一同一口径重算内容指纹，并保留文件内真实重复笔序号。"""
     result = df.copy()
@@ -852,6 +979,7 @@ def load_inputs(paths):
         df["__router_bank"] = image.get("router_bank") or image.get("bank") or "未识别"
         df["__inferred_bank"] = image.get("inferred_bank") or ""
         df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
+        df["__fingerprint_id"] = image.get("fingerprint_id") or ""
         # 文件内行序：standardize 已把倒序文件翻正，故 0..n 即该文件的时间正序（含同秒多笔的原始相对顺序）。
         # 余额校验与输出排序都用它，绝不用交易时间当主键，避免同时刻多笔被打乱产生伪断点。
         df["__fileseq"] = range(len(df))
@@ -1303,6 +1431,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     # 先用同批次反向互转记录恢复缺失身份；再按明确账号互补名称/银行。
     df, reciprocal_identity = infer_identity_from_reciprocal_transfers(df)
     df, metadata_completion = complete_metadata_by_explicit_account(df)
+    df, balance_series = merge_balance_continuous_sources(df)
     df, unknown_pairing = pair_unknown_account_sources(df)
 
     # 阶段一只判断单文件证据；阶段二可利用同批次其它文件的明确账号和交易重合证据补全未知账号。
@@ -1311,6 +1440,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     df, account_type_completion = complete_account_type_by_verified_identity(df)
     df = regenerate_transaction_ids(df)
     account_resolution = finalize_account_resolution_report(df, account_resolution)
+    balance_series = finalize_series_report(df, balance_series)
     unknown_pairing = finalize_pair_report(df, unknown_pairing)
 
     # 同名 PDF 与 XLS/XLSX 先按强证据逐笔一对一对齐；再折叠内容指纹完全相同的重复导入。
@@ -1418,6 +1548,9 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "同账号元数据补全": "相同明确账号且名称/银行候选唯一时，只补空值，不覆盖冲突值",
             "双未知账号配对": "两个来源核心交易重合率≥90%、至少3笔、银行和账户类型不冲突且候选唯一时，"
                           "共享批次虚拟账户；真实账号仍保持未知",
+            "余额连续分卷归并": "同 fingerprint、银行、账户类型和文件名家族且明确身份不冲突时，"
+                              "仅在相邻文件边界余额精确到分连续且候选唯一时建立 source_series_id；"
+                              "文件名只召回候选，不单独决定归并",
             "批次内账号归并顺序": "加载标准化文件后、重算交易唯一编号前、跨文件去重前",
             "批次内账号归并规则": "同主体同银行只有一个明确账号时自动归并；存在多个明确账号时，"
                               "仅在至少两笔时间/收支金额/余额/对手完全重合且唯一命中时归并，否则人工复核",
@@ -1435,6 +1568,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
         "同账号元数据补全": metadata_completion,
         "账号主体账户类型补全": account_type_completion,
         "批次互转身份补全": reciprocal_identity,
+        "余额连续分卷归并": balance_series,
         "批次未知账户配对": unknown_pairing,
         "批次内账号归并": account_resolution,
         "同源跨格式逐笔对齐": cross_format_info,

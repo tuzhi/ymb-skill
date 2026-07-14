@@ -5,7 +5,7 @@ from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_
 TEXT_TABLE_FINGERPRINTS = {
     "md5:b3931dcff339eccaf63efd597d60132b": "currency",
     "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
-    "md5:831325d33aa7b01f10771881ffc3ae76": "cmbc_personal",
+    "md5:907beda6d95ea54b2f6e380193726787": "cmbc_personal",
 }
 
 
