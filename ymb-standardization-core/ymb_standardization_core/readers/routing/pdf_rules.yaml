@@ -614,7 +614,7 @@
         对方户名: 对手名称
         摘要: 银行备注
   reader_id: pdfplumber_table
-- id: md5:c17d8fd6703ef2b8dab16bb0d02d16ef
+- id: md5:f2ac81b34fea59be828e6e5dbd017b63
   file_type: pdf
   bank: 上饶银行
   account_type: 对公
@@ -622,6 +622,11 @@
     identity:
       any:
       - 上饶银行账户交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
     columns:
       all:
         账号：: 本方账户
@@ -639,6 +644,22 @@
         账户余额: 账户余额
         摘要: 银行备注
         附言: 账户方附言
+  reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d+$'
+      continuation: until_next_anchor_across_pages
+    column_transforms:
+      交易时间:
+        newline: remove_all
+      对方账号:
+        newline: remove_all
+      对方户名:
+        newline: cjk_join
+      摘要:
+        newline: cjk_join
+      附言:
+        newline: cjk_join
   reader_id: pdfplumber_table
 - id: md5:6cadae92bf0342082ec8ce1556cf1ac0
   file_type: pdf

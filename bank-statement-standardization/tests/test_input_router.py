@@ -806,6 +806,38 @@ class InputRouterTests(unittest.TestCase):
         self.assertGreater(len(result.rows), 10)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
 
+    def test_srbank_corporate_statement_merges_cross_page_transaction(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "皓景-顾利斌" / "皓景近1年交易流水-上饶银行.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供皓景上饶银行对公 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+        headers = result.rows[0]
+        sequence_index = headers.index("序号")
+        row_553 = next(row for row in result.rows[1:] if row[sequence_index] == "553")
+        values = dict(zip(headers, row_553))
+
+        self.assertEqual(route["reader_id"], "pdfplumber_table")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["fingerprint_id"], "md5:f2ac81b34fea59be828e6e5dbd017b63")
+        self.assertEqual(route["bank"], "上饶银行")
+        self.assertEqual(route["account_type"], "对公")
+        self.assertEqual(
+            route["row_anchor"],
+            {
+                "column": "序号",
+                "pattern": r"^\d+$",
+                "continuation": "until_next_anchor_across_pages",
+            },
+        )
+        self.assertEqual(len(result.rows) - 1, 560)
+        self.assertEqual(values["交易时间"], "2025-03-1414:52:19")
+        self.assertEqual(values["对方账号"], "100101223011001005")
+        self.assertEqual(values["支出"], "340")
+        self.assertEqual(values["账户余额"], "59267.77")
+
     def test_boc_personal_statement_extracts_customer_name_from_preamble(self):
         module = load_input_router()
         pdf = ROOT / "testdata" / "郭金伟" / "1.pdf"

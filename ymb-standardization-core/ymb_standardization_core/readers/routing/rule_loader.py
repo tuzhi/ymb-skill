@@ -473,7 +473,10 @@ def _row_anchor(item, fingerprint):
     continuation = row_transforms.get("continuation")
     if continuation:
         continuation = str(continuation).strip()
-        if continuation not in {"until_next_anchor"}:
+        if continuation not in {
+            "until_next_anchor",
+            "until_next_anchor_across_pages",
+        }:
             raise ValueError(f"unsupported row continuation: {continuation}")
         anchor["continuation"] = continuation
     return anchor

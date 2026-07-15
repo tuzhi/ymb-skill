@@ -24,6 +24,65 @@ from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  #
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_cjk_join_removes_spaces_around_ascii_parentheses(self):
+        self.assertEqual(
+            router._clean_pdf_cell(
+                "华炬(浦江\n)金属制品有限公司",
+                "对方户名",
+                column_transforms={"对方户名": {"newline": "cjk_join"}},
+            ),
+            "华炬(浦江)金属制品有限公司",
+        )
+
+    def test_pdf_table_cross_page_continuation_is_explicit_and_column_wise(self):
+        class FakePage:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def extract_tables(self):
+                return [self.rows]
+
+        class FakePdf:
+            def __init__(self, pages):
+                self.pages = pages
+
+        header = ["序号", "交易时间", "对方账号", "对方户名", "支出", "收入", "账户余额"]
+        pdf = FakePdf([
+            FakePage([
+                header,
+                ["553", "2025-\n03-14", "10010122301100", "", "340", "", "59267.77"],
+            ]),
+            FakePage([
+                header,
+                ["", "14:52:19", "1005", "", "", "", ""],
+                ["554", "2025-\n03-14\n14:52:16", "100101223011001005", "", "50317.66", "", "59607.77"],
+            ]),
+        ])
+        transforms = {
+            "交易时间": {"newline": "remove_all"},
+            "对方账号": {"newline": "remove_all"},
+        }
+
+        unchanged = router._extract_pdf_tables_default(
+            pdf,
+            column_transforms=transforms,
+        )
+        merged = router._extract_pdf_tables_default(
+            pdf,
+            column_transforms=transforms,
+            row_anchor={
+                "column": "序号",
+                "pattern": r"^\d+$",
+                "continuation": "until_next_anchor_across_pages",
+            },
+        )
+
+        self.assertEqual(len(unchanged), 4)
+        self.assertEqual(len(merged), 3)
+        self.assertEqual(merged[1][0], "553")
+        self.assertEqual(merged[1][1], "2025-03-1414:52:19")
+        self.assertEqual(merged[1][2], "100101223011001005")
+
     def test_pdf_table_column_transform_uses_actual_header_after_preamble(self):
         rows = [
             ["交易明细对应时间段", "2025-01-01 至 2025-12-31", ""],
@@ -769,7 +828,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:c17d8fd6703ef2b8dab16bb0d02d16ef'})
+        self.assertIn(result["fingerprint_id"], {'md5:f2ac81b34fea59be828e6e5dbd017b63'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "对公")
