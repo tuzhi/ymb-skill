@@ -229,6 +229,10 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["reader_id"], "openpyxl_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(
+            result.route_info["series_family"],
+            "historydetail_transfer_in_out_v1",
+        )
 
     def test_boc_hisxls_bilingual_corporate_excel_route(self):
         module = load_input_router()
@@ -292,6 +296,25 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["reader_id"], "openpyxl_grid")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "中国建设银行")
+
+    def test_ccb_flat_xls_keeps_counterparty_bank_as_internal_evidence(self):
+        module = load_input_router()
+        excel = (
+            ROOT
+            / "testdata"
+            / "河南路诚机电制造有限公司"
+            / "建行2022年10-12月份流水.xls"
+        )
+        if not excel.exists():
+            self.skipTest("本地未提供河南路诚建行 XLS 样本")
+
+        result = module.read_rows(str(excel))
+
+        self.assertEqual(result.route_info["bank"], "中国建设银行")
+        self.assertEqual(
+            result.route_info["column_mapping"]["对方开户机构"],
+            "__对手开户行",
+        )
 
     def test_ccb_account_detail_info_excel_route(self):
         module = load_input_router()

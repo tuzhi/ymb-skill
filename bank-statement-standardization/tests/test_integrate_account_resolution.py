@@ -422,6 +422,62 @@ class BatchAccountResolutionTests(unittest.TestCase):
                          {"149799090000014882"})
         self.assertEqual(report["补全文件数"], 1)
 
+    def test_reciprocal_transfer_accepts_multi_date_time_tolerance_consensus(self):
+        rows = []
+        target_account = "1714022019004509141"
+        for day, second in (("2026-01-01", 1), ("2026-01-02", 2), ("2026-01-03", 3)):
+            known = transaction(
+                "三湘流水.xls", "0070010101000003132", f"{day} 10:00:00", "1000.00",
+                NAME, target_account,
+            )
+            known["收入金额"] = ""
+            known["支出金额"] = "100.00"
+            known["__对手开户行"] = "中国工商银行总行清算中心"
+            unknown = transaction(
+                "工行分卷.xlsx", "未识别账户#工行分卷", f"{day} 10:00:0{second}", "1100.00",
+                NAME, "",
+            )
+            unknown["本方名称"] = ""
+            unknown["开户行"] = ""
+            unknown["收入金额"] = "100.00"
+            unknown["支出金额"] = ""
+            rows.extend([known, unknown])
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(pd.DataFrame(rows))
+
+        unknown_rows = resolved[resolved["来源文件名"] == "工行分卷.xlsx"]
+        self.assertEqual(set(unknown_rows["本方账户"]), {target_account})
+        self.assertEqual(set(unknown_rows["本方名称"]), {NAME})
+        self.assertEqual(set(unknown_rows["开户行"]), {"中国工商银行"})
+        detail = next(item for item in report["补全明细"] if item["来源文件"] == ["工行分卷.xlsx"])
+        self.assertEqual(detail["归并方式"], "跨账户反向互转记录（时间容差共识）")
+        self.assertEqual(detail["时间容差秒数"], 5)
+        self.assertEqual(detail["容差证据数"], 3)
+        self.assertEqual(detail["容差证据日期数"], 3)
+
+    def test_reciprocal_transfer_rejects_single_near_time_match(self):
+        known = transaction(
+            "known.xlsx", "0070010101000003132", "2026-01-01 10:00:00", "1000.00",
+            NAME, "1714022019004509141",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "100.00"
+        unknown = transaction(
+            "unknown.xlsx", "未识别账户#unknown", "2026-01-01 10:00:02", "1100.00",
+            NAME, "",
+        )
+        unknown["本方名称"] = ""
+        unknown["开户行"] = ""
+        unknown["收入金额"] = "100.00"
+        unknown["支出金额"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, unknown])
+        )
+
+        self.assertIn("未识别账户#unknown", set(resolved["本方账户"]))
+        self.assertEqual(report["补全文件数"], 0)
+
     def test_verified_legal_entity_identity_promotes_account_type_to_corporate(self):
         rows = [
             transaction("unknown.xls", "149719090000097738", "2026-01-01 10:00:00", "100.00"),

@@ -161,10 +161,38 @@ def _reciprocal_lookup_key(row, reverse=False):
     return time, direction, income or expense
 
 
+RECIPROCAL_TIME_TOLERANCE_SECONDS = 5
+RECIPROCAL_TOLERANT_MIN_MATCHES = 3
+RECIPROCAL_TOLERANT_MIN_DATES = 3
+
+
+def _reciprocal_time_second(row):
+    """把标准交易时间转成秒级时间轴；无法解析时只参与原有精确匹配。"""
+    value = pd.to_datetime(_clean_text(row.get("交易时间")), errors="coerce")
+    if pd.isna(value):
+        return None
+    return int(value.value // 1_000_000_000)
+
+
+def _reciprocal_window_keys(row, reverse=False):
+    """返回同方向同金额、允许跨行记账秒差的有限候选键。"""
+    exact = _reciprocal_lookup_key(row, reverse=reverse)
+    second = _reciprocal_time_second(row)
+    if exact is None or second is None:
+        return []
+    _, direction, amount = exact
+    return [
+        (second + offset, direction, amount)
+        for offset in range(-RECIPROCAL_TIME_TOLERANCE_SECONDS,
+                            RECIPROCAL_TIME_TOLERANCE_SECONDS + 1)
+    ]
+
+
 def infer_identity_from_reciprocal_transfers(df):
     """用同批次另一账户的反向互转记录补齐本方账号、户名和开户行。
 
-    证据必须同时满足：时间和金额反向一致，且目标行的对手名称能与证据行本方名称精确互证；
+    证据必须同时满足：金额反向一致，且目标行的对手名称能与证据行本方名称精确互证；
+    时间完全一致沿用单笔强证据；仅时间相差不超过 5 秒时，要求至少三笔、跨三个日期形成唯一账号共识。
     名称有一侧缺失时，才允许用完整账号精确相等代替。长账号前缀关系不能单独触发身份推断。
     对手开户行只作为阶段二内部证据，最终标准流水不会输出该内部列。
     """
@@ -177,21 +205,39 @@ def infer_identity_from_reciprocal_transfers(df):
         return result, report
 
     evidence_by_key = defaultdict(list)
+    evidence_by_window_key = defaultdict(list)
     for index, row in result.iterrows():
         self_account = _explicit_account(row.get("本方账户"))
         opponent_account = _explicit_account(row.get("对手账户"))
         key = _reciprocal_lookup_key(row, reverse=True)
         if self_account and opponent_account and key:
             evidence_by_key[key].append((index, row))
+            second = _reciprocal_time_second(row)
+            if second is not None:
+                _, direction, amount = key
+                evidence_by_window_key[(second, direction, amount)].append((index, row))
 
     touched_sources = set()
     for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True, dropna=False):
-        candidates = []
-        for _, row in rows.iterrows():
+        exact_candidates = []
+        tolerant_candidates = []
+        tolerant_pairs = set()
+        for target_index, row in rows.iterrows():
             key = _reciprocal_lookup_key(row)
             if not key:
                 continue
-            for evidence_index, evidence in evidence_by_key.get(key, []):
+            evidence_matches = [
+                (evidence_index, evidence, "exact")
+                for evidence_index, evidence in evidence_by_key.get(key, [])
+            ]
+            exact_evidence_indices = {item[0] for item in evidence_matches}
+            for window_key in _reciprocal_window_keys(row):
+                evidence_matches.extend(
+                    (evidence_index, evidence, "tolerant")
+                    for evidence_index, evidence in evidence_by_window_key.get(window_key, [])
+                    if evidence_index not in exact_evidence_indices
+                )
+            for evidence_index, evidence, match_mode in evidence_matches:
                 if _clean_text(evidence.get(source_col)) == source:
                     continue
                 opponent_name = _identity_text(row.get("对手名称"))
@@ -210,12 +256,26 @@ def infer_identity_from_reciprocal_transfers(df):
                 canonical_bank = S.infer_bank(bank_text) if bank_text else ""
                 if canonical_bank in {"农村商业银行", "农村信用社", "村镇银行"}:
                     canonical_bank = ""
-                candidates.append({
+                candidate = {
                     "account": target_account,
                     "name": _clean_text(evidence.get("对手名称")),
                     "bank": canonical_bank,
                     "evidence_id": _clean_text(evidence.get("交易唯一编号")),
-                })
+                    "target_date": _clean_text(row.get("交易时间"))[:10],
+                    "match_mode": match_mode,
+                }
+                if match_mode == "exact":
+                    exact_candidates.append(candidate)
+                elif (target_index, evidence_index) not in tolerant_pairs:
+                    tolerant_pairs.add((target_index, evidence_index))
+                    tolerant_candidates.append(candidate)
+        candidates = exact_candidates
+        tolerant_dates = {item["target_date"] for item in tolerant_candidates if item["target_date"]}
+        if not candidates:
+            if (len(tolerant_candidates) < RECIPROCAL_TOLERANT_MIN_MATCHES
+                    or len(tolerant_dates) < RECIPROCAL_TOLERANT_MIN_DATES):
+                continue
+            candidates = tolerant_candidates
         accounts = sorted({item["account"] for item in candidates})
         if len(accounts) != 1:
             continue
@@ -247,7 +307,13 @@ def infer_identity_from_reciprocal_transfers(df):
             "开户行": bank,
             "补全字段": changed_fields,
             "证据交易唯一编号列表": sorted({item["evidence_id"] for item in matched if item["evidence_id"]}),
-            "归并方式": "跨账户反向互转记录",
+            "归并方式": (
+                "跨账户反向互转记录"
+                if exact_candidates else "跨账户反向互转记录（时间容差共识）"
+            ),
+            "时间容差秒数": 0 if exact_candidates else RECIPROCAL_TIME_TOLERANCE_SECONDS,
+            "容差证据数": 0 if exact_candidates else len(matched),
+            "容差证据日期数": 0 if exact_candidates else len(tolerant_dates),
         })
 
     # 已确认账号还可从批次内其它流水的“对手账号/对手开户行”获得银行元数据。

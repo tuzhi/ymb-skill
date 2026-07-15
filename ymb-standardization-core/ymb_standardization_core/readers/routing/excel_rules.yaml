@@ -567,6 +567,7 @@
   file_type: excel
   bank: 未识别
   account_type: 对公
+  series_family: historydetail_transfer_in_out_v1
   fingerprint:
     identity:
       any:
@@ -773,7 +774,7 @@
         本方账户名称: 本方名称
         本方账户开户机构: 本方账户
   reader_id: openpyxl_grid
-- id: md5:ab2765b9df96e959209eff662751d3d0
+- id: md5:e49c078d0db822b618768b7a1eb159bc
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
@@ -792,7 +793,7 @@
         币种: null
         对方户名: 对手名称
         对方账号: 对手账户
-        对方开户机构: null
+        对方开户机构: __对手开户行
         记账日期: 交易日期
         摘要: 银行备注
         备注: 银行备注
