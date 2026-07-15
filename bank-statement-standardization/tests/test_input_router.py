@@ -866,6 +866,12 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "个人")
+        self.assertEqual(result.route_info["fingerprint_id"], "md5:5b60788dfc16d41a099768cd619f2641")
+        self.assertEqual(result.route_info["source_order"], "descending")
+        self.assertIsNone(result.route_info["column_mapping"]["交易金额(收入)"])
+        self.assertIsNone(result.route_info["column_mapping"]["交易金额(支出)"])
+        self.assertEqual(result.route_info["column_mapping"]["记账金额(收入)"], "收入金额")
+        self.assertEqual(result.route_info["column_mapping"]["记账金额(支出)"], "支出金额")
 
     def test_jiujiang_bank_transaction_detail_excel_route(self):
         module = load_input_router()

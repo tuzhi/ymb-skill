@@ -22,6 +22,7 @@ class RouteRule:
     date_format_any: list
     series_family: str = ""
     text_table_layout: str = ""
+    source_order: str = ""
     column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
@@ -93,6 +94,7 @@ class RouteRule:
             "fingerprint_id": self.id,
             "reader_id": self.reader_id,
             "series_family": self.series_family,
+            "source_order": self.source_order,
             "bank": self.bank,
             "file_type": self.file_type,
             "reason": reason,
@@ -416,6 +418,13 @@ def _text_table_layout(item):
     return layout
 
 
+def _source_order(item):
+    source_order = str(_reader_options(item).get("source_order") or "").strip()
+    if source_order not in {"", "ascending", "descending"}:
+        raise ValueError(f"unsupported reader_options.source_order: {source_order}")
+    return source_order
+
+
 def _column_transforms(item, fingerprint):
     options = _reader_options(item)
     transforms = options.get("column_transforms")
@@ -567,6 +576,7 @@ def load_pdf_route_rules():
             account_type=item.get("account_type", "未知"),
             series_family=str(item.get("series_family") or "").strip(),
             text_table_layout=_text_table_layout(item),
+            source_order=_source_order(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
@@ -602,6 +612,7 @@ def load_excel_route_rules():
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
             series_family=str(item.get("series_family") or "").strip(),
+            source_order=_source_order(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),

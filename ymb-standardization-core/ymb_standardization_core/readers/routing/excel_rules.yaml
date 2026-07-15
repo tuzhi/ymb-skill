@@ -614,7 +614,7 @@
       pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
       replacement: ''
   reader_id: openpyxl_grid
-- id: md5:4fb218cc43c550d1fffc02e114d1f6f4
+- id: md5:5b60788dfc16d41a099768cd619f2641
   file_type: excel
   bank: 未识别
   account_type: 个人
@@ -645,14 +645,16 @@
         交易场所: null
         交易国家或地区简称: null
         钞/汇: null
-        交易金额(收入): 收入金额
-        交易金额(支出): 支出金额
+        交易金额(收入): null
+        交易金额(支出): null
         交易币种: null
         记账金额(收入): 收入金额
         记账金额(支出): 支出金额
         记账币种: null
         余额: 账户余额
         对方户名: 对手名称
+  reader_options:
+    source_order: descending
   reader_id: openpyxl_grid
 - id: md5:9efdca93f18ed8b68b21b467f7df2896
   file_type: excel

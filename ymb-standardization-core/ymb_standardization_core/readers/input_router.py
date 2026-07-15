@@ -51,6 +51,7 @@ def _excel_candidate(rule, match):
         "bank": rule.bank,
         "account_type": rule.account_type,
         "series_family": rule.series_family,
+        "source_order": rule.source_order,
         "column_mapping": rule.column_mapping,
         "preamble_mapping": rule.preamble_mapping,
         "preamble_extractors": rule.preamble_extractors,

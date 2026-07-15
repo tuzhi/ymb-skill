@@ -1421,7 +1421,15 @@ def standardize(path, out_dir=None, bank=None,
     # ---- 整理行序，使余额连续性最佳（保留原始对账口径） ----
     # 块重排/按余额链重建、保留同时刻多笔的相对顺序、来源行号不变可追溯。使输出为可对账的正序，
     # 让下游严格按「文件内原始顺序」做余额校验，避免按时间排序打乱同秒/同日多笔产生伪断点。
-    _order, order_strategy = best_continuity_order(_rows_from_records(std_records))
+    source_order = str(route_info.get("source_order") or "").strip()
+    if source_order == "descending":
+        _order = list(range(len(std_records) - 1, -1, -1))
+        order_strategy = "YAML配置：整体翻转"
+    elif source_order == "ascending":
+        _order = list(range(len(std_records)))
+        order_strategy = "YAML配置：保持原序"
+    else:
+        _order, order_strategy = best_continuity_order(_rows_from_records(std_records))
     std_records = [std_records[i] for i in _order]
 
     record_account = infer_account_from_records(std_records)

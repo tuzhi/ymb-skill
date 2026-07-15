@@ -17,6 +17,59 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_yaml_source_order_precedes_auto_order_for_icbc_card_detail(self):
+        excel = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "广州沛瑾家具"
+            / "广州沛瑾家具有限公司@李果红_中国工商银行_TF_1.xlsx"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 1474)
+        self.assertEqual(report["标准化统计"]["行序整理策略"], "YAML配置：整体翻转")
+        self.assertEqual(rows[0]["交易时间"], "2018-01-22 00:00:00")
+        self.assertEqual(rows[-1]["交易时间"], "2019-01-20 00:00:00")
+        self.assertAlmostEqual(sum(float(row["收入金额"] or 0) for row in rows), 2276959.33, places=2)
+        self.assertAlmostEqual(sum(float(row["支出金额"] or 0) for row in rows), 2302721.48, places=2)
+
+        breaks = 0
+        previous = None
+        for row in rows:
+            balance = float(row["账户余额"])
+            income = float(row["收入金额"] or 0)
+            expense = float(row["支出金额"] or 0)
+            if previous is not None and abs(balance - (previous + income - expense)) >= 0.01:
+                breaks += 1
+            previous = balance
+        self.assertEqual(breaks, 0)
+
+    def test_missing_yaml_source_order_keeps_automatic_balance_ordering(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            excel = Path(tmp) / "auto_order.xlsx"
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(["交易日期", "收入金额", "支出金额", "余额"])
+            sheet.append(["2026-01-03", "", "5", "105"])
+            sheet.append(["2026-01-02", "10", "", "110"])
+            sheet.append(["2026-01-01", "", "", "100"])
+            workbook.save(excel)
+
+            csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(report["标准化统计"]["行序整理策略"], "整体翻转")
+        self.assertEqual([row["交易时间"] for row in rows], [
+            "2026-01-01 00:00:00",
+            "2026-01-02 00:00:00",
+            "2026-01-03 00:00:00",
+        ])
+
     def test_boc_payer_payee_columns_resolve_against_inquirer_account(self):
         excel = (
             REPO_ROOT
