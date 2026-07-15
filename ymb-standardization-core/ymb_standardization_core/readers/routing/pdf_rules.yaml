@@ -461,7 +461,7 @@
         对方账: 对手名称
         账户明: null
   reader_id: pdfplumber_table
-- id: md5:d068a4ad8671f8712c47b5a994c218c9
+- id: md5:46cb259aaeb59d1ed620281dcd3f1714
   file_type: pdf
   bank: 中国银行
   account_type: 个人
@@ -469,6 +469,9 @@
     identity:
       any:
       - 中国银行交易流水明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
     columns:
       all:
         借记卡号: 本方账户

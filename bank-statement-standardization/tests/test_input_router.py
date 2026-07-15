@@ -806,6 +806,28 @@ class InputRouterTests(unittest.TestCase):
         self.assertGreater(len(result.rows), 10)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
 
+    def test_boc_personal_statement_extracts_customer_name_from_preamble(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "郭金伟" / "1.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供郭金伟中国银行个人流水 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+
+        self.assertEqual(route["reader_id"], "pdfplumber_table")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["bank"], "中国银行")
+        self.assertEqual(route["account_type"], "个人")
+        self.assertEqual(route["fingerprint_id"], "md5:46cb259aaeb59d1ed620281dcd3f1714")
+        self.assertEqual(
+            route["preamble_extractors"],
+            [{"field": "本方名称", "pattern": r"客户姓名[:：]\s*([^\s]+)"}],
+        )
+        self.assertIn("客户姓名", result.preamble)
+        self.assertIn("郭金伟", result.preamble)
+        self.assertGreater(len(result.rows), 10)
+
     def test_corporate_account_statement_pdf_route_does_not_infer_bank(self):
         module = load_input_router()
         pdf = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
