@@ -20,6 +20,8 @@ class RouteRule:
     metadata_all: dict
     style_all: list
     date_format_any: list
+    series_family: str = ""
+    text_table_layout: str = ""
     column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
@@ -90,6 +92,7 @@ class RouteRule:
             "id": self.id,
             "fingerprint_id": self.id,
             "reader_id": self.reader_id,
+            "series_family": self.series_family,
             "bank": self.bank,
             "file_type": self.file_type,
             "reason": reason,
@@ -406,6 +409,13 @@ def _require_monetary_value(item):
     return bool(_reader_options(item).get("require_monetary_value", False))
 
 
+def _text_table_layout(item):
+    layout = str(_reader_options(item).get("text_table_layout") or "").strip()
+    if layout not in {"", "currency", "cmbc_personal"}:
+        raise ValueError(f"unsupported reader_options.text_table_layout: {layout}")
+    return layout
+
+
 def _column_transforms(item, fingerprint):
     options = _reader_options(item)
     transforms = options.get("column_transforms")
@@ -555,6 +565,8 @@ def load_pdf_route_rules():
             file_type=item.get("file_type", "pdf"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
+            series_family=str(item.get("series_family") or "").strip(),
+            text_table_layout=_text_table_layout(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
@@ -589,6 +601,7 @@ def load_excel_route_rules():
             file_type=item.get("file_type", "excel"),
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
+            series_family=str(item.get("series_family") or "").strip(),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),

@@ -517,6 +517,33 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
 
+    def test_rural_account_query_header_variants_share_series_family(self):
+        module = load_input_router()
+        samples = (
+            (ROOT / "testdata" / "广源流水" / "农商流水1.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (ROOT / "testdata" / "广源流水" / "农商流水4.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
+            (ROOT / "testdata" / "秦国有" / "20260604.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (ROOT / "testdata" / "袁军" / "1-3.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (ROOT / "testdata" / "江西轩宇塑业有限公司" / "农商2601-03.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
+        )
+        for excel, fingerprint_id in samples:
+            with self.subTest(filename=str(excel.relative_to(ROOT / "testdata"))):
+                result = module.read_rows(str(excel))
+                route = result.route_info
+
+                self.assertEqual(route["decision"], "matched")
+                self.assertEqual(route["fingerprint_id"], fingerprint_id)
+                self.assertEqual(route["bank"], "未识别")
+                self.assertEqual(route["account_type"], "未知")
+                self.assertEqual(
+                    route["series_family"],
+                    "rural_account_detail_query_biff_v1",
+                )
+                self.assertEqual(
+                    {item["text"] for item in route["style_evidence"]},
+                    {"账户明细查询结果", "开始日期：", "截止日期：", "交易日期"},
+                )
+
     def test_srbank_personal_history_excel_route_allows_summary_header(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "熊岱" / "上饶银行-5086.xlsx"
@@ -772,6 +799,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "个人")
+        self.assertEqual(result.route_info["text_table_layout"], "currency")
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "openhtmltopdf.com")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("记账日期", result.route_info["columns_evidence"])
@@ -852,6 +880,10 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "九江银行")
         self.assertEqual(result.route_info["account_type"], "对公")
+        self.assertEqual(
+            result.route_info["series_family"],
+            "jiujiang_corporate_detail_grid_v1",
+        )
 
     def test_jiujiang_bank_simple_transaction_export_does_not_infer_bank(self):
         module = load_input_router()
@@ -866,6 +898,10 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "未识别")
         self.assertEqual(result.route_info["account_type"], "对公")
+        self.assertEqual(
+            result.route_info["series_family"],
+            "jiujiang_corporate_detail_grid_v1",
+        )
         self.assertEqual(result.route_info["metadata_evidence"]["creator"], "openpyxl")
         self.assertEqual(result.route_info["metadata_evidence"]["last_modified_by"], "陈会开")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
@@ -900,6 +936,15 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "九江银行")
         self.assertEqual(route["account_type"], "个人")
+        self.assertEqual(route["fingerprint_id"], "md5:99ce159ec31cbf24d7dc7279c6844048")
+        self.assertEqual(route["text_table_layout"], "currency")
+        self.assertEqual(
+            route["preamble_extractors"],
+            [
+                {"field": "本方名称", "pattern": r"姓名[:：]\s*([^\s]+)"},
+                {"field": "本方账户", "pattern": r"账号[:：]\s*(\d[\d*\s]{5,}\d)"},
+            ],
+        )
         self.assertEqual(route["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("记账日期", route["columns_evidence"])
         self.assertGreater(len(result.rows), 10)
@@ -921,6 +966,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "中国民生银行")
         self.assertEqual(route["account_type"], "个人")
         self.assertEqual(route["fingerprint_id"], "md5:907beda6d95ea54b2f6e380193726787")
+        self.assertEqual(route["text_table_layout"], "cmbc_personal")
         self.assertEqual(
             route["preamble_extractors"],
             [

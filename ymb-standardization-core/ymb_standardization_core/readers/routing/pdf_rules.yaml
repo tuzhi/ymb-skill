@@ -700,6 +700,7 @@
         交易摘要: 银行备注
         对手信息: 对手名称
   reader_options:
+    text_table_layout: currency
     extract_mapping:
     - source: 对手信息
       field: 对手账户
@@ -793,7 +794,7 @@
       交易类型:
         newline: cjk_join
   reader_id: pdfplumber_line_table
-- id: md5:0818218cb218b9bdb699770e6a65e6dd
+- id: md5:99ce159ec31cbf24d7dc7279c6844048
   file_type: pdf
   bank: 九江银行
   account_type: 个人
@@ -813,6 +814,11 @@
       any:
       - 九江银行交易流水
       - Transaction Statement of Bank of JiuJiang
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d[\d*\s]{5,}\d)'
     columns:
       all:
         '合同ID号:': null
@@ -830,6 +836,8 @@
         联机余额: 账户余额
         交易摘要: 银行备注
         对手信息: 对手名称
+  reader_options:
+    text_table_layout: currency
   reader_id: pdfplumber_text_lines
 - id: md5:fcbe39d694aa34cf564500f187aa8137
   file_type: pdf
@@ -948,6 +956,7 @@
         账户余额: 账户余额
         对方户名/账号: 对手名称
   reader_options:
+    text_table_layout: cmbc_personal
     extract_mapping:
     - source: 对方户名/账号
       field: 对手账户

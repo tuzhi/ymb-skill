@@ -2,12 +2,6 @@ import re
 
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
-TEXT_TABLE_FINGERPRINTS = {
-    "md5:b3931dcff339eccaf63efd597d60132b": "currency",
-    "md5:0818218cb218b9bdb699770e6a65e6dd": "currency",
-    "md5:907beda6d95ea54b2f6e380193726787": "cmbc_personal",
-}
-
 
 def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
                    identity_evidence, columns_evidence, route_evidence=None):
@@ -33,6 +27,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "preamble_extractors": route_evidence.get("preamble_extractors", []) if route_evidence else [],
         "conditional_mapping": route_evidence.get("conditional_mapping", []) if route_evidence else [],
         "extract_mapping": route_evidence.get("extract_mapping", []) if route_evidence else [],
+        "text_table_layout": route_evidence.get("text_table_layout", "") if route_evidence else "",
         "require_monetary_value": route_evidence.get("require_monetary_value", False) if route_evidence else False,
         "reader_header_candidates": route_evidence.get("reader_header_candidates", []) if route_evidence else [],
         "row_anchor": route_evidence.get("row_anchor", {}) if route_evidence else {},
@@ -139,6 +134,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "preamble_extractors": rule.preamble_extractors,
                 "conditional_mapping": rule.conditional_mapping,
                 "extract_mapping": rule.extract_mapping,
+                "text_table_layout": rule.text_table_layout,
                 "require_monetary_value": rule.require_monetary_value,
                 "row_anchor": rule.row_anchor,
                 "metadata_evidence": match.get("metadata_evidence", {}),
@@ -1419,7 +1415,6 @@ def read_pdf_rows(path, open_password=None):
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
 
-        fingerprint_id = route_info.get("fingerprint_id", "")
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") in {"pdfplumber_word_column_table", "pdfplumber_coordinate_table"} and table_rows:
@@ -1434,8 +1429,9 @@ def read_pdf_rows(path, open_password=None):
             # 通用 PDF reader 的首屏文本可能包含整页交易数据。只保留表头之前的固定抬头，
             # 避免标准化层把交易行里的对手开户行误判成本方银行。
             preamble = _preamble_before_reader_header(preamble, table_rows[0])
-        if fingerprint_id in TEXT_TABLE_FINGERPRINTS and not table_rows:
-            rows = _extract_pdf_text_table_rows(text, TEXT_TABLE_FINGERPRINTS[fingerprint_id])
+        text_table_layout = route_info.get("text_table_layout", "")
+        if text_table_layout and not table_rows:
+            rows = _extract_pdf_text_table_rows(text, text_table_layout)
             if rows:
                 preamble = _preamble_before_reader_header(preamble, rows[0])
             return preamble or "", rows, route_info

@@ -97,6 +97,169 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(resolved["本方账户"].nunique(), 2)
         self.assertEqual(report["已归并组数"], 0)
 
+    def test_yaml_series_family_merges_header_and_headerless_volumes(self):
+        rows = []
+        specs = (
+            ("九江银行交易明细1.xlsx", "md5:with-header", "2025-06-30 16:54:49",
+             "16529.88", "南昌广源木制品有限公司", "237019600000007422", "九江银行", "", "100.00"),
+            ("九江银行交易明细2.xlsx", "md5:no-header", "2025-07-01 10:51:44",
+             "40529.88", "", "未识别账户#九江银行交易明细2", "", "24000.00", ""),
+            ("九江银行交易流水3.xlsx", "md5:no-header", "2025-10-09 14:29:44",
+             "65520.35", "", "未识别账户#九江银行交易流水3", "", "60000.00", ""),
+        )
+        # 为第二卷补一笔期末交易，使第三卷首笔能够继续接上余额链。
+        for source, fingerprint, time, balance, name, account, bank, income, expense in specs:
+            row = transaction(source, account, time, balance)
+            row["本方名称"] = name
+            row["开户行"] = bank
+            row["收入金额"] = income
+            row["支出金额"] = expense
+            row["收入金额_num"] = float(income) if income else float("nan")
+            row["支出金额_num"] = float(expense) if expense else float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = fingerprint
+            row["__series_family"] = "jiujiang_corporate_detail_grid_v1"
+            rows.append(row)
+            if source == "九江银行交易明细2.xlsx":
+                end = transaction(source, account, "2025-09-30 18:20:50", "5520.35")
+                end["本方名称"] = ""
+                end["开户行"] = ""
+                end["收入金额"] = ""
+                end["支出金额"] = "35009.53"
+                end["收入金额_num"] = float("nan")
+                end["支出金额_num"] = 35009.53
+                end["账户余额_num"] = 5520.35
+                end["__t"] = pd.Timestamp("2025-09-30 18:20:50")
+                end["__fingerprint_id"] = fingerprint
+                end["__series_family"] = "jiujiang_corporate_detail_grid_v1"
+                end["__fileseq"] = 1
+                rows.append(end)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(set(resolved["本方账户"]), {"237019600000007422"})
+        self.assertEqual(set(resolved["本方名称"]), {"南昌广源木制品有限公司"})
+        self.assertEqual(set(resolved["开户行"]), {"九江银行"})
+        self.assertEqual(report["已归并组数"], 1)
+        self.assertEqual(report["归并明细"][0]["series_family"], "jiujiang_corporate_detail_grid_v1")
+        self.assertEqual(len(report["归并明细"][0]["fingerprint_ids"]), 2)
+
+    def test_explicit_account_family_allows_duplicate_anchor_exports(self):
+        rows = []
+        for source, time, balance, account, name, bank, income in (
+            ("九江银行交易明细1.xlsx", "2025-01-01 10:00:00", "100.00",
+             "237019600000007422", "南昌广源木制品有限公司", "九江银行", "100.00"),
+            ("九江银行交易明细清单.xlsx", "2025-01-01 10:00:00", "100.00",
+             "237019600000007422", "南昌广源木制品有限公司", "九江银行", "100.00"),
+            ("九江银行交易明细2.xlsx", "2025-01-02 10:00:00", "150.00",
+             "未识别账户#九江银行交易明细2", "", "", "50.00"),
+        ):
+            row = transaction(source, account, time, balance)
+            row["本方名称"] = name
+            row["开户行"] = bank
+            row["收入金额"] = income
+            row["支出金额"] = ""
+            row["收入金额_num"] = float(income)
+            row["支出金额_num"] = float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = "md5:with-header" if account[0].isdigit() else "md5:no-header"
+            row["__series_family"] = "jiujiang_corporate_detail_grid_v1"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(set(resolved["本方账户"]), {"237019600000007422"})
+        self.assertEqual(report["已归并组数"], 1)
+        self.assertEqual(report["归并明细"][0]["身份锚点"], "明确账号")
+
+    def test_two_volume_series_family_without_identity_anchor_does_not_merge(self):
+        rows = []
+        for source, fingerprint, time, balance, income in (
+            ("九江银行交易明细2.xlsx", "md5:no-header-a", "2025-07-01 10:00:00", "100.00", "100.00"),
+            ("九江银行交易流水3.xlsx", "md5:no-header-b", "2025-07-02 10:00:00", "150.00", "50.00"),
+        ):
+            row = transaction(source, f"未识别账户#{source}", time, balance)
+            row["本方名称"] = ""
+            row["开户行"] = "九江银行" if source.endswith("2.xlsx") else ""
+            row["收入金额"] = income
+            row["支出金额"] = ""
+            row["收入金额_num"] = float(income)
+            row["支出金额_num"] = float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = fingerprint
+            row["__series_family"] = "jiujiang_corporate_detail_grid_v1"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(resolved["本方账户"].nunique(), 2)
+        self.assertEqual(report["已归并组数"], 0)
+
+    def test_three_balance_links_merge_unidentified_series_family(self):
+        rows = []
+        for source, fingerprint, time, balance, income, expense, account_type in (
+            ("农商流水1.xls", "md5:plain", "2025-08-21 01:24:25", "100.00", "100.00", "", "未知"),
+            ("农商流水2.xls", "md5:plain", "2025-09-19 11:27:55", "150.00", "50.00", "", "未知"),
+            ("农商流水3.xls", "md5:plain", "2025-12-18 11:05:32", "130.00", "", "20.00", "拟对公"),
+            ("农商流水4.xls", "md5:bold", "2026-03-19 15:33:21", "200.00", "70.00", "", "未知"),
+        ):
+            row = transaction(source, f"未识别账户#{Path(source).stem}", time, balance)
+            row["本方名称"] = ""
+            row["开户行"] = ""
+            row["账户类型"] = account_type
+            row["收入金额"] = income
+            row["支出金额"] = expense
+            row["收入金额_num"] = float(income) if income else float("nan")
+            row["支出金额_num"] = float(expense) if expense else float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = fingerprint
+            row["__series_family"] = "rural_account_detail_query_biff_v1"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(resolved["本方账户"].nunique(), 1)
+        self.assertTrue(
+            resolved["本方账户"].iloc[0].startswith("批次虚拟账户#未识别#SERIES-")
+        )
+        self.assertEqual(set(resolved["本方名称"]), {""})
+        self.assertEqual(set(resolved["开户行"]), {""})
+        self.assertEqual(set(resolved["账户类型"]), {"拟对公"})
+        self.assertEqual(report["已归并组数"], 1)
+        self.assertEqual(report["已归并文件数"], 4)
+        self.assertEqual(len(report["归并明细"][0]["balance_links"]), 3)
+        self.assertEqual(report["归并明细"][0]["身份锚点"], "无身份锚点强余额链")
+
+    def test_unidentified_series_family_with_branching_balance_candidates_does_not_merge(self):
+        rows = []
+        for source, time, balance, income in (
+            ("分卷1.xls", "2025-01-01 10:00:00", "100.00", "100.00"),
+            ("分卷2.xls", "2025-01-02 10:00:00", "150.00", "50.00"),
+            ("分卷3.xls", "2025-01-03 10:00:00", "150.00", "50.00"),
+        ):
+            row = transaction(source, f"未识别账户#{Path(source).stem}", time, balance)
+            row["本方名称"] = ""
+            row["开户行"] = ""
+            row["账户类型"] = "未知"
+            row["收入金额"] = income
+            row["支出金额"] = ""
+            row["收入金额_num"] = float(income)
+            row["支出金额_num"] = float("nan")
+            row["账户余额_num"] = float(balance)
+            row["__t"] = pd.Timestamp(time)
+            row["__fingerprint_id"] = "md5:rural"
+            row["__series_family"] = "rural_account_detail_query_biff_v1"
+            rows.append(row)
+
+        resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
+
+        self.assertEqual(resolved["本方账户"].nunique(), 3)
+        self.assertEqual(report["已归并组数"], 0)
+
     def test_same_source_pdf_xlsx_rows_align_one_to_one_with_time_precision_difference(self):
         rows = []
         for idx in range(20):

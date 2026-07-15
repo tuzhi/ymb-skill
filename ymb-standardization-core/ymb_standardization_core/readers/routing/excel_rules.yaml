@@ -1093,10 +1093,11 @@
         商家订单号: 账户方附言
         交易时间: 交易时间
   reader_id: openpyxl_grid
-- id: md5:9be155059373e554cb37926292304f2d
+- id: md5:5ee6d3955fa1cca84bd4bed11ae23c6f
   file_type: excel
   bank: 未识别
   account_type: 未知
+  series_family: rural_account_detail_query_biff_v1
   fingerprint:
     metadata:
       all:
@@ -1108,6 +1109,24 @@
         size_min: 15
         size_max: 17
         row_max: 1
+      - text: 开始日期：
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        row_max: 2
+        col_max: 1
+      - text: 截止日期：
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        row_max: 2
+        col_max: 4
+      - text: 交易日期
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        row_max: 3
+        col_max: 1
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -1375,6 +1394,7 @@
   file_type: excel
   bank: 九江银行
   account_type: 对公
+  series_family: jiujiang_corporate_detail_grid_v1
   fingerprint:
     identity:
       any:
@@ -1701,10 +1721,11 @@
         交易渠道: 交易渠道
         摘要: 银行备注
   reader_id: openpyxl_grid
-- id: md5:43d65bd6dce1bba7be1d0ede6e6a1773
+- id: md5:94ff523d47e25a05d64e18944ecb9bf4
   file_type: excel
   bank: 未识别
   account_type: 未知
+  series_family: rural_account_detail_query_biff_v1
   fingerprint:
     metadata:
       all:
@@ -1718,6 +1739,27 @@
         size_max: 17
         bold: true
         row_max: 1
+      - text: 开始日期：
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        bold: true
+        row_max: 2
+        col_max: 1
+      - text: 截止日期：
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        bold: true
+        row_max: 2
+        col_max: 4
+      - text: 交易日期
+        font: 宋体
+        size_min: 11
+        size_max: 13
+        bold: true
+        row_max: 3
+        col_max: 1
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -1773,6 +1815,7 @@
   file_type: excel
   bank: 未识别
   account_type: 对公
+  series_family: jiujiang_corporate_detail_grid_v1
   fingerprint:
     metadata:
       all:

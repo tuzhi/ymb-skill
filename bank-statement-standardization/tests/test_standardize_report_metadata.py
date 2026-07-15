@@ -116,6 +116,25 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(image["bank_source"], "internal_transaction_profile")
         self.assertEqual(image["确认银行"], "上饶银行")
         self.assertEqual(image["internal_transaction_profile"]["candidate_count"], 11)
+
+    def test_jiujiang_personal_pdf_extracts_owner_and_masked_account(self):
+        samples = (
+            ("广源流水", "熊亮流水.pdf", "熊亮", "6231 **** **** *** 6621", 3253),
+            ("金伟", "2063891248809000962_1.pdf", "金伟", "6231 **** **** *** 6272", 514),
+        )
+        for folder, filename, expected_name, expected_account, expected_rows in samples:
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
+                pdf = REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename
+                csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                self.assertEqual(len(rows), expected_rows)
+                self.assertEqual(report["文件画像"]["本方名称"], expected_name)
+                self.assertEqual(report["文件画像"]["本方账户"], expected_account)
+                self.assertEqual({row["本方名称"] for row in rows}, {expected_name})
+                self.assertEqual({row["本方账户"] for row in rows}, {expected_account})
+
     def test_account_metadata_is_not_guessed_without_route_configuration(self):
         info = standardize.sniff_account_info(
             [["交易时间", "交易金额", "余额"]],

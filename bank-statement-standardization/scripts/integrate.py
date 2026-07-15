@@ -603,7 +603,13 @@ def _cents(value):
 
 
 def merge_balance_continuous_sources(df):
-    """同 fingerprint、银行、账户类型和文件名家族下，以精确余额链归并相邻分卷。"""
+    """以精确余额链归并相邻分卷。
+
+    默认仍要求同 fingerprint、银行、账户类型和文件名家族。只有 YAML 明确声明
+    ``series_family`` 时，才允许兼容模板跨 fingerprint 建链。有明确账号锚点时
+    两卷即可；完全没有身份锚点时至少需要三卷、两条无分叉的精确余额边界。
+    空白身份可以组成逻辑账户，但不能伪造真实户名、账号或银行。
+    """
     result = df.copy()
     report = {"已归并组数": 0, "已归并文件数": 0, "已归并交易数": 0, "归并明细": []}
     source_col = _source_col(result)
@@ -615,13 +621,26 @@ def merge_balance_continuous_sources(df):
     buckets = defaultdict(list)
     for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True):
         fingerprint = _first_nonempty(rows, "__fingerprint_id")
+        series_family = _first_nonempty(rows, "__series_family")
         filename = _first_nonempty(rows, "来源文件名")
         family = _filename_series_family(filename)
         banks = {_identity_bank(value) for value in rows["开户行"] if _identity_bank(value)}
         types = {_clean_text(value) for value in rows["账户类型"]
                  if _clean_text(value) in {"个人", "对公"}}
-        if not fingerprint or len(family) < 4 or len(banks) != 1 or len(types) != 1:
-            continue
+        proposed_corporate = any(
+            _clean_text(value) == "拟对公" for value in rows["账户类型"]
+        )
+        if series_family:
+            # series_family 是 YAML 显式兼容声明，不再依赖文件名或每卷都带银行抬头。
+            # 账户类型允许空白/未知/拟对公参与，整链阶段仍会阻断个人/对公冲突。
+            bucket_key = ("series_family", series_family)
+        else:
+            if (not fingerprint or len(family) < 4 or len(banks) != 1
+                    or len(types) != 1):
+                continue
+            bucket_key = (
+                "fingerprint", fingerprint, next(iter(banks)), next(iter(types)), family,
+            )
         ordered = rows.sort_values("__fileseq", kind="mergesort")
         usable = ordered[
             ordered["账户余额_num"].notna()
@@ -630,10 +649,13 @@ def merge_balance_continuous_sources(df):
         times = rows["__t"].dropna()
         if usable.empty or times.empty:
             continue
-        buckets[(fingerprint, next(iter(banks)), next(iter(types)), family)].append({
+        buckets[bucket_key].append({
             "source": _clean_text(source), "rows": rows, "filename": filename,
             "first": usable.iloc[0], "last": usable.iloc[-1],
             "start": times.min(), "end": times.max(),
+            "fingerprint": fingerprint, "series_family": series_family,
+            "filename_family": family, "banks": banks,
+            "account_types": types, "proposed_corporate": proposed_corporate,
             "accounts": {_explicit_account(value) for value in rows["本方账户"]
                          if _explicit_account(value)},
             "names": {_identity_text(value): _clean_text(value)
@@ -643,7 +665,11 @@ def merge_balance_continuous_sources(df):
     def boundary(left, right):
         accounts = left["accounts"] | right["accounts"]
         names = set(left["names"]) | set(right["names"])
-        if len(accounts) > 1 or len(names) > 1 or left["end"] > right["start"]:
+        banks = left["banks"] | right["banks"]
+        account_types = left["account_types"] | right["account_types"]
+        if (len(accounts) > 1 or len(names) > 1 or len(banks) > 1
+                or len(account_types) > 1
+                or left["end"] > right["start"]):
             return None
         previous = _cents(left["last"].get("账户余额_num"))
         next_balance = _cents(right["first"].get("账户余额_num"))
@@ -661,19 +687,51 @@ def merge_balance_continuous_sources(df):
             "_indices": [left["last"].name, right["first"].name],
         }
 
-    def merge_chain(key, members, links):
+    def merge_chain(key, members, links, ambiguous_sources=None):
         if len(members) < 2:
             return
-        fingerprint, _bank_key, account_type, family = key
+        ambiguous_sources = ambiguous_sources or set()
+        mode = key[0]
+        if mode == "series_family":
+            _, series_family = key
+            family = ""
+        else:
+            _, fingerprint, _bank_key, account_type, family = key
+            series_family = ""
         accounts = {account for member in members for account in member["accounts"]}
         names = {name_key: name for member in members
                  for name_key, name in member["names"].items()}
+        banks = {bank for member in members for bank in member["banks"]}
+        account_types = {
+            account_type for member in members
+            for account_type in member["account_types"]
+        }
+        if (len(accounts) > 1 or len(names) > 1 or len(banks) > 1
+                or len(account_types) > 1):
+            return
+        if mode == "series_family":
+            # 无明确账号时提高门槛：至少三卷和两条连续边界，避免一次余额巧合误并。
+            if not accounts:
+                if any(member["source"] in ambiguous_sources for member in members):
+                    return
+                if len(members) < 3 or len(links) < 2:
+                    return
+            account_type = (
+                next(iter(account_types)) if account_types
+                else "拟对公" if any(member["proposed_corporate"] for member in members)
+                else "未知"
+            )
         files = sorted(member["filename"] for member in members)
-        digest = hashlib.md5("\n".join([fingerprint, *files]).encode()).hexdigest()[:10]
+        fingerprints = sorted({member["fingerprint"] for member in members if member["fingerprint"]})
+        identity_key = series_family or (fingerprints[0] if fingerprints else "")
+        digest = hashlib.md5("\n".join([identity_key, *files]).encode()).hexdigest()[:10]
         series_id = f"SERIES-{digest}"
         rows = pd.concat([member["rows"] for member in members])
-        bank = _first_nonempty(rows, "开户行")
-        account = next(iter(accounts)) if accounts else f"批次虚拟账户#{bank}#{series_id}"
+        bank = next(iter(banks)) if banks else _first_nonempty(rows, "开户行")
+        account = (
+            next(iter(accounts)) if accounts
+            else f"批次虚拟账户#{bank or '未识别'}#{series_id}"
+        )
         result.loc[rows.index, "本方账户"] = account
         if len(names) == 1:
             result.loc[rows.index, "本方名称"] = next(iter(names.values()))
@@ -682,7 +740,11 @@ def merge_balance_continuous_sources(df):
         evidence_indices = [index for link in links for index in link.pop("_indices")]
         report["归并明细"].append({
             "source_series_id": series_id, "逻辑本方账户": account,
-            "成员文件": files, "fingerprint_id": fingerprint,
+            "成员文件": files,
+            "fingerprint_id": fingerprints[0] if len(fingerprints) == 1 else "",
+            "fingerprint_ids": fingerprints,
+            "series_family": series_family,
+            "身份锚点": "明确账号" if accounts else "无身份锚点强余额链",
             "filename_family": family, "balance_links": links,
             "_证据行索引": evidence_indices,
         })
@@ -692,6 +754,20 @@ def merge_balance_continuous_sources(df):
 
     for key, candidates in buckets.items():
         candidates.sort(key=lambda item: (item["start"], item["source"]))
+        ambiguous_sources = set()
+        if key[0] == "series_family":
+            predecessors = defaultdict(set)
+            successors = defaultdict(set)
+            for index, left in enumerate(candidates):
+                for right in candidates[index + 1:]:
+                    if boundary(left, right):
+                        successors[left["source"]].add(right["source"])
+                        predecessors[right["source"]].add(left["source"])
+            ambiguous_sources = {
+                source for source, values in successors.items() if len(values) > 1
+            } | {
+                source for source, values in predecessors.items() if len(values) > 1
+            }
         chain, links = [candidates[0]], []
         for left, right in zip(candidates, candidates[1:]):
             link = boundary(left, right)
@@ -699,9 +775,9 @@ def merge_balance_continuous_sources(df):
                 chain.append(right)
                 links.append(link)
             else:
-                merge_chain(key, chain, links)
+                merge_chain(key, chain, links, ambiguous_sources)
                 chain, links = [right], []
-        merge_chain(key, chain, links)
+        merge_chain(key, chain, links, ambiguous_sources)
     return result, report
 
 
@@ -980,6 +1056,7 @@ def load_inputs(paths):
         df["__inferred_bank"] = image.get("inferred_bank") or ""
         df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
         df["__fingerprint_id"] = image.get("fingerprint_id") or ""
+        df["__series_family"] = image.get("series_family") or ""
         # 文件内行序：standardize 已把倒序文件翻正，故 0..n 即该文件的时间正序（含同秒多笔的原始相对顺序）。
         # 余额校验与输出排序都用它，绝不用交易时间当主键，避免同时刻多笔被打乱产生伪断点。
         df["__fileseq"] = range(len(df))
@@ -1548,9 +1625,11 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
             "同账号元数据补全": "相同明确账号且名称/银行候选唯一时，只补空值，不覆盖冲突值",
             "双未知账号配对": "两个来源核心交易重合率≥90%、至少3笔、银行和账户类型不冲突且候选唯一时，"
                           "共享批次虚拟账户；真实账号仍保持未知",
-            "余额连续分卷归并": "同 fingerprint、银行、账户类型和文件名家族且明确身份不冲突时，"
-                              "仅在相邻文件边界余额精确到分连续且候选唯一时建立 source_series_id；"
-                              "文件名只召回候选，不单独决定归并",
+            "余额连续分卷归并": "默认要求同 fingerprint、银行、账户类型和文件名家族；"
+                                "YAML 显式声明相同 series_family 时可跨 fingerprint 建链，"
+                                "有明确账号时两卷即可；无身份锚点时至少三卷、两条无分叉的精确余额边界，"
+                                "且已知账号、户名、银行、账户类型不得冲突；"
+                                "文件名只召回默认候选，不单独决定归并",
             "批次内账号归并顺序": "加载标准化文件后、重算交易唯一编号前、跨文件去重前",
             "批次内账号归并规则": "同主体同银行只有一个明确账号时自动归并；存在多个明确账号时，"
                               "仅在至少两笔时间/收支金额/余额/对手完全重合且唯一命中时归并，否则人工复核",
