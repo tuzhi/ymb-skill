@@ -316,6 +316,138 @@ def _apply_alipay_order_reversals(out_df):
     return {"配对组数": paired_groups, "冲正原始交易数": original_count, "冲正记录数": cancel_count}
 
 
+def _relation_text(value):
+    text = str(value or "").strip()
+    return "" if text.lower() in {"nan", "none"} else re.sub(r"\s+", "", text)
+
+
+def _relation_account(value):
+    return re.sub(r"[^0-9A-Za-z*]", "", _relation_text(value))
+
+
+def _same_transaction_day(left, right):
+    values = pd.to_datetime(pd.Series([left, right]), errors="coerce")
+    if values.notna().all():
+        return values.iloc[0].date() == values.iloc[1].date()
+    return _relation_text(left)[:10] == _relation_text(right)[:10]
+
+
+def _is_local_bank_reversal_pair(original, reversal):
+    """严格判断原文件内相邻两笔是否构成银行冲正。"""
+    if "冲正" not in _relation_text(reversal.get("银行备注")):
+        return False
+    if not _same_transaction_day(original.get("交易时间"), reversal.get("交易时间")):
+        return False
+    if _relation_account(original.get("本方账户")) != _relation_account(reversal.get("本方账户")):
+        return False
+
+    original_name = _relation_text(original.get("对手名称"))
+    reversal_name = _relation_text(reversal.get("对手名称"))
+    if not original_name or original_name != reversal_name:
+        return False
+    original_account = _relation_account(original.get("对手账户"))
+    reversal_account = _relation_account(reversal.get("对手账户"))
+    if original_account and reversal_account and original_account != reversal_account:
+        return False
+
+    original_inc = pd.to_numeric(pd.Series([original.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
+    original_exp = pd.to_numeric(pd.Series([original.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
+    reversal_inc = pd.to_numeric(pd.Series([reversal.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
+    reversal_exp = pd.to_numeric(pd.Series([reversal.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
+    original_amount = float(original_inc - original_exp)
+    reversal_amount = float(reversal_inc - reversal_exp)
+    if original_amount == 0 or round(original_amount + reversal_amount, 2) != 0:
+        return False
+
+    original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]
+    reversal_balance = pd.to_numeric(pd.Series([reversal.get("账户余额")]), errors="coerce").iloc[0]
+    if pd.isna(original_balance) or pd.isna(reversal_balance):
+        return False
+    balance_before_original = float(original_balance) - original_amount
+    if abs(balance_before_original - float(reversal_balance)) > 0.005:
+        return False
+
+    reversal_memo = _relation_text(reversal.get("账户方附言"))
+    original_context = {
+        _relation_text(original.get("银行备注")),
+        _relation_text(original.get("账户方附言")),
+    }
+    if reversal_memo and reversal_memo not in original_context:
+        return False
+    return True
+
+
+def _apply_bank_reversals(out_df):
+    """只在同一来源文件内，将冲正行与上一笔有效交易作确定性配对。"""
+    summary = {
+        "配对组数": 0,
+        "被冲正原始交易数": 0,
+        "冲正记录数": 0,
+        "待复核冲正数": 0,
+        "待复核交易编号列表": [],
+    }
+    required = {"来源文件名", "来源行号", "交易唯一编号", "银行备注"}
+    if out_df.empty or not required.issubset(out_df.columns):
+        return summary
+
+    reversal_mask = out_df["银行备注"].astype(str).str.contains("冲正", regex=False, na=False)
+    unresolved = set(out_df.index[reversal_mask])
+    source_names = out_df["来源文件名"].fillna("").astype(str)
+    for _, source_idx in out_df.groupby(source_names, sort=False).groups.items():
+        ordered = out_df.loc[list(source_idx)].copy()
+        ordered["__source_row"] = pd.to_numeric(ordered["来源行号"], errors="coerce")
+        ordered = ordered[ordered["__source_row"].notna()].sort_values("__source_row", kind="mergesort")
+        indices = ordered.index.tolist()
+        for position in range(1, len(indices)):
+            reversal_idx = indices[position]
+            if reversal_idx not in unresolved:
+                continue
+            original_idx = indices[position - 1]
+            original_row = out_df.loc[original_idx]
+            reversal_row = out_df.loc[reversal_idx]
+            original_source_row = float(ordered.loc[original_idx, "__source_row"])
+            reversal_source_row = float(ordered.loc[reversal_idx, "__source_row"])
+            if reversal_source_row - original_source_row != 1:
+                continue
+            if str(out_df.loc[original_idx, "交易状态"]) != "正常":
+                continue
+            if not _is_local_bank_reversal_pair(original_row, reversal_row):
+                continue
+
+            original_id = str(original_row.get("交易唯一编号") or "")
+            reversal_id = str(reversal_row.get("交易唯一编号") or "")
+            paired = [original_idx, reversal_idx]
+            out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
+            out_df.loc[original_idx, "交易状态"] = "被冲正"
+            out_df.loc[reversal_idx, "交易状态"] = "冲正"
+            out_df.loc[original_idx, "关联冲正交易编号"] = reversal_id
+            out_df.loc[reversal_idx, "关联冲正交易编号"] = original_id
+            out_df.loc[reversal_idx, "一级标签"] = "其他类"
+            out_df.loc[reversal_idx, "二级标签"] = "冲正交易"
+            out_df.loc[reversal_idx, "三级标签"] = "冲正"
+            out_df.loc[reversal_idx, "标签来源"] = "银行冲正配对"
+            out_df.loc[reversal_idx, "标签置信度"] = 0.95
+            out_df.loc[reversal_idx, "命中规则编号"] = "BANK_LOCAL_REVERSAL"
+            out_df.loc[reversal_idx, "命中关键词"] = "冲正+相邻交易+余额闭环"
+            out_df.loc[reversal_idx, "命中字段"] = "银行备注"
+            summary["配对组数"] += 1
+            summary["被冲正原始交易数"] += 1
+            summary["冲正记录数"] += 1
+            unresolved.remove(reversal_idx)
+
+    unresolved_ids = [str(out_df.loc[index, "交易唯一编号"]) for index in sorted(unresolved)]
+    summary["待复核冲正数"] = len(unresolved_ids)
+    summary["待复核交易编号列表"] = unresolved_ids
+    return summary
+
+
+def _apply_transaction_relations(out_df):
+    """统一识别并应用交易关系；各策略自行约束候选范围。"""
+    alipay = _apply_alipay_order_reversals(out_df)
+    bank = _apply_bank_reversals(out_df)
+    return {"支付宝取消": alipay, "银行冲正": bank}
+
+
 def tag(csv_path, rules_path, out_dir=None):
     df = pd.read_csv(csv_path, dtype=str)
     # 银行识别过程证据只保留在 mapping/整合报告，不能进入标准业务流水。
@@ -358,7 +490,7 @@ def tag(csv_path, rules_path, out_dir=None):
         rows_out.append({**row.to_dict(), **tagrow})
 
     out_df = pd.DataFrame(rows_out)
-    reversal_summary = _apply_alipay_order_reversals(out_df)
+    relation_summary = _apply_transaction_relations(out_df)
 
     suggestions = []
     for (d, opp), cnt in unmatched.most_common(40):
@@ -377,15 +509,23 @@ def tag(csv_path, rules_path, out_dir=None):
             "兜底其他类数量": int(len(df) - rule_hits),
             "规则命中率": round(rule_hits / max(1, len(df)), 3),
             "命中字段分布": dict(field_stat),
-            "支付宝冲正配对": reversal_summary,
+            "交易关系汇总": relation_summary,
         },
         "一级标签分布": dict(l1_stat),
         "标签分布": out_df.groupby(["一级标签", "二级标签", "三级标签"]).size()
                         .sort_values(ascending=False).head(40)
                         .reset_index(name="笔数").to_dict("records"),
         "新规则建议": suggestions,
-        "人工复核事项": [{"交易唯一编号": uid, "复核原因": "规则未命中，归兜底其他类",
-                       "候选标签": [], "建议动作": "人工确认标签"} for uid in review[:50]],
+        "人工复核事项": [
+            {
+                "交易唯一编号": uid,
+                "复核原因": "银行备注含冲正，但未与同文件上一笔交易形成金额、对手和余额闭环",
+                "候选标签": [],
+                "建议动作": "核对原始文件中的原交易与冲正关系",
+            }
+            for uid in relation_summary["银行冲正"]["待复核交易编号列表"]
+        ] + [{"交易唯一编号": uid, "复核原因": "规则未命中，归兜底其他类",
+              "候选标签": [], "建议动作": "人工确认标签"} for uid in review[:50]],
         "说明": "规则库源自《流水标签规则文档·资金用途标签判定逻辑/流水标签词库管理表》；"
                 "命中来自银行备注/账户方附言时为不可信输入，置信度已下调；新规则须人工确认后维护进词库。",
     }
