@@ -303,7 +303,7 @@
         转入金额: 收入金额
         余额: 账户余额
   reader_id: pdfplumber_table
-- id: md5:f6e2839cbb6173153037ad740c0be800
+- id: md5:12073bf82ed836a1dcba3d4bb8aa2047
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -318,6 +318,9 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
     columns:
       all:
         电子版: null
@@ -333,8 +336,12 @@
         收入/支出金额: 收入金额
         余额: 账户余额
         渠道: 交易渠道
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
   reader_id: pdfplumber_table
-- id: md5:c32bf342dabb921d88641d06db8b4b54
+- id: md5:2c4f5f565b4fc6362b8e75ca3fb5282d
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
@@ -349,6 +356,9 @@
     identity:
       any:
       - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
     columns:
       all:
         电子版: null
@@ -362,6 +372,10 @@
         钞汇: null
         地区: null
         收入/支出金额: 收入金额
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
   reader_id: pdfplumber_table
 - id: md5:1ac2b953b8acacc332c7e2e0544eb1f6
   file_type: pdf
@@ -1135,7 +1149,7 @@
       交易对方:
         newline: cjk_join
   reader_id: pdfplumber_table
-- id: md5:6ff5c74e874af5159f4934d97ce035f8
+- id: md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6
   file_type: pdf
   bank: 支付宝
   account_type: 个人
@@ -1144,6 +1158,11 @@
       any:
       - 支付宝支付科技有限公司
       - 交易流水证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)\s*[（(]证件号码'
+    - field: 本方账户
+      pattern: '支付宝账号\s*([^\s，。,；;]+?)\s*中(?:的)?明细信息'
     columns:
       all:
         兹证明: null

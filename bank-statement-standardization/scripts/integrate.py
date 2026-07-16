@@ -37,12 +37,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import standardize as S   # 复用余额连续性行序整理（best_continuity_order）
 
 NUMERIC = ["收入金额", "支出金额", "交易金额", "账户余额"]
+ALIPAY_TRADE_ORDER_RE = re.compile(r"支付宝交易订单号=([^；;]+)")
 
 
 def _clean_text(value):
     if value is None or pd.isna(value):
         return ""
     return str(value).strip()
+
+
+def _alipay_trade_order(value):
+    match = ALIPAY_TRADE_ORDER_RE.search(_clean_text(value))
+    return match.group(1).strip() if match else ""
+
+
+def _is_alipay_record(row):
+    return "支付宝" in "".join(
+        _clean_text(row.get(column))
+        for column in ("开户行", "来源文件名", "交易渠道", "账户方附言")
+    )
 
 
 def _identity_text(value):
@@ -1168,19 +1181,35 @@ def dedup_cross_file(df):
     d["__rank"] = d["来源文件名"].fillna("").map(
         lambda fn: 1 if os.path.splitext(str(fn))[1].lower() == ".pdf" else 0)
 
-    dup_mask = d.duplicated("交易唯一编号", keep=False)
+    def dedup_key(row):
+        uid = _clean_text(row.get("交易唯一编号"))
+        if not _is_alipay_record(row):
+            return uid
+        trade_order = _alipay_trade_order(row.get("账户方附言"))
+        if trade_order:
+            return f"{uid}#支付宝交易订单号={trade_order}"
+        # 支付宝缺交易订单号时证据不足，不允许跨来源自动折叠。
+        return "#".join((uid, "支付宝交易订单号缺失", _clean_text(row.get("__源标准化文件路径")),
+                         _clean_text(row.get("来源文件名")), _clean_text(row.get("来源行号"))))
+
+    d["__dedup_key"] = d.apply(dedup_key, axis=1)
+
+    dup_mask = d.duplicated("__dedup_key", keep=False)
     if dup_mask.any():
-        for uid, g in d[dup_mask].groupby("交易唯一编号"):
+        for _, g in d[dup_mask].groupby("__dedup_key"):
             info["折叠组数"] += 1
             info["移除笔数"] += int(len(g) - 1)
             if len(info["明细"]) < 30:
                 info["明细"].append({
-                    "交易唯一编号": uid, "出现次数": int(len(g)),
+                    "交易唯一编号": _clean_text(g.iloc[0].get("交易唯一编号")),
+                    "支付宝交易订单号": _alipay_trade_order(g.iloc[0].get("账户方附言")),
+                    "出现次数": int(len(g)),
                     "涉及来源文件": sorted(g["来源文件名"].fillna("").unique().tolist()),
                 })
-    d = d.sort_values(["交易唯一编号", "__rank", "__nonempty", "来源行号_num"],
+    d = d.sort_values(["__dedup_key", "__rank", "__nonempty", "来源行号_num"],
                       ascending=[True, True, False, True])
-    kept = d.drop_duplicates("交易唯一编号", keep="first").drop(columns=["__nonempty", "__rank"])
+    kept = d.drop_duplicates("__dedup_key", keep="first").drop(
+        columns=["__dedup_key", "__nonempty", "__rank"])
     return kept.reset_index(drop=True), info
 
 
@@ -1549,25 +1578,44 @@ def balance_check(df):
 
 
 def detect_duplicates(df):
-    """疑似重复交易：同账户、同时间、同收入/支出、同余额、同对手，但来源文件不同。"""
+    """疑似重复交易；支付宝存在交易订单号时以该编号作为硬约束。"""
     groups = []
     key_cols = ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称"]
-    for key, g in df.groupby([df[c].fillna("") for c in key_cols]):
-        if len(g) < 2:
+    for _, broad_group in df.groupby([df[c].fillna("") for c in key_cols]):
+        if len(broad_group) < 2:
             continue
-        srcs = g["来源文件名"].nunique()
-        ids = g["交易唯一编号"].tolist()
-        # 余额全相等才算高置信重复（仅时间金额相同也可能是真实多笔）
-        conf = 0.9 if srcs > 1 and g["账户余额"].nunique() == 1 else 0.5
-        groups.append({
-            "组编号": f"DUP-{len(groups)+1:04d}",
-            "交易唯一编号列表": ids,
-            "涉及来源文件": sorted(g["来源文件名"].unique().tolist()),
-            "置信度": conf,
-            "判断原因": "同账户/时间/金额/余额/对手一致" +
-                       ("，且跨多个来源文件（疑似同源重复导入）" if srcs > 1 else "，同一文件内重复"),
-            "建议动作": "保留一笔" if conf >= 0.9 else "人工复核",
-        })
+
+        memo = broad_group.get("账户方附言", pd.Series("", index=broad_group.index)).fillna("").astype(str)
+        is_alipay = broad_group.apply(_is_alipay_record, axis=1)
+        if bool(is_alipay.all()):
+            trade_orders = memo.map(_alipay_trade_order)
+            candidate_groups = []
+            for order_id, order_group in broad_group.groupby(trade_orders, sort=False):
+                # 不同交易订单号是不同支付宝记录；同号才可能是重复导入。
+                if order_id and len(order_group) >= 2:
+                    candidate_groups.append((order_group, order_id))
+                elif not order_id and len(order_group) >= 2:
+                    candidate_groups.append((order_group, ""))
+        else:
+            candidate_groups = [(broad_group, "")]
+
+        for g, alipay_trade_order in candidate_groups:
+            srcs = g["来源文件名"].nunique()
+            ids = g["交易唯一编号"].tolist()
+            # 余额全相等才算高置信重复（仅时间金额相同也可能是真实多笔）
+            conf = 0.9 if srcs > 1 and g["账户余额"].nunique() == 1 else 0.5
+            reason = "同账户/时间/金额/余额/对手一致"
+            if alipay_trade_order:
+                reason += f"，且支付宝交易订单号相同（{alipay_trade_order}）"
+            reason += "，且跨多个来源文件（疑似同源重复导入）" if srcs > 1 else "，同一文件内重复"
+            groups.append({
+                "组编号": f"DUP-{len(groups)+1:04d}",
+                "交易唯一编号列表": ids,
+                "涉及来源文件": sorted(g["来源文件名"].unique().tolist()),
+                "置信度": conf,
+                "判断原因": reason,
+                "建议动作": "保留一笔" if conf >= 0.9 else "人工复核",
+            })
     return groups
 
 
@@ -1837,7 +1885,8 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
                           "且至少20笔、较小来源覆盖率≥98%才自动折叠；同一明确账号再按交易时间、方向金额、"
                           "交易后余额完全一致且跨来源唯一的强键折叠重叠区间；最后按交易唯一编号折叠完全相同交易。"
                           "来源独有和歧义记录不删除",
-            "疑似重复判断规则": ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称"],
+            "疑似重复判断规则": ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称",
+                               "支付宝交易订单号（支付宝记录的硬约束）"],
             "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天；双向账户/户名互证才为高置信，"
                                   "日期级或单侧证据降低置信度；仅标记不删除",
             "余额校验范围": "按本方账户分别校验",

@@ -726,7 +726,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -783,7 +783,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -802,7 +802,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 

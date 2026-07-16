@@ -17,6 +17,63 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_icbc_personal_pdfium_and_wps_extract_owner_without_watermark_accounts(self):
+        samples = (
+            (
+                "吕建光", "工商银行历史明细.pdf", "吕建光", "1502211001208140653",
+                "md5:12073bf82ed836a1dcba3d4bb8aa2047", 399,
+            ),
+            (
+                "徐长河", "工商银行历史明细（申请单号：26060513375455134973）.pdf",
+                "徐长河", "1503229401201946829", "md5:2c4f5f565b4fc6362b8e75ca3fb5282d", 281,
+            ),
+        )
+        for folder, filename, expected_name, expected_account, expected_fp, expected_rows in samples:
+            source = REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename
+            if not source.exists():
+                self.skipTest(f"本地未提供工行个人 PDF 样本：{filename}")
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
+                csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                image = report["文件画像"]
+                self.assertEqual(image["fingerprint_id"], expected_fp)
+                self.assertEqual(image["本方名称"], expected_name)
+                self.assertEqual(len(rows), expected_rows)
+                self.assertEqual({row["本方名称"] for row in rows}, {expected_name})
+                self.assertEqual({row["本方账户"] for row in rows}, {expected_account})
+
+    def test_alipay_pdf_extracts_owner_and_account_from_preamble(self):
+        source = (
+            REPO_ROOT / "bank-statement-standardization" / "testdata" / "徐育发"
+            / "支付宝交易明细(20250501-20260430).pdf"
+        )
+        if not source.exists():
+            self.skipTest("本地未提供支付宝 PDF 样本")
+        with tempfile.TemporaryDirectory() as tmp:
+            _csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+
+        image = report["文件画像"]
+        self.assertEqual(image["fingerprint_id"], "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6")
+        self.assertEqual(image["本方名称"], "付丽翠")
+        self.assertEqual(image["本方账户"], "19979389877")
+
+    def test_alipay_excel_extracts_owner_and_account_from_preamble(self):
+        source = (
+            REPO_ROOT / "bank-statement-standardization" / "testdata" / "钱斌"
+            / "支付宝交易明细(20250608-20260607)(1).xlsx"
+        )
+        if not source.exists():
+            self.skipTest("本地未提供支付宝 Excel 样本")
+        with tempfile.TemporaryDirectory() as tmp:
+            _csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+
+        image = report["文件画像"]
+        self.assertEqual(image["fingerprint_id"], "md5:636726a9de9722547485a41f953ad5fa")
+        self.assertEqual(image["本方名称"], "钱斌")
+        self.assertEqual(image["本方账户"], "15179801339")
+
     def test_datetime_preserves_row_level_date_and_minute_precision(self):
         self.assertEqual(standardize.parse_datetime("2026-05-05", ""), "2026-05-05")
         self.assertEqual(standardize.parse_datetime("2026-05-05", "09:30"), "2026-05-05 09:30")

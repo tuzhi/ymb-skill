@@ -342,6 +342,52 @@ def _same_transaction_day(left, right):
     return _relation_text(left)[:10] == _relation_text(right)[:10]
 
 
+def _same_precise_transaction_time(left, right):
+    """隐式冲正只接受两边都明确到秒（或更细）且时间完全一致。"""
+    pattern = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    return bool(pattern.fullmatch(left_text) and pattern.fullmatch(right_text) and left_text == right_text)
+
+
+def _signed_transaction_amount(row):
+    income = pd.to_numeric(pd.Series([row.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
+    expense = pd.to_numeric(pd.Series([row.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
+    return float(income - expense)
+
+
+def _is_local_bank_implicit_reversal_pair(original, reversal):
+    """无冲正字样时，仅用秒级同刻、反向等额和余额闭环识别隐式冲正。"""
+    if _bank_reversal_type(original.get("银行备注")) or _bank_reversal_type(reversal.get("银行备注")):
+        return False
+    if not _same_precise_transaction_time(original.get("交易时间"), reversal.get("交易时间")):
+        return False
+    own_account = _relation_account(original.get("本方账户"))
+    if not own_account or own_account != _relation_account(reversal.get("本方账户")):
+        return False
+
+    original_name = _relation_text(original.get("对手名称"))
+    reversal_name = _relation_text(reversal.get("对手名称"))
+    if not original_name or original_name != reversal_name:
+        return False
+    original_account = _relation_account(original.get("对手账户"))
+    reversal_account = _relation_account(reversal.get("对手账户"))
+    if original_account and reversal_account and original_account != reversal_account:
+        return False
+
+    original_amount = _signed_transaction_amount(original)
+    reversal_amount = _signed_transaction_amount(reversal)
+    if original_amount == 0 or round(original_amount + reversal_amount, 2) != 0:
+        return False
+
+    original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]
+    reversal_balance = pd.to_numeric(pd.Series([reversal.get("账户余额")]), errors="coerce").iloc[0]
+    if pd.isna(original_balance) or pd.isna(reversal_balance):
+        return False
+    balance_before_original = float(original_balance) - original_amount
+    return abs(balance_before_original - float(reversal_balance)) <= 0.005
+
+
 def _is_local_bank_reversal_pair(original, reversal):
     """严格判断原文件内相邻两笔是否构成银行冲正或抹账。"""
     reversal_type = _bank_reversal_type(reversal.get("银行备注"))
@@ -398,6 +444,7 @@ def _apply_bank_reversals(out_df):
         "配对组数": 0,
         "被冲正原始交易数": 0,
         "冲正记录数": 0,
+        "隐式冲正数": 0,
         "待复核冲正数": 0,
         "待复核交易编号列表": [],
     }
@@ -451,6 +498,46 @@ def _apply_bank_reversals(out_df):
             summary["被冲正原始交易数"] += 1
             summary["冲正记录数"] += 1
             unresolved.remove(reversal_idx)
+
+        # 显式冲正处理完后，再在同一原文件的相邻正常记录中识别强证据隐式冲正。
+        for position in range(1, len(indices)):
+            original_idx = indices[position - 1]
+            reversal_idx = indices[position]
+            if str(out_df.loc[original_idx, "交易状态"]) != "正常":
+                continue
+            if str(out_df.loc[reversal_idx, "交易状态"]) != "正常":
+                continue
+            if bool(_is_alipay_rows(out_df.loc[[original_idx, reversal_idx]]).any()):
+                continue
+            original_source_row = float(ordered.loc[original_idx, "__source_row"])
+            reversal_source_row = float(ordered.loc[reversal_idx, "__source_row"])
+            if reversal_source_row - original_source_row != 1:
+                continue
+            original_row = out_df.loc[original_idx]
+            reversal_row = out_df.loc[reversal_idx]
+            if not _is_local_bank_implicit_reversal_pair(original_row, reversal_row):
+                continue
+
+            original_id = str(original_row.get("交易唯一编号") or "")
+            reversal_id = str(reversal_row.get("交易唯一编号") or "")
+            paired = [original_idx, reversal_idx]
+            out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
+            out_df.loc[original_idx, "交易状态"] = "被隐式冲正"
+            out_df.loc[reversal_idx, "交易状态"] = "隐式冲正"
+            out_df.loc[original_idx, "关联冲正交易编号"] = reversal_id
+            out_df.loc[reversal_idx, "关联冲正交易编号"] = original_id
+            out_df.loc[reversal_idx, "一级标签"] = "其他类"
+            out_df.loc[reversal_idx, "二级标签"] = "冲正交易"
+            out_df.loc[reversal_idx, "三级标签"] = "隐式冲正"
+            out_df.loc[reversal_idx, "标签来源"] = "银行隐式冲正配对"
+            out_df.loc[reversal_idx, "标签置信度"] = 0.9
+            out_df.loc[reversal_idx, "命中规则编号"] = "BANK_IMPLICIT_REVERSAL"
+            out_df.loc[reversal_idx, "命中关键词"] = "同秒反向等额+相邻交易+余额闭环"
+            out_df.loc[reversal_idx, "命中字段"] = "标准字段组合"
+            summary["配对组数"] += 1
+            summary["被冲正原始交易数"] += 1
+            summary["冲正记录数"] += 1
+            summary["隐式冲正数"] += 1
 
     unresolved_ids = [str(out_df.loc[index, "交易唯一编号"]) for index in sorted(unresolved)]
     summary["待复核冲正数"] = len(unresolved_ids)

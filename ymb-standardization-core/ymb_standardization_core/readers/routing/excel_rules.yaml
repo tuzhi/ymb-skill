@@ -1089,7 +1089,7 @@
       pattern: ^零钱通转出.*$
       replacement: 收入
   reader_id: openpyxl_grid
-- id: md5:7b8550aa0fb09fbf645f59b6f720c917
+- id: md5:636726a9de9722547485a41f953ad5fa
   file_type: excel
   bank: 支付宝
   account_type: 个人
@@ -1098,6 +1098,11 @@
       any:
       - 支付宝支付科技有限公司
       - 交易流水证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)\s*[（(]证件号码'
+    - field: 本方账户
+      pattern: '支付宝账号\s*([^\s，。,；;]+?)\s*中(?:的)?明细信息'
     columns:
       all:
         兹证明: null

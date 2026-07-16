@@ -447,6 +447,43 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "三级标签"], "抹账")
         self.assertEqual(df.loc[1, "命中关键词"], "抹账+相邻交易+余额闭环")
 
+    def test_bank_implicit_reversal_requires_same_precise_time_and_balance_closure(self):
+        common = {
+            "本方账户": "A100", "来源文件名": "工商银行流水.xls",
+            "交易时间": "2025-01-01 10:20:30", "对手名称": "张三", "对手账户": "B200",
+            "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "10", "银行备注": "转账",
+             "账户方附言": "", "收入金额": "", "支出金额": "2000", "账户余额": "178404.59"},
+            {**common, "交易唯一编号": "TX-back", "来源行号": "11", "银行备注": "转账",
+             "账户方附言": "", "收入金额": "2000", "支出金额": "", "账户余额": "180404.59"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["隐式冲正数"], 1)
+        self.assertEqual(df["交易状态"].tolist(), ["被隐式冲正", "隐式冲正"])
+        self.assertEqual(df["分析交易金额"].tolist(), [0, 0])
+
+    def test_bank_implicit_reversal_rejects_date_only_time(self):
+        common = {
+            "本方账户": "A100", "来源文件名": "银行流水.xls", "交易时间": "2025-01-01",
+            "对手名称": "张三", "对手账户": "B200", "银行备注": "转账", "账户方附言": "",
+            "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "10", "收入金额": "",
+             "支出金额": "1000", "账户余额": "2488.09"},
+            {**common, "交易唯一编号": "TX-back", "来源行号": "11", "收入金额": "1000",
+             "支出金额": "", "账户余额": "3488.09"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["隐式冲正数"], 0)
+        self.assertEqual(df["交易状态"].tolist(), ["正常", "正常"])
+
     def test_technical_alipay_order_ids_do_not_match_order_keyword_rules(self):
         rules = pd.DataFrame([
             {
