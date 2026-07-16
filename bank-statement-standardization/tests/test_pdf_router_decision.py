@@ -149,7 +149,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         finally:
             router._extract_pdf_tables_default = original
 
-    def test_pdfplumber_text_separator_table_reader_groups_multiline_rows(self):
+    def test_pdfplumber_coordinate_table_reader_groups_separator_rows(self):
         path = (
             ROOT / "testdata" / "罗美英"
             / "交易明细记录SHLSMX20260602415882_1.pdf"
@@ -200,7 +200,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             rows,
         )
 
-    def test_pdfplumber_word_column_table_reader_groups_words_by_serial_number(self):
+    def test_pdfplumber_coordinate_table_reader_groups_words_by_serial_number(self):
         cases = [
             (
                 "程旭/江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.pdf",
@@ -245,7 +245,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 self.assertEqual(len(rows) - 1, expected_rows)
                 self.assertEqual(rows[1][:3], expected_prefix)
 
-    def test_pdfplumber_word_column_table_reader_uses_composite_header_from_columns(self):
+    def test_pdfplumber_coordinate_table_reader_uses_composite_header_from_columns(self):
         path = ROOT / "testdata" / "陈国付103135" / "26060214275857136186.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
@@ -279,7 +279,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[51][7], "大额支付")
         self.assertEqual(rows[51][8], "网商银行转账")
 
-    def test_jiangxi_yumin_pdf_uses_word_column_table_reader(self):
+    def test_jiangxi_yumin_pdf_uses_coordinate_table_reader(self):
         path = ROOT / "testdata" / "陈国付103135" / "APPLY2026060214573700135618149968_trade_history_sign.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
@@ -311,7 +311,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[26][5], "银联全渠道贷记发卡侧入账")
         self.assertEqual(rows[26][6], "银联待清算往来")
 
-    def test_jiangxi_rural_commercial_pdf_uses_word_column_table_reader(self):
+    def test_jiangxi_rural_commercial_pdf_uses_coordinate_table_reader(self):
         path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))

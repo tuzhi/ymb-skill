@@ -794,7 +794,14 @@
         交易摘要: 银行备注
         对手信息: 对手名称
   reader_options:
-    text_table_layout: currency
+    row_transforms:
+      anchor_column: 记账日期
+      anchor_pattern: '^20\d{2}-\d{2}-\d{2}$'
+    column_transforms:
+      交易摘要:
+        newline: cjk_join
+      对手信息:
+        newline: cjk_join
     extract_mapping:
     - source: 对手信息
       field: 对手账户
@@ -810,7 +817,7 @@
       field: 对手名称
       pattern: '^\s*(?<!\d)\d{8,}(?!\d)\s+(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
       replacement: '\1'
-  reader_id: pdfplumber_text_lines
+  reader_id: pdfplumber_coordinate_table
 - id: md5:0a45d881baf8861f2799735ca60e0652
   file_type: pdf
   bank: 兴业银行

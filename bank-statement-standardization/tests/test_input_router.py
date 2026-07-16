@@ -703,16 +703,54 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.kind, "pdf")
         self.assertNotIn("parser", result.route_info)
 
-        self.assertEqual(result.route_info["reader_id"], "pdfplumber_text_lines")
+        self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "个人")
-        self.assertEqual(result.route_info["text_table_layout"], "currency")
+        self.assertEqual(result.route_info["text_table_layout"], "")
+        self.assertEqual(
+            result.route_info["row_anchor"],
+            {"column": "记账日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
+        )
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "openhtmltopdf.com")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("记账日期", result.route_info["columns_evidence"])
-        self.assertGreater(len(result.rows), 10)
+        self.assertEqual(len(result.rows) - 1, 176)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
+        self.assertIn(
+            [
+                "2025-07-19", "CNY", "-50.00", "667,726.29",
+                "RI网银跨行实时转出手续费", "对私中间业务收入-个人同城转账收入",
+            ],
+            result.rows,
+        )
+        self.assertIn(
+            [
+                "2025-07-19", "CNY", "-47.96", "167,678.33",
+                "RI网银跨行实时转出手续费", "对私中间业务收入-个人同城转账收入",
+            ],
+            result.rows,
+        )
+
+    def test_cmb_coordinate_reader_preserves_same_fingerprint_samples(self):
+        module = load_input_router()
+        cases = [
+            ("吕建光", "招商银行交易流水(申请时间2026年06月13日13时27分20秒).pdf", 867),
+            ("曾小园", "招商银行交易流水(申请时间2026年06月05日13时47分40秒).pdf", 337),
+            ("金伟", "招商银行交易流水(申请时间2026年05月27日15时12分33秒).pdf", 1834),
+            ("陈鑫伟", "招商银行交易流水(申请时间2026年06月03日15时00分00秒).pdf", 835),
+        ]
+
+        for folder, filename, expected_rows in cases:
+            with self.subTest(folder=folder):
+                result = module.read_rows(str(ROOT / "testdata" / folder / filename))
+
+                self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
+                self.assertEqual(
+                    result.route_info["fingerprint_id"],
+                    "md5:b3931dcff339eccaf63efd597d60132b",
+                )
+                self.assertEqual(len(result.rows) - 1, expected_rows)
 
     def test_srbank_corporate_statement_merges_cross_page_transaction(self):
         module = load_input_router()
@@ -911,7 +949,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertIn("支付宝商家订单号=", result.rows[1][6])
         self.assertIn("支付宝交易订单号=", result.rows[1][6])
 
-    def test_alipay_word_column_reader_continues_pages_without_repeated_header(self):
+    def test_alipay_coordinate_reader_continues_pages_without_repeated_header(self):
         module = load_input_router()
         pdf = ROOT / "testdata" / "吕建光" / "支付宝交易明细(20250701-20260630).pdf"
 

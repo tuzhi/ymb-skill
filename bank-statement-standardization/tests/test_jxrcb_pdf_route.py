@@ -71,7 +71,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(result["decision"], "unmatched")
         self.assertEqual(result["reader_id"], "none")
 
-    def test_watermarked_pdf_uses_word_column_reader(self):
+    def test_watermarked_pdf_uses_coordinate_reader(self):
         path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
         preamble, rows, route_info = router.read_pdf_rows(str(path))

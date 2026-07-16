@@ -306,10 +306,8 @@ def _postprocess_reader_rows(rows, route_info):
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     route_info = route_info or {}
     column_transforms = route_info.get("column_transforms") or {}
-    if reader_id == "pdfplumber_text_separator_table":
-        return _extract_pdf_text_separator_table_rows(pdf)
     if reader_id == "pdfplumber_coordinate_table":
-        rows = _extract_pdf_word_column_table_rows(
+        coordinate_rows = _extract_pdf_coordinate_table_rows(
             pdf,
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
@@ -317,17 +315,11 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             word_filters=route_info.get("word_filters") or {},
         )
         separator_rows = _extract_pdf_text_separator_table_rows(pdf)
-        if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):
+        if separator_rows and (
+            not coordinate_rows or len(coordinate_rows[0]) < len(separator_rows[0])
+        ):
             return separator_rows
-        return rows
-    if reader_id == "pdfplumber_word_column_table":
-        return _extract_pdf_word_column_table_rows(
-            pdf,
-            route_info.get("reader_header_candidates") or [],
-            route_info.get("row_anchor") or {},
-            column_transforms=column_transforms,
-            word_filters=route_info.get("word_filters") or {},
-        )
+        return coordinate_rows
     if reader_id == "pdfplumber_grid_line_table":
         return _postprocess_reader_rows(_extract_pdf_grid_line_table_rows(
             pdf,
@@ -580,7 +572,7 @@ def _group_words_by_top(words):
     return groups
 
 
-def _word_column_header_match(group, candidate_header):
+def _coordinate_header_match(group, candidate_header):
     tokens = [token for token in str(candidate_header or "").split() if token]
     if not tokens:
         return None
@@ -596,13 +588,13 @@ def _word_column_header_match(group, candidate_header):
     return None
 
 
-def _word_column_header(words, candidate_headers):
+def _coordinate_header(words, candidate_headers):
     candidate_headers = [str(header).strip() for header in candidate_headers if str(header).strip()]
     best = None
     for top, group in _group_words_by_top(words).items():
         by_text = {}
         for header in candidate_headers:
-            match = _word_column_header_match(group, header)
+            match = _coordinate_header_match(group, header)
             if match:
                 by_text[header] = match
         if len(by_text) < 3:
@@ -621,18 +613,18 @@ def _word_column_header(words, candidate_headers):
     return top, headers, starts
 
 
-def _word_column_boundaries(page_width, starts):
+def _coordinate_boundaries(page_width, starts):
     return [0] + [(left + right) / 2 for left, right in zip(starts, starts[1:])] + [page_width + 10]
 
 
-def _word_column_index(x, boundaries):
+def _coordinate_index(x, boundaries):
     for index in range(len(boundaries) - 1):
         if boundaries[index] <= x < boundaries[index + 1]:
             return index
     return None
 
 
-def _is_word_column_row_anchor(word, anchor_x, anchor_header, row_anchor=None):
+def _is_coordinate_row_anchor(word, anchor_x, anchor_header, row_anchor=None):
     import re
 
     text = str(word.get("text") or "").strip()
@@ -654,7 +646,7 @@ def _is_word_column_row_anchor(word, anchor_x, anchor_header, row_anchor=None):
     return bool(text)
 
 
-def _is_word_column_noise_word(word):
+def _is_coordinate_noise_word(word):
     text = str(word.get("text") or "").strip()
     if not text:
         return True
@@ -690,13 +682,13 @@ def _drop_word_filter_char(char, word_filters):
     return False
 
 
-def _word_column_page_words(page, word_filters=None):
+def _coordinate_page_words(page, word_filters=None):
     if word_filters:
         page = page.filter(lambda char: not _drop_word_filter_char(char, word_filters))
     return page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False)
 
 
-def _word_column_label_tokens(group):
+def _coordinate_label_tokens(group):
     labels = []
     current = []
     current_x0 = None
@@ -716,12 +708,12 @@ def _word_column_label_tokens(group):
     return labels
 
 
-def _word_column_metadata_preamble(pdf, route_info):
+def _coordinate_metadata_preamble(pdf, route_info):
     if not pdf.pages:
         return ""
     page = pdf.pages[0]
-    words = _word_column_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
-    header_top, _headers, _starts = _word_column_header(
+    words = _coordinate_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
+    header_top, _headers, _starts = _coordinate_header(
         words,
         (route_info or {}).get("reader_header_candidates") or [],
     )
@@ -735,7 +727,7 @@ def _word_column_metadata_preamble(pdf, route_info):
     tops = sorted(groups)
     output = []
     for index, top in enumerate(tops[:-1]):
-        labels = _word_column_label_tokens(groups[top])
+        labels = _coordinate_label_tokens(groups[top])
         if not labels:
             continue
         next_group = groups[tops[index + 1]]
@@ -755,7 +747,7 @@ def _word_column_metadata_preamble(pdf, route_info):
     return "\n".join(output)
 
 
-def _word_column_stop_top(words, word_filters=None):
+def _coordinate_stop_top(words, word_filters=None):
     markers = [
         str(value).strip()
         for value in (word_filters or {}).get("stop_line_contains_any", [])
@@ -770,7 +762,7 @@ def _word_column_stop_top(words, word_filters=None):
     return None
 
 
-def _word_column_cell_text(header, cell, column_transforms=None):
+def _coordinate_cell_text(header, cell, column_transforms=None):
     text = " ".join(value for _top, _x0, value in sorted(cell)).strip()
     return _clean_pdf_cell(text, header, column_transforms=column_transforms)
 
@@ -846,7 +838,7 @@ def _grid_line_headers(words, boundaries, candidate_headers, first_anchor_top):
     return headers
 
 
-def _word_column_row_bounds(index, anchors, body_top_min, page_height, row_anchor):
+def _coordinate_row_bounds(index, anchors, body_top_min, page_height, row_anchor):
     anchor_top = anchors[index][0]
     continuation = str((row_anchor or {}).get("continuation") or "").strip()
     if continuation == "until_next_anchor":
@@ -865,7 +857,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
     output_headers = None
     row_anchor = row_anchor or {}
     for page in pdf.pages:
-        words = _word_column_page_words(page, word_filters=word_filters)
+        words = _coordinate_page_words(page, word_filters=word_filters)
         first_anchor_top = min(
             (float(word.get("top", 0)) for word in words if _grid_line_anchor_text_match(word, row_anchor)),
             default=None,
@@ -882,7 +874,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
             for word in words:
                 if not (left <= float(word.get("x0", 0)) < right):
                     continue
-                if _is_word_column_row_anchor(word, left, anchor_column, row_anchor):
+                if _is_coordinate_row_anchor(word, left, anchor_column, row_anchor):
                     anchors.append((float(word.get("top", 0)), word, index))
             if anchors:
                 anchor_index_hint = index
@@ -901,7 +893,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
         elif headers != output_headers:
             headers = output_headers
         body_top_min = anchors[0][0] - 1
-        stop_top = _word_column_stop_top(words, word_filters=word_filters)
+        stop_top = _coordinate_stop_top(words, word_filters=word_filters)
         drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
         body_words = [
             word for word in words
@@ -911,29 +903,29 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
                 drop_bottom_margin is None
                 or float(word.get("top", 0)) < page.height - float(drop_bottom_margin)
             )
-            and not _is_word_column_noise_word(word)
+            and not _is_coordinate_noise_word(word)
         ]
         anchors = sorted(
             (float(word.get("top", 0)), word)
             for word in body_words
             if (
                 boundaries[anchor_index] <= float(word.get("x0", 0)) < boundaries[anchor_index + 1]
-                and _is_word_column_row_anchor(word, boundaries[anchor_index], headers[anchor_index], row_anchor)
+                and _is_coordinate_row_anchor(word, boundaries[anchor_index], headers[anchor_index], row_anchor)
             )
         )
         for index, (anchor_top, _word) in enumerate(anchors):
-            start_top, end_top = _word_column_row_bounds(index, anchors, body_top_min, page.height, row_anchor)
+            start_top, end_top = _coordinate_row_bounds(index, anchors, body_top_min, page.height, row_anchor)
             cells = [[] for _ in headers]
             for word in body_words:
                 top = float(word.get("top", 0))
                 if not (start_top < top <= end_top):
                     continue
-                col = _word_column_index(float(word.get("x0", 0)), boundaries)
+                col = _coordinate_index(float(word.get("x0", 0)), boundaries)
                 if col is None or col >= len(cells):
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
             row = [
-                _word_column_cell_text(headers[cell_index], cell, column_transforms=column_transforms)
+                _coordinate_cell_text(headers[cell_index], cell, column_transforms=column_transforms)
                 for cell_index, cell in enumerate(cells)
             ]
             if row and row[0]:
@@ -941,7 +933,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
     return all_rows if len(all_rows) > 1 else []
 
 
-def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
+def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
                                         word_filters=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
@@ -949,8 +941,8 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
     output_starts = None
     row_anchor = row_anchor or {}
     for page in pdf.pages:
-        words = _word_column_page_words(page, word_filters=word_filters)
-        header_top, page_headers, page_starts = _word_column_header(words, candidate_headers)
+        words = _coordinate_page_words(page, word_filters=word_filters)
+        header_top, page_headers, page_starts = _coordinate_header(words, candidate_headers)
         if page_starts is not None:
             headers = page_headers
             starts = page_starts
@@ -971,9 +963,9 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
             continue
         else:
             output_starts = starts
-        boundaries = _word_column_boundaries(page.width, starts)
+        boundaries = _coordinate_boundaries(page.width, starts)
         drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
-        stop_top = _word_column_stop_top(words, word_filters=word_filters)
+        stop_top = _coordinate_stop_top(words, word_filters=word_filters)
         body_words = [
             word for word in words
             if float(word.get("top", 0)) > body_top_min
@@ -982,12 +974,12 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
                 drop_bottom_margin is None
                 or float(word.get("top", 0)) < page.height - float(drop_bottom_margin)
             )
-            and not _is_word_column_noise_word(word)
+            and not _is_coordinate_noise_word(word)
         ]
         anchors = sorted(
             (float(word.get("top", 0)), word)
             for word in body_words
-            if _is_word_column_row_anchor(
+            if _is_coordinate_row_anchor(
                 word,
                 starts[anchor_index],
                 headers[anchor_index],
@@ -995,7 +987,7 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
             )
         )
         for index, (anchor_top, _word) in enumerate(anchors):
-            start_top, end_top = _word_column_row_bounds(
+            start_top, end_top = _coordinate_row_bounds(
                 index,
                 anchors,
                 body_top_min,
@@ -1007,12 +999,12 @@ def _extract_pdf_word_column_table_rows(pdf, candidate_headers, row_anchor=None,
                 top = float(word.get("top", 0))
                 if not (start_top < top <= end_top):
                     continue
-                col = _word_column_index(float(word.get("x0", 0)), boundaries)
+                col = _coordinate_index(float(word.get("x0", 0)), boundaries)
                 if col is None or col >= len(cells):
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
             row = [
-                _word_column_cell_text(
+                _coordinate_cell_text(
                     headers[cell_index],
                     cell,
                     column_transforms=column_transforms,
@@ -1545,8 +1537,8 @@ def read_pdf_rows(path, open_password=None):
 
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
-        if route_info.get("reader_id") in {"pdfplumber_word_column_table", "pdfplumber_coordinate_table"} and table_rows:
-            metadata_preamble = _word_column_metadata_preamble(pdf, route_info)
+        if route_info.get("reader_id") == "pdfplumber_coordinate_table" and table_rows:
+            metadata_preamble = _coordinate_metadata_preamble(pdf, route_info)
             text_preamble = _preamble_before_reader_header(text, table_rows[0])
             preamble = "\n".join(
                 part for part in [metadata_preamble, text_preamble]
