@@ -34,7 +34,7 @@ def _prep(df):
     # 整合流水/底表的行序即正确时序（整合阶段已按文件时序+文件内原始行序排好、倒序文件已翻正）。
     # 余额校验据此 __seq 排序，不再按交易时间重排，避免同秒多笔被打乱产生伪断点。
     df["__seq"] = range(len(df))
-    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce")
+    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
     df["__row"] = pd.to_numeric(df.get("来源行号"), errors="coerce")
     for c in ["收入金额", "支出金额", "账户余额"]:
         df["__" + c] = pd.to_numeric(df.get(c), errors="coerce")

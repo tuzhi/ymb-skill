@@ -17,6 +17,42 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_datetime_preserves_row_level_date_and_minute_precision(self):
+        self.assertEqual(standardize.parse_datetime("2026-05-05", ""), "2026-05-05")
+        self.assertEqual(standardize.parse_datetime("2026-05-05", "09:30"), "2026-05-05 09:30")
+        self.assertEqual(
+            standardize.parse_datetime("2026-05-05", "09:30:12"),
+            "2026-05-05 09:30:12",
+        )
+        rows = [
+            ["2026-05-05", ""],
+            ["2026-05-06", "09:30:12"],
+        ]
+        self.assertEqual(
+            standardize.infer_transaction_time_precision(rows, [0], [1]),
+            "mixed",
+        )
+
+    def test_abc_account_query_extracts_preamble_identity_and_mixed_time_precision(self):
+        source = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "廖诗川"
+            / "廖诗川农行流水.xlsx"
+        )
+        if not source.exists():
+            self.skipTest("本地未提供廖诗川农行流水样本")
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual({row["本方名称"] for row in rows}, {"廖贵平"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"622845****3315"})
+        self.assertEqual(report["文件画像"]["transaction_time_precision"], "mixed")
+        self.assertEqual(sum(len(row["交易时间"]) == 10 for row in rows), 20)
+
     def test_nanjing_statement_reports_source_time_precision_and_series_family(self):
         root = REPO_ROOT / "bank-statement-standardization" / "testdata" / "金鼎"
         samples = (
@@ -93,8 +129,8 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
         self.assertEqual(len(rows), 1474)
         self.assertEqual(report["标准化统计"]["行序整理策略"], "YAML配置：整体翻转")
-        self.assertEqual(rows[0]["交易时间"], "2018-01-22 00:00:00")
-        self.assertEqual(rows[-1]["交易时间"], "2019-01-20 00:00:00")
+        self.assertEqual(rows[0]["交易时间"], "2018-01-22")
+        self.assertEqual(rows[-1]["交易时间"], "2019-01-20")
         self.assertAlmostEqual(sum(float(row["收入金额"] or 0) for row in rows), 2276959.33, places=2)
         self.assertAlmostEqual(sum(float(row["支出金额"] or 0) for row in rows), 2302721.48, places=2)
 
@@ -126,9 +162,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
         self.assertEqual(report["标准化统计"]["行序整理策略"], "整体翻转")
         self.assertEqual([row["交易时间"] for row in rows], [
-            "2026-01-01 00:00:00",
-            "2026-01-02 00:00:00",
-            "2026-01-03 00:00:00",
+            "2026-01-01",
+            "2026-01-02",
+            "2026-01-03",
         ])
 
     def test_boc_payer_payee_columns_resolve_against_inquirer_account(self):

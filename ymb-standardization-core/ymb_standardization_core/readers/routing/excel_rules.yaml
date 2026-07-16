@@ -86,7 +86,7 @@
         交易渠道: 交易渠道
         交易附言: 账户方附言
   reader_id: openpyxl_grid
-- id: md5:c7c83e9f3740ba3a9b6992e6f9bd75ae
+- id: md5:d7ae0263460311f869a9823285a9f4d5
   file_type: excel
   bank: 中国农业银行
   account_type: 个人
@@ -94,6 +94,11 @@
     identity:
       any:
       - 账户明细查询
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账户[:：]\s*([0-9*]+)'
     columns:
       all:
         交易日期: 交易日期

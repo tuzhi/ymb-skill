@@ -225,7 +225,7 @@
       - 重要提示
       drop_words_below_page_bottom: 45
   reader_id: pdfplumber_coordinate_table
-- id: md5:0488448d0f1d96413a25254a500aab29
+- id: md5:ad9958268d66435c0cba9f63bd3f8a34
   file_type: pdf
   bank: 中国工商银行
   account_type: 对公
@@ -239,7 +239,7 @@
         本方账号: 本方账户
         对方户名: 对手名称
         对方账号: 对手账户
-        对方账户开户行: 对手账户
+        对方账户开户行: null
         凭证号: null
         借/贷: null
         借方发生额: 支出金额

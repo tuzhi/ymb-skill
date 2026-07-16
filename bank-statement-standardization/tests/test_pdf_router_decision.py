@@ -357,7 +357,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "md5:58cf5d000d5fe58b0247e61150522ba9",
             "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
             "md5:eb90af33b5f89117b801f28b10fdc111",
-            "md5:0488448d0f1d96413a25254a500aab29",
+            "md5:ad9958268d66435c0cba9f63bd3f8a34",
             "md5:a13c8439b61942e06e33a571713bd85c",
         ]:
             self.assertIn(fingerprint_id, by_id)
@@ -368,7 +368,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(by_id["md5:f1f82a652560900aea7c11139b852abf"].account_type, "个人")
         for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日 志 号", "交易渠道", "交易附言"]:
             self.assertIn(marker, by_id["md5:f1f82a652560900aea7c11139b852abf"].column_markers)
-        self.assertEqual(by_id["md5:0488448d0f1d96413a25254a500aab29"].account_type, "对公")
+        self.assertEqual(by_id["md5:ad9958268d66435c0cba9f63bd3f8a34"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
             self.assertIn(marker, by_id["md5:a13c8439b61942e06e33a571713bd85c"].column_markers)
@@ -556,7 +556,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:0488448d0f1d96413a25254a500aab29'})
+        self.assertIn(result["fingerprint_id"], {'md5:ad9958268d66435c0cba9f63bd3f8a34'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["file_type"], "pdf")
@@ -658,7 +658,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf("\n".join(lines), 1, 1, context={"lines": lines})
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:0488448d0f1d96413a25254a500aab29'})
+        self.assertIn(result["fingerprint_id"], {'md5:ad9958268d66435c0cba9f63bd3f8a34'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "对公")

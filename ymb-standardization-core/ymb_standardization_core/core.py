@@ -328,7 +328,7 @@ def _rows_from_records(records):
 
 
 def parse_datetime(date_part, time_part):
-    """把日期列 + 时间列合并成标准 'YYYY-MM-DD HH:MM:SS'。
+    """合并日期列与时间列，同时保留原始时间精度。
 
     用正则从拼接串里分别抽取「日期 token」和「时间 token」，因此对以下脏数据都鲁棒：
       20250421 152103              （日期列+6位时间列）
@@ -366,9 +366,11 @@ def parse_datetime(date_part, time_part):
     date_str = f"{y}-{mo}-{day}"
 
     hh = mm = ss = "00"
+    precision = "date"
     if mt:
         hh, mm = mt.group(1).zfill(2), mt.group(2)
         ss = mt.group(3) or "00"
+        precision = "second" if mt.group(3) is not None else "minute"
     else:
         # 没有带冒号的时间：尝试日期后面紧跟的 6 位/4 位数字（HHMMSS / HHMM）
         tail = raw[md.end():]
@@ -376,24 +378,63 @@ def parse_datetime(date_part, time_part):
         if m6:
             v = m6.group(1)
             hh, mm, ss = v[0:2], v[2:4], v[4:6]
+            precision = "second"
         else:
             m4 = re.search(r"\b(\d{4})\b", tail)
             if m4:
                 v = m4.group(1)
                 hh, mm = v[0:2], v[2:4]
+                precision = "minute"
     if not (1990 <= int(y) <= 2100):
         return ""   # 年份越界，多半是把卡号/编号误当日期，判为无效
     try:
         dt = datetime(int(y), int(mo), int(day), int(hh), int(mm), int(ss))
+        if precision == "date":
+            return dt.strftime("%Y-%m-%d")
+        if precision == "minute":
+            return dt.strftime("%Y-%m-%d %H:%M")
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
         # 时分秒越界等异常，至少保住日期
-        return f"{date_str} 00:00:00"
+        return date_str
+
+
+def normalized_transaction_time_precision(value):
+    """从标准化时间文本本身判断精度，不再依赖文件级 YAML 结论。"""
+    text = "" if value is None else str(value).strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return "date"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", text):
+        return "minute"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", text):
+        return "second"
+    return "unknown"
 
 
 def infer_transaction_time_precision(data_rows, date_cols, time_cols, route_info=None):
-    """从原始单元格与路由格式证据判断交易时间精度。"""
+    """汇总逐行交易时间精度；同一文件允许返回 mixed。"""
     route_info = route_info or {}
+    seen = set()
+    for row in data_rows:
+        date_value = " ".join(
+            str(row[index]).strip()
+            for index in date_cols
+            if index < len(row) and str(row[index] or "").strip()
+        )
+        time_value = " ".join(
+            str(row[index]).strip()
+            for index in time_cols
+            if index < len(row) and str(row[index] or "").strip()
+        )
+        parsed = parse_datetime(date_value or time_value, time_value if date_cols else "")
+        precision = normalized_transaction_time_precision(parsed)
+        if precision != "unknown":
+            seen.add(precision)
+    if len(seen) > 1:
+        return "mixed"
+    if seen:
+        return next(iter(seen))
+
     evidence = [
         str(value).strip().lower()
         for value in route_info.get("date_format_evidence", [])
@@ -401,33 +442,9 @@ def infer_transaction_time_precision(data_rows, date_cols, time_cols, route_info
     ]
     if any("ss" in value and "hh" in value for value in evidence):
         return "second"
-
-    candidate_cols = list(dict.fromkeys([*date_cols, *time_cols]))
-    saw_date = False
-    saw_minute = False
-    for row in data_rows:
-        for ci in candidate_cols:
-            if ci >= len(row) or row[ci] in (None, "", "nan"):
-                continue
-            text = str(row[ci]).strip()
-            if re.search(r"(?<!\d)\d{14,}(?!\d)", text):
-                return "second"
-            if re.search(
-                r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?!\d)",
-                text,
-            ):
-                return "second"
-            if ci in time_cols and re.fullmatch(
-                r"(?:[01]\d|2[0-3])[0-5]\d[0-5]\d", text
-            ):
-                return "second"
-            if re.search(r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?![:\d])", text):
-                saw_minute = True
-            if re.search(r"\d{4}[-/]?\d{1,2}[-/]?\d{1,2}", text):
-                saw_date = True
-    if saw_minute:
+    if any("hh" in value for value in evidence):
         return "minute"
-    if saw_date or date_cols:
+    if evidence or date_cols:
         return "date"
     return "unknown"
 

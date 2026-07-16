@@ -336,7 +336,7 @@ def _bank_reversal_type(value):
 
 
 def _same_transaction_day(left, right):
-    values = pd.to_datetime(pd.Series([left, right]), errors="coerce")
+    values = pd.to_datetime(pd.Series([left, right]), errors="coerce", format="mixed")
     if values.notna().all():
         return values.iloc[0].date() == values.iloc[1].date()
     return _relation_text(left)[:10] == _relation_text(right)[:10]

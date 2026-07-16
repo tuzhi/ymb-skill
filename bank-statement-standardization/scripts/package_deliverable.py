@@ -93,7 +93,7 @@ def add_virtual_balance(df):
     """逐笔时点虚拟账户余额 = 各账户最近一次已知余额之和（按全局时间顺序滚动）。
     账户首笔之前贡献按 0。返回带「虚拟账户余额」列的 df（保持原行序）。"""
     d = df.copy()
-    d["__t"] = pd.to_datetime(d["交易时间"], errors="coerce")
+    d["__t"] = pd.to_datetime(d["交易时间"], errors="coerce", format="mixed")
     d["__bal"] = pd.to_numeric(d.get("账户余额"), errors="coerce")
     d["__order"] = range(len(d))   # 整合后的行序（账户内为正确时序）；同时刻多笔用它兜底，不用来源行号（倒序文件会反向）
     order = d.sort_values(["__t", "__order"], kind="stable").index
@@ -159,7 +159,7 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=N
     # ---- 账户清单：按本方账户统计 ----
     acct_rows = []
     for acct, g in tagged.groupby(tagged["本方账户"].fillna("")):
-        t = pd.to_datetime(g["交易时间"], errors="coerce").dropna()
+        t = pd.to_datetime(g["交易时间"], errors="coerce", format="mixed").dropna()
         gi = _analysis_amount(g, "分析收入金额", "收入金额")
         ge = _analysis_amount(g, "分析支出金额", "支出金额")
         def _first(col):
@@ -381,7 +381,7 @@ def _build_tag_report_from_df(tagged):
 
 def _build_integrate_report_from_df(client, tagged):
     """复用流水缺整合报告时，从数据现算最小整合概览。"""
-    t = pd.to_datetime(tagged["交易时间"], errors="coerce").dropna()
+    t = pd.to_datetime(tagged["交易时间"], errors="coerce", format="mixed").dropna()
     return {"客户整合概览": {
                 "客户名称": client,
                 "整合文件数": int(tagged["来源文件名"].nunique()) if "来源文件名" in tagged.columns else 0,

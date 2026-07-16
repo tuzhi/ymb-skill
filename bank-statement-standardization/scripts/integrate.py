@@ -66,6 +66,12 @@ def _is_unknown_account(value):
     return not account or account.startswith("未识别账户#")
 
 
+def _is_reciprocal_replaceable_account(value):
+    """强反向互转证据可把未知或掩码账号升级为唯一完整账号。"""
+    account = _clean_text(value)
+    return _is_unknown_account(account) or "*" in account
+
+
 def _explicit_account(value):
     """返回可作为批次归并证据的明确银行账号；昵称、掩码和异常文本不参与。"""
     account = _clean_text(value)
@@ -170,7 +176,7 @@ RECIPROCAL_TOLERANT_MIN_DATES = 3
 
 def _reciprocal_time_second(row):
     """把标准交易时间转成秒级时间轴；无法解析时只参与原有精确匹配。"""
-    value = pd.to_datetime(_clean_text(row.get("交易时间")), errors="coerce")
+    value = pd.to_datetime(_clean_text(row.get("交易时间")), errors="coerce", format="mixed")
     if pd.isna(value):
         return None
     return int(value.value // 1_000_000_000)
@@ -290,7 +296,7 @@ def infer_identity_from_reciprocal_transfers(df):
         bank = next(iter(banks.values())) if len(banks) == 1 else ""
         indices = rows.index.tolist()
         changed_fields = []
-        if rows["本方账户"].map(_is_unknown_account).all():
+        if rows["本方账户"].map(_is_reciprocal_replaceable_account).all():
             result.loc[indices, "本方账户"] = account
             changed_fields.append("本方账户")
         if name and not any(_clean_text(value) for value in rows["本方名称"]):
@@ -1126,7 +1132,9 @@ def load_inputs(paths):
         df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
         df["__fingerprint_id"] = image.get("fingerprint_id") or ""
         df["__series_family"] = image.get("series_family") or ""
-        df["__time_precision"] = image.get("transaction_time_precision") or ""
+        # 时间精度来自每笔标准化时间文本：日期级记录保持 YYYY-MM-DD，不能因同文件
+        # 其它行含秒而被整体提升为 second。文件画像仅保留汇总审计值，不参与逐笔运算。
+        df["__time_precision"] = df["交易时间"].map(S.normalized_transaction_time_precision)
         # 文件内行序：standardize 已把倒序文件翻正，故 0..n 即该文件的时间正序（含同秒多笔的原始相对顺序）。
         # 余额校验与输出排序都用它，绝不用交易时间当主键，避免同时刻多笔被打乱产生伪断点。
         df["__fileseq"] = range(len(df))
@@ -1137,7 +1145,7 @@ def load_inputs(paths):
     for c in NUMERIC:
         if c in df.columns:
             df[c + "_num"] = pd.to_numeric(df[c], errors="coerce")
-    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce")
+    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
     df["来源行号_num"] = pd.to_numeric(df["来源行号"], errors="coerce")
     return df, files
 
@@ -1179,7 +1187,7 @@ def dedup_cross_file(df):
 def _exact_overlap_key(row):
     """同一明确账户跨文件重叠所需的强键；任一核心字段缺失即不参与。"""
     account = _account_key(row.get("本方账户"))
-    time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+    time = pd.to_datetime(row.get("交易时间"), errors="coerce", format="mixed")
     amount = _cross_format_amount_key(row)
     balance = _overlap_amount(row.get("账户余额"))
     if not account or pd.isna(time) or amount is None or balance == "":
@@ -1287,7 +1295,7 @@ def _cross_format_match_key(row):
     opponent_account = "".join(
         char for char in _clean_text(row.get("对手账户")) if char.isdigit()
     )
-    time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+    time = pd.to_datetime(row.get("交易时间"), errors="coerce", format="mixed")
     if amount is None or len(opponent_account) < 8 or pd.isna(time):
         return None
     return (*amount, opponent_account), time
@@ -1412,14 +1420,14 @@ def align_same_source_cross_format(df, min_matches=20, min_coverage=0.98, max_se
             if index in pdf_keys:
                 continue
             amount = _cross_format_amount_key(row)
-            time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+            time = pd.to_datetime(row.get("交易时间"), errors="coerce", format="mixed")
             if amount and not pd.isna(time):
                 weak_pdf[amount].append((index, time))
         for index, row in table_rows.iterrows():
             if index in table_keys:
                 continue
             amount = _cross_format_amount_key(row)
-            time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+            time = pd.to_datetime(row.get("交易时间"), errors="coerce", format="mixed")
             if amount and not pd.isna(time):
                 weak_table[amount].append((index, time))
         weak_candidates = []
@@ -1564,11 +1572,7 @@ def detect_duplicates(df):
 
 
 def detect_self_transfers(df, self_accounts):
-    """自有账户互转候选：本方多个账户之间，A 支出 与 B 收入 金额相等、时间接近。仅标记。"""
-    self_set = set(a for a in self_accounts if a)
-    self_set |= set(df["本方账户"].dropna().unique().tolist())
-    self_names = set(df["本方名称"].dropna().unique().tolist())
-
+    """自有账户互转候选：双向身份互证才给高置信，日期级记录只作低置信提示。"""
     out = df[df["支出金额_num"] > 0].copy()
     inn = df[df["收入金额_num"] > 0].copy()
     pairs = []
@@ -1580,16 +1584,55 @@ def detect_self_transfers(df, self_accounts):
         cand = inn[(inn["收入金额_num"].sub(amt).abs() < 0.01)]
         if pd.notna(ot):
             cand = cand[(cand["__t"] - ot).abs() <= timedelta(days=3)]
+        ranked = []
         for _, i in cand.iterrows():
             if i["交易唯一编号"] in used_in:
                 continue
             if o["本方账户"] == i["本方账户"]:
                 continue  # 同账户不是互转
-            opp_is_self = (str(o["对手名称"]) in self_names or
-                           str(o["对手账户"]) in self_set or
-                           str(i["对手名称"]) in self_names or
-                           str(i["对手账户"]) in self_set)
-            conf = 0.85 if opp_is_self else 0.5
+            out_points_to_in = (
+                _accounts_equal(o.get("对手账户"), i.get("本方账户"))
+                or bool(_identity_text(o.get("对手名称"))
+                        and _identity_text(o.get("对手名称")) == _identity_text(i.get("本方名称")))
+            )
+            in_points_to_out = (
+                _accounts_equal(i.get("对手账户"), o.get("本方账户"))
+                or bool(_identity_text(i.get("对手名称"))
+                        and _identity_text(i.get("对手名称")) == _identity_text(o.get("本方名称")))
+            )
+            evidence_count = int(out_points_to_in) + int(in_points_to_out)
+            precise_time = (
+                _clean_text(o.get("__time_precision")) == "second"
+                and _clean_text(i.get("__time_precision")) == "second"
+            )
+            delta_seconds = abs((i["__t"] - ot).total_seconds()) if pd.notna(ot) and pd.notna(i["__t"]) else float("inf")
+            ranked.append((
+                -evidence_count,
+                0 if precise_time else 1,
+                delta_seconds,
+                i,
+                out_points_to_in,
+                in_points_to_out,
+                precise_time,
+            ))
+
+        if ranked:
+            _, _, _, i, out_points_to_in, in_points_to_out, precise_time = min(
+                ranked, key=lambda item: item[:3]
+            )
+            if out_points_to_in and in_points_to_out:
+                conf = 0.9 if precise_time else 0.75
+                reason = "双向账户/户名互证且金额时间匹配"
+                if not precise_time:
+                    reason += "，至少一侧仅有日期精度"
+            elif out_points_to_in or in_points_to_out:
+                conf = 0.55 if precise_time else 0.45
+                reason = "仅单侧账户/户名指向本方，另一侧未互证"
+                if not precise_time:
+                    reason += "，至少一侧仅有日期精度"
+            else:
+                conf = 0.4 if precise_time else 0.3
+                reason = "仅金额时间匹配，无双向本方身份互证"
             pairs.append({
                 "组编号": f"INT-{len(pairs)+1:04d}",
                 "转出交易唯一编号": o["交易唯一编号"],
@@ -1597,12 +1640,21 @@ def detect_self_transfers(df, self_accounts):
                 "涉及账户": [o["本方账户"], i["本方账户"]],
                 "金额": amt,
                 "置信度": conf,
-                "判断原因": ("对手为本方名称/账户且金额时间匹配" if opp_is_self
-                            else "金额时间匹配但对手非本方，置信较低"),
+                "判断原因": reason,
             })
             used_in.add(i["交易唯一编号"])
-            break
     return pairs
+
+
+def calculate_quality_score(balance_results, duplicate_groups, quality_issues):
+    """任何余额预警都必须反映到评分；异常笔数再按规模追加扣分。"""
+    balance_warnings = [item for item in balance_results if item.get("校验状态") == "预警"]
+    abnormal_count = sum(int(item.get("异常数量") or 0) for item in balance_warnings)
+    score = 100
+    score -= min(30, len(balance_warnings) * 5 + abnormal_count // 5)
+    score -= min(20, len(duplicate_groups))
+    score -= 10 * len(quality_issues)
+    return max(0, score)
 
 
 def _first_nonempty(g, col):
@@ -1748,11 +1800,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     if account_resolution["待复核文件数"]:
         warnings.append(f"存在 {account_resolution['待复核文件数']} 个未知账号文件无法自动归并")
 
-    score = 100
-    score -= min(30, sum(b["异常数量"] for b in bal) // 5)
-    score -= min(20, len(dups))
-    score -= 10 * len(quality_issues)
-    score = max(0, score)
+    score = calculate_quality_score(bal, dups, quality_issues)
 
     report = {
         "客户整合概览": {
@@ -1790,7 +1838,8 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
                           "交易后余额完全一致且跨来源唯一的强键折叠重叠区间；最后按交易唯一编号折叠完全相同交易。"
                           "来源独有和歧义记录不删除",
             "疑似重复判断规则": ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称"],
-            "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天、对手为本方名称/账户；仅标记不删除",
+            "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天；双向账户/户名互证才为高置信，"
+                                  "日期级或单侧证据降低置信度；仅标记不删除",
             "余额校验范围": "按本方账户分别校验",
         },
         "同账号元数据补全": metadata_completion,

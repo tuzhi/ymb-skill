@@ -88,7 +88,7 @@ def balance_check_by_account(df):
 
 def multi(batch, specs, out_dir=None):
     df, meta = load_customers(specs)
-    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce")
+    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
     df["来源行号_num"] = pd.to_numeric(df.get("来源行号"), errors="coerce")
     df["__seq"] = range(len(df))   # 保持各客户整合流水的原始时序，余额校验据此排序（不按时间重排）
     for c in ["收入金额", "支出金额", "账户余额"]:
