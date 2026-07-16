@@ -142,7 +142,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
 
-    def test_current_account_detail_query_excel_does_not_infer_bank(self):
+    def test_current_account_detail_query_excel_routes_to_changsha_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "湖南新普翔供应链-银行流水" / "普翔长沙银行对公.xlsx"
         if not excel.exists():
@@ -155,7 +155,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "长沙银行")
         self.assertEqual(route["account_type"], "对公")
 
     def test_debit_card_date_range_detail_excel_does_not_infer_bank(self):

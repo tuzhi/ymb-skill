@@ -108,7 +108,7 @@
         交易用途: 银行备注
         交易摘要: 银行备注
   reader_id: openpyxl_grid
-- id: md5:1a38e2af2b9861ca48046144b6335a7e
+- id: md5:47e810879c9143fec9a6c5bde359a12a
   file_type: excel
   bank: 中国银行
   account_type: 对公
@@ -135,7 +135,7 @@
         贷方发生总笔数[ Total Numbers of Credited Payments ]: 收入金额
         查询时间范围[ Time Range ]: null
         交易类型[ Transaction Type ]: 银行备注
-        业务类型[ Business type ]: null
+        业务类型[ Business type ]: 交易渠道
         付款人开户行号[ Account holding bank number of payer ]: null
         付款人开户行名[ Payer account bank ]: null
         付款人账号[ Debit Account No. ]: null
@@ -158,10 +158,16 @@
         付款人账号[ Debit Account No. ]: 本方账户
       map:
         付款人名称[ Payer's Name ]: 本方名称
+        收款人账号[ Payee's Account Number ]: 对手账户
+        收款人名称[ Payee's Name ]: 对手名称
+        收款人开户行名[ Beneficiary account bank ]: __对手开户行
     - if:
         收款人账号[ Payee's Account Number ]: 本方账户
       map:
         收款人名称[ Payee's Name ]: 本方名称
+        付款人账号[ Debit Account No. ]: 对手账户
+        付款人名称[ Payer's Name ]: 对手名称
+        付款人开户行名[ Payer account bank ]: __对手开户行
   reader_id: openpyxl_grid
 - id: md5:9160ecccb80e57358b52ad52bd6d75ef
   file_type: excel
@@ -380,14 +386,19 @@
       map:
         收款人: 本方名称
   reader_id: openpyxl_grid
-- id: md5:3cb7f851a70871a6d8cf223a797e2b27
+- id: md5:11d6175570601305c0442269b4369e7f
   file_type: excel
-  bank: 未识别
+  bank: 长沙银行
   account_type: 对公
   fingerprint:
     identity:
       any:
       - 活期账户明细查询
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '活期账户明细查询\s+(.+?)-\d{6,}'
+    - field: 本方账户
+      pattern: '活期账户明细查询\s+.+?-(\d{6,})'
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss
@@ -401,7 +412,7 @@
         余额: 账户余额
         对方账户: 对手账户
         对方户名: 对手名称
-        对方行行名: null
+        对方行行名: __对手开户行
         备注: 银行备注
         交易流水号: null
   reader_id: openpyxl_grid

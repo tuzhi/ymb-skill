@@ -91,8 +91,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         normalize_name = lambda value: str(value or "").replace(" ", "").replace("（", "(").replace("）", ")")
         self.assertEqual({normalize_name(row["本方名称"]) for row in rows}, {"斑马(南昌)商业有限公司"})
 
-        self.assertEqual({row["对手账户"] for row in rows}, {""})
-        self.assertEqual({row["对手名称"] for row in rows}, {""})
+        self.assertTrue(any(row["对手账户"] for row in rows))
+        self.assertTrue(any(row["对手名称"] for row in rows))
+        self.assertTrue(any(row["交易渠道"] for row in rows))
 
     def test_bank_aliases_are_loaded_from_yaml_without_python_patterns(self):
         self.assertFalse(hasattr(standardize, "BANK_PATTERNS"))
