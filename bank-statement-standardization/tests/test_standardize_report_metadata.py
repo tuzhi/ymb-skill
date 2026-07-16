@@ -460,6 +460,29 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "对手名称": "",
         })
 
+    def test_abc_personal_extracts_only_long_numeric_counterparty_accounts(self):
+        rules = [{
+            "source": "对手信息",
+            "field": "对手账户",
+            "pattern": r"^\s*(\d{12,})\s*$",
+        }, {
+            "source": "对手信息",
+            "field": "对手名称",
+            "pattern": r"^\s*\d{12,}\s*$",
+            "replacement": "",
+        }]
+
+        account = standardize.apply_extract_mapping(
+            ["14012157750000836"], ["对手信息"], rules)
+        short_identifier = standardize.apply_extract_mapping(
+            ["243300133"], ["对手信息"], rules)
+
+        self.assertEqual(account, {
+            "对手账户": "14012157750000836",
+            "对手名称": "",
+        })
+        self.assertEqual(short_identifier, {})
+
     def test_dai_jinwang_pdfs_extract_owner_and_real_accounts(self):
         folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "戴金旺"
         samples = [

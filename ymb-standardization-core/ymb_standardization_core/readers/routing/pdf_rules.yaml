@@ -29,6 +29,15 @@
     column_transforms:
       对手信息:
         newline: cjk_join
+  reader_options:
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^\s*(\d{12,})\s*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^\s*\d{12,}\s*$'
+      replacement: ''
   reader_id: pdfplumber_coordinate_table
 - id: md5:58cf5d000d5fe58b0247e61150522ba9
   file_type: pdf
@@ -567,7 +576,7 @@
         摘要: 银行备注
         交易渠道: 交易渠道
   reader_id: pdfplumber_table
-- id: md5:6c0358919ac011286e44822dbcd66c8b
+- id: md5:62e6d295a83d90bedc2c273c43fd29b6
   file_type: pdf
   bank: 中国农业银行
   account_type: 对公
@@ -578,6 +587,9 @@
     identity:
       any:
       - 账户明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
     columns:
       all:
         账号：: 本方账户
@@ -594,6 +606,8 @@
         对方户名: 对手名称
         交易用途: 银行备注
         会计日期: 交易日期
+  reader_options:
+    source_order: descending
   reader_id: pdfplumber_table
 - id: md5:6a5112d8308bc6c15bc9e8da752c1bcf
   file_type: pdf

@@ -444,6 +444,17 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertNotIn("parser", result)
         self.assertIn(result["fingerprint_id"], {'md5:f1f82a652560900aea7c11139b852abf'})
         self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["extract_mapping"], [{
+            "source": "对手信息",
+            "field": "对手账户",
+            "pattern": r"^\s*(\d{12,})\s*$",
+            "replacement": r"\1",
+        }, {
+            "source": "对手信息",
+            "field": "对手名称",
+            "pattern": r"^\s*\d{12,}\s*$",
+            "replacement": "",
+        }])
 
     def test_abc_pdf_route_requires_transaction_header_columns(self):
         result = router.route_pdf("中国农业银行账户活期交易明细清单", 0, 1)
@@ -745,9 +756,14 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:6c0358919ac011286e44822dbcd66c8b'})
+        self.assertIn(result["fingerprint_id"], {'md5:62e6d295a83d90bedc2c273c43fd29b6'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国农业银行")
+        self.assertEqual(result["source_order"], "descending")
+        self.assertEqual(result["preamble_extractors"], [{
+            "field": "本方名称",
+            "pattern": r"户名[:：]\s*([^\s]+)",
+        }])
 
     def test_icbc_corporate_account_statement_pdf_route(self):
         text = (
