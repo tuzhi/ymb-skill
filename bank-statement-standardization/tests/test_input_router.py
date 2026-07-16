@@ -991,7 +991,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["account_type"], "")
         self.assertEqual(route["fingerprint_id"], "")
 
-    def test_wechat_pay_proof_excel_with_dot_numeric_cells_route(self):
+    def test_wechat_pay_proof_pdf_to_wps_excel_is_not_supported(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "赵景楚" / "微信支付交易明细证明(20250521-20260521)——【解压密码可在微信支付公众号查看】(1).xlsx"
         if not excel.exists():
@@ -1003,9 +1003,10 @@ class InputRouterTests(unittest.TestCase):
         self.assertNotIn("parser", route)
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
-        self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "微信支付")
-        self.assertEqual(route["account_type"], "个人")
+        self.assertEqual(route["decision"], "unmatched")
+        self.assertEqual(route["fingerprint_id"], "")
+        self.assertEqual(route["bank"], "")
+        self.assertEqual(route["account_type"], "")
         self.assertGreater(len(result.rows), 100)
 
 if __name__ == "__main__":

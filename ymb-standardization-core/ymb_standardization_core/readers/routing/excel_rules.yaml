@@ -963,30 +963,6 @@
         交易渠道: 交易渠道
         外部系统流水: null
   reader_id: openpyxl_grid
-- id: md5:b9f0c1fc6e69d0b240d6ed76f52782d6
-  file_type: excel
-  bank: 江西农商银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 江西 ・ 农商银行交易流水
-      - 江西·农商银行交易流水
-      - 江西·农商银行交易明细
-      - 农商银行交易明细
-    columns:
-      all:
-        户: 本方名称
-        名: 本方名称
-        账: 交易日期
-        号: 本方账户
-        记账日期: 交易日期
-        交易金额(元): 交易金额
-        交易后余额(元): 账户余额
-        交易摘要: 银行备注
-        对方户名: 对手名称
-        对方账号: 对手账户
-  reader_id: openpyxl_grid
 - id: md5:9231dc17dc7e1836b2ee4b072578b3e2
   file_type: excel
   bank: 招商银行
@@ -1045,49 +1021,6 @@
         交易单号: null
         商户单号: null
         备注: 银行备注
-  reader_id: openpyxl_grid
-- id: md5:a18a99243ad411aa342820d09cbcdaf1
-  file_type: excel
-  bank: 微信支付
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 微信支付交易明细证明
-    preamble_extractors:
-    - field: 本方名称
-      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
-    columns:
-      all:
-        兹证明: null
-        交易明细对应时间段: null
-        具体交易明细: null
-        交易单号: null
-        交易时间: 交易时间
-        交易类型: 银行备注
-        收/支/其他: 收支方向
-        交易方式: 交易渠道
-        金额(元): 交易金额
-        交易对方: 对手名称
-        商户单号: null
-  reader_options:
-    extract_mapping:
-    - source: 交易类型
-      field: 收支方向
-      pattern: ^零钱充值$
-      replacement: 收入
-    - source: 交易类型
-      field: 收支方向
-      pattern: ^零钱提现$
-      replacement: 支出
-    - source: 交易类型
-      field: 收支方向
-      pattern: ^转入零钱通.*$
-      replacement: 支出
-    - source: 交易类型
-      field: 收支方向
-      pattern: ^零钱通转出.*$
-      replacement: 收入
   reader_id: openpyxl_grid
 - id: md5:636726a9de9722547485a41f953ad5fa
   file_type: excel
