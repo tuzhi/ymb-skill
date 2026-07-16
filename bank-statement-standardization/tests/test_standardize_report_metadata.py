@@ -59,21 +59,6 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(image["本方名称"], "付丽翠")
         self.assertEqual(image["本方账户"], "19979389877")
 
-    def test_alipay_excel_extracts_owner_and_account_from_preamble(self):
-        source = (
-            REPO_ROOT / "bank-statement-standardization" / "testdata" / "钱斌"
-            / "支付宝交易明细(20250608-20260607)(1).xlsx"
-        )
-        if not source.exists():
-            self.skipTest("本地未提供支付宝 Excel 样本")
-        with tempfile.TemporaryDirectory() as tmp:
-            _csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
-
-        image = report["文件画像"]
-        self.assertEqual(image["fingerprint_id"], "md5:636726a9de9722547485a41f953ad5fa")
-        self.assertEqual(image["本方名称"], "钱斌")
-        self.assertEqual(image["本方账户"], "15179801339")
-
     def test_datetime_preserves_row_level_date_and_minute_precision(self):
         self.assertEqual(standardize.parse_datetime("2026-05-05", ""), "2026-05-05")
         self.assertEqual(standardize.parse_datetime("2026-05-05", "09:30"), "2026-05-05 09:30")
@@ -572,7 +557,6 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         )
         samples = [
             ("夏伟鹏的交易明细20260422120619.pdf", 1325, "夏伟鹏", "622908 **** 2028"),
-            ("夏伟鹏的交易明细20260422120619.xlsx", 559, "夏伟鹏", "622908 **** 2028"),
             ("曾耀招商密码350142.pdf", 1731, "曾耀", "6215581502003868833"),
             ("曾耀建行.xls", 2984, "曾耀", "6217002020031660616"),
             ("曾耀建行-0616.pdf", 3000, "曾耀", "6217002020031660616"),

@@ -55,6 +55,37 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(metadata["name"], "bank-statement-standardization")
             self.assertEqual(metadata["version"], "1.2.6")
 
+    def test_stage_one_records_wps_pdf_to_excel_as_skipped_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            converted = source / "转换流水.xlsx"
+            custom_properties = """<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="CRO">
+    <vt:lpwstr>wqlLaW5nc29mdCBQREYgdG8gV1BTIDEyMA</vt:lpwstr>
+  </property>
+</Properties>"""
+            with zipfile.ZipFile(converted, "w") as archive:
+                archive.writestr("docProps/custom.xml", custom_properties)
+            self._write_standardized_csv(source / "有效流水__standardized.csv", "有效流水.xlsx")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
+            runner.out_dir = str(root / "output")
+            runner.manifest = {"skipped_inputs": [], "client": "测试客户"}
+            runner.write_manifest = lambda: None
+
+            result = runner.stage_1_standardize()
+
+            self.assertEqual(result["processed_files"], 1)
+            self.assertEqual(len(runner.manifest["skipped_inputs"]), 1)
+            skipped = runner.manifest["skipped_inputs"][0]
+            self.assertEqual(skipped["name"], "转换流水.xlsx")
+            self.assertIn("Kingsoft PDF to WPS 120", skipped["reason"])
+
     def test_inventory_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

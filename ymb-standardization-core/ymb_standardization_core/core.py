@@ -82,13 +82,19 @@ def classify_ext(path):
 def screen_files(paths):
     """把一批路径分成 (候选文件列表, 跳过清单[(文件名,原因)])。无关文件静默忽略。
     内容层面的『图片型PDF / 非流水表格』在 standardize() 里进一步判定并抛 NotABankStatement。"""
+    from ymb_standardization_core.readers.input_router import pdf_to_wps_rejection_reason
+
     candidates, skipped = [], []
     for f in paths:
         if not os.path.isfile(f) or is_pipeline_product(f):
             continue
         kind, reason = classify_ext(f)
         if kind == "候选":
-            candidates.append(f)
+            reason = pdf_to_wps_rejection_reason(f)
+            if reason:
+                skipped.append((os.path.basename(f), reason))
+            else:
+                candidates.append(f)
         elif kind == "跳过":
             skipped.append((os.path.basename(f), reason))
     return candidates, skipped

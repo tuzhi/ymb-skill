@@ -110,22 +110,6 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "湖南三湘银行")
         self.assertEqual(route["account_type"], "对公")
 
-    def test_icbc_debit_history_electronic_excel_route(self):
-        module = load_input_router()
-        excel = ROOT / "testdata" / "徐赵亮" / "徐工行-流水.xlsx"
-        if not excel.exists():
-            self.skipTest("本地未提供工行借记账户历史明细电子版 Excel 样本")
-
-        result = module.read_rows(str(excel))
-        route = result.route_info
-
-        self.assertNotIn("parser", route)
-
-        self.assertEqual(route["reader_id"], "openpyxl_grid")
-        self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "中国工商银行")
-        self.assertEqual(route["account_type"], "个人")
-
     def test_detail_download_debit_credit_counterparty_excel_routes_to_bank_of_beijing(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "北京银行2025.4.1-2026.3.31号流水.xlsx"
@@ -316,23 +300,6 @@ class InputRouterTests(unittest.TestCase):
             "__对手开户行",
         )
 
-    def test_ccb_account_detail_info_excel_route(self):
-        module = load_input_router()
-        excel = ROOT / "testdata" / "广源流水" / "建行流水1.xlsx"
-
-        result = module.read_rows(str(excel))
-        route = result.route_info
-
-        self.assertNotIn("parser", route)
-
-        self.assertEqual(route["reader_id"], "openpyxl_grid")
-        self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "中国建设银行")
-        self.assertEqual(route["account_type"], "对公")
-        self.assertEqual(route["metadata_evidence"]["creator"], "中国建设银行")
-        self.assertTrue(route["style_evidence"])
-        self.assertEqual(route["date_format_evidence"], ["yyyymmdd"])
-
     def test_ccb_detail_query_download_xls_route(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "潘荣平消防设备" / "温州总公司" / "2025年1-3月.xls"
@@ -521,22 +488,6 @@ class InputRouterTests(unittest.TestCase):
                     {item["text"] for item in route["style_evidence"]},
                     {"账户明细查询结果", "开始日期：", "截止日期：", "交易日期"},
                 )
-
-    def test_srbank_personal_history_excel_route_allows_summary_header(self):
-        module = load_input_router()
-        excel = ROOT / "testdata" / "熊岱" / "上饶银行-5086.xlsx"
-        if not excel.exists():
-            self.skipTest("本地未提供上饶银行个人摘要列 Excel 样本")
-
-        result = module.read_rows(str(excel))
-        route = result.route_info
-
-        self.assertNotIn("parser", route)
-
-        self.assertEqual(route["reader_id"], "openpyxl_grid")
-        self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "上饶银行")
-        self.assertEqual(route["account_type"], "个人")
 
     def test_unknown_excel_structure_uses_generic_fallback_route(self):
         module = load_input_router()
@@ -873,45 +824,9 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["column_mapping"]["记账金额(收入)"], "收入金额")
         self.assertEqual(result.route_info["column_mapping"]["记账金额(支出)"], "支出金额")
 
-    def test_jiujiang_bank_transaction_detail_excel_route(self):
-        module = load_input_router()
-        excel = ROOT / "testdata" / "广源流水" / "九江银行交易明细1.xlsx"
-
-        result = module.read_rows(str(excel))
-
-        self.assertEqual(result.kind, "excel")
-        self.assertNotIn("parser", result.route_info)
-
-        self.assertEqual(result.route_info["reader_id"], "openpyxl_grid")
-        self.assertEqual(result.route_info["decision"], "matched")
-        self.assertEqual(result.route_info["bank"], "九江银行")
-        self.assertEqual(result.route_info["account_type"], "对公")
-        self.assertEqual(
-            result.route_info["series_family"],
-            "jiujiang_corporate_detail_grid_v1",
-        )
-
-    def test_jiujiang_bank_simple_transaction_export_does_not_infer_bank(self):
-        module = load_input_router()
-        excel = ROOT / "testdata" / "广源流水" / "九江银行交易明细2.xlsx"
-
-        result = module.read_rows(str(excel))
-
-        self.assertEqual(result.kind, "excel")
-        self.assertNotIn("parser", result.route_info)
-
-        self.assertEqual(result.route_info["reader_id"], "openpyxl_grid")
-        self.assertEqual(result.route_info["decision"], "matched")
-        self.assertEqual(result.route_info["bank"], "未识别")
-        self.assertEqual(result.route_info["account_type"], "对公")
-        self.assertEqual(
-            result.route_info["series_family"],
-            "jiujiang_corporate_detail_grid_v1",
-        )
-        self.assertEqual(result.route_info["metadata_evidence"]["creator"], "openpyxl")
-        self.assertEqual(result.route_info["metadata_evidence"]["last_modified_by"], "陈会开")
-        self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
-        self.assertIn("交易时间", result.route_info["columns_evidence"])
+        self.assertEqual(result.route_info["metadata_evidence"], {})
+        self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd"])
+        self.assertIn("交易日期", result.route_info["columns_evidence"])
 
     def test_jiujiang_bank_wide_transaction_export_routes_to_jiujiang_bank(self):
         module = load_input_router()
@@ -997,17 +912,25 @@ class InputRouterTests(unittest.TestCase):
         if not excel.exists():
             self.skipTest("本地未提供带异常数字单元格的微信支付交易明细证明 Excel 样本")
 
+        with self.assertRaises(core.NotABankStatement) as cm:
+            module.read_rows(str(excel))
+
+        self.assertIn("Kingsoft PDF to WPS", str(cm.exception))
+        self.assertIn("不作为原始流水接收", str(cm.exception))
+
+    def test_native_wechat_excel_remains_supported(self):
+        module = load_input_router()
+        excel = ROOT / "testdata" / "赵景楚" / "微信支付账单流水文件(20250521-20260521)——【解压密码可在微信支付公众号查看】.xlsx"
+        if not excel.exists():
+            self.skipTest("本地未提供微信官方 Excel 账单样本")
+
         result = module.read_rows(str(excel))
         route = result.route_info
 
-        self.assertNotIn("parser", route)
-
-        self.assertEqual(route["reader_id"], "openpyxl_grid")
-        self.assertEqual(route["decision"], "unmatched")
-        self.assertEqual(route["fingerprint_id"], "")
-        self.assertEqual(route["bank"], "")
-        self.assertEqual(route["account_type"], "")
-        self.assertGreater(len(result.rows), 100)
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["fingerprint_id"], "md5:e0c9c0799dd30d32ec34a26ccb9e8270")
+        self.assertEqual(route["bank"], "微信支付")
+        self.assertGreater(len(result.rows), 1000)
 
 if __name__ == "__main__":
     unittest.main()

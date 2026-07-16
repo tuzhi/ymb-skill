@@ -65,27 +65,6 @@
         对方开户行: null
         摘要: 银行备注
   reader_id: openpyxl_grid
-- id: md5:123baf3afa5c24b1a775396d23e5a246
-  file_type: excel
-  bank: 中国农业银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 中国农业银行账户活期交易明细清单
-      - 账户活期交易明细清单
-    columns:
-      all:
-        交易日期: 交易日期
-        交易时间: 交易时间
-        交易摘要: 银行备注
-        交易金额: 交易金额
-        本次余额: 账户余额
-        对手信息: 对手名称
-        日 志  号: null
-        交易渠道: 交易渠道
-        交易附言: 账户方附言
-  reader_id: openpyxl_grid
 - id: md5:d7ae0263460311f869a9823285a9f4d5
   file_type: excel
   bank: 中国农业银行
@@ -322,36 +301,6 @@
         对方户名: 对手名称
         对方账号: 对手账户
         用途: 银行备注
-  reader_id: openpyxl_grid
-- id: md5:7697b00a861bee4b02b2298ef2acdfd0
-  file_type: excel
-  bank: 中国工商银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 中国工商银行借记账户历史明细（电子版）
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    columns:
-      all:
-        卡号: 本方账户
-        户名：: 本方名称
-        起止日期：: null
-        交易日期: 交易日期
-        账号: 本方账户
-        储种: null
-        序号: null
-        币种: null
-        钞汇: null
-        摘要: 银行备注
-        地区: null
-        收入/支出金额: 收入金额
-        余额: 账户余额
-        对方户名: 对手名称
-        对方账号: 对手账户
-        渠道: 交易渠道
   reader_id: openpyxl_grid
 - id: md5:0c9233159f7de668efeadd3ac4b78d90
   file_type: excel
@@ -705,54 +654,6 @@
         凭证号: null
         交易介质编号: null
   reader_id: openpyxl_grid
-- id: md5:d40fde2a2fbe9f999b4d2ff8f69fddb1
-  file_type: excel
-  bank: 中国建设银行
-  account_type: 对公
-  fingerprint:
-    metadata:
-      all:
-        creator: 中国建设银行
-    style:
-      all:
-      - text: 中国建设银行账户明细信息
-        font: STSong
-        size_min: 7
-        size_max: 9
-        row_max: 1
-    date_format:
-      any:
-      - yyyymmdd
-    identity:
-      any:
-      - 中国建设银行账户明细信息
-    columns:
-      all:
-        本方户名：: 本方名称
-        查询时间段：: null
-        打印日期：: null
-        账号: 本方账户
-        交易时间: 交易时间
-        借方发: 支出金额
-        贷方发: 收入金额
-        余额: 账户余额
-        币种: null
-        对方户名: 对手名称
-        对方账号: 对手账户
-        对方开: null
-        户机构: null
-        记账日期: 交易日期
-        摘要: 银行备注
-        备注: 银行备注
-        账户明: null
-        细编号: null
-        交易流: null
-        水号: null
-        企业流: null
-        凭证种类: null
-        凭证号: null
-        交易介: null
-  reader_id: openpyxl_grid
 - id: md5:18380fd1c071bab330ba5094f2fe27b8
   file_type: excel
   bank: 中国建设银行
@@ -938,57 +839,6 @@
         账户余额(元): 账户余额
         附言: 账户方附言
   reader_id: openpyxl_grid
-- id: md5:8afbe512c10012139a9b6805a1e4532d
-  file_type: excel
-  bank: 中国邮政储蓄银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 中国邮政储蓄银行借记账户历史明细
-    columns:
-      all:
-        卡号/账号: 本方账户
-        开户行名称: null
-        交易时间: 交易时间
-        子账号: 本方账户
-        储种: null
-        币种: null
-        钞汇: null
-        交易金额: 交易金额
-        交易余额: 账户余额
-        对方户名: 对手名称
-        对方账号: 对手账户
-        摘要: 银行备注
-        交易渠道: 交易渠道
-        外部系统流水: null
-  reader_id: openpyxl_grid
-- id: md5:9231dc17dc7e1836b2ee4b072578b3e2
-  file_type: excel
-  bank: 招商银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 招商银行交易流水
-      - Transaction Statement of China Merchants Bank
-    preamble_extractors:
-    - field: 本方名称
-      pattern: '户\s*名[:：]\s*([\u4e00-\u9fff]{2,20})'
-    - field: 本方账户
-      pattern: '账号[:：]\s*([0-9*]+)'
-    columns:
-      all:
-        户: 本方名称
-        名: 本方名称
-        账号: 本方账户
-        记账日期: 交易日期
-        货币: null
-        交易金额: 交易金额
-        联机余额: 账户余额
-        交易摘要: 银行备注
-        对手信息: 对手名称
-  reader_id: openpyxl_cmb_mixed_grid
 - id: md5:e0c9c0799dd30d32ec34a26ccb9e8270
   file_type: excel
   bank: 微信支付
@@ -1021,34 +871,6 @@
         交易单号: null
         商户单号: null
         备注: 银行备注
-  reader_id: openpyxl_grid
-- id: md5:636726a9de9722547485a41f953ad5fa
-  file_type: excel
-  bank: 支付宝
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 支付宝支付科技有限公司
-      - 交易流水证明
-    preamble_extractors:
-    - field: 本方名称
-      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)\s*[（(]证件号码'
-    - field: 本方账户
-      pattern: '支付宝账号\s*([^\s，。,；;]+?)\s*中(?:的)?明细信息'
-    columns:
-      all:
-        兹证明: null
-        交易时间段: 交易时间
-        币种: null
-        收/支: 收支方向
-        交易对方: 对手名称
-        商品说明: 银行备注
-        收/付款方式: 交易渠道
-        金额: 交易金额
-        交易订单号: null
-        商家订单号: 账户方附言
-        交易时间: 交易时间
   reader_id: openpyxl_grid
 - id: md5:5ee6d3955fa1cca84bd4bed11ae23c6f
   file_type: excel
@@ -1353,34 +1175,6 @@
         币种: null
         附言: 账户方附言
   reader_id: openpyxl_grid
-- id: md5:c132146b5648e8ffaf02eaff43edf555
-  file_type: excel
-  bank: 九江银行
-  account_type: 对公
-  series_family: jiujiang_corporate_detail_grid_v1
-  fingerprint:
-    identity:
-      any:
-      - 开户银行:九江银行
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    columns:
-      all:
-        交易明细清单: null
-        '查询账号:': 本方账户
-        '账户名称:': 本方名称
-        交易时间: 交易时间
-        交易金额: 交易金额
-        收入: 收入金额
-        支出: 支出金额
-        余额: 账户余额
-        币种: null
-        对方账号: 对手账户
-        对方户名: 对手名称
-        摘要: 银行备注
-        交易用途: 银行备注
-  reader_id: openpyxl_grid
 - id: md5:84a8614651d8e779b66865cb175843ff
   file_type: excel
   bank: 九江银行
@@ -1506,33 +1300,6 @@
         对方户名: 对手名称
         交易摘要: 银行备注
   reader_id: openpyxl_grid
-- id: md5:acee3c1b1482a332172e80f95abdfb9f
-  file_type: excel
-  bank: 上饶银行
-  account_type: 个人
-  fingerprint:
-    metadata:
-      all:
-        application: ''
-    identity:
-      any:
-      - 上饶银行历史交易流水
-    columns:
-      all:
-        户名：: 本方名称
-        账号：: 本方账户
-        流水日期：: null
-        开户行：: null
-        申请时间：: null
-        序号: null
-        交易日期: 交易日期
-        交易时间: 交易时间
-        交易金额: 交易金额
-        余额: 账户余额
-        对方银行卡号: null
-        对方户名: 对手名称
-        摘要: 银行备注
-  reader_id: openpyxl_grid
 - id: md5:78ac9f1789fbdddc6e51bfaaedf92a57
   file_type: excel
   bank: 中国农业银行
@@ -1599,53 +1366,6 @@
       map:
         收款人: 本方名称
         收款账号: 本方账户
-  reader_id: openpyxl_grid
-- id: md5:8cbc8639460e926a0add73c377bca475
-  file_type: excel
-  bank: 兴业银行
-  account_type: 个人
-  fingerprint:
-    identity:
-      any:
-      - 兴业银行交易流水
-      - Industrial Bank Transaction Details
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-      - yyyymmdd
-    columns:
-      all:
-        户          名: 本方名称
-        账号：: 本方账户
-        币          种: null
-        账户类型: null
-        交易时间: 交易时间
-        Transaction Time: null
-        记账日期: 交易日期
-        Accounting Date: null
-        摘要: 银行备注
-        Transaction Type: null
-        支/收: null
-        交易金额: 交易金额
-        Transaction Amount: null
-        账户余额: 账户余额
-        Account Balance: null
-        对方户名: 对手名称
-        Counterparty’s: null
-        对方账户/对方银行: null
-  reader_options:
-    require_monetary_value: true
-    extract_mapping:
-    - source: 对方户名
-      field: 对手名称
-      pattern: '(?s)^(.*)$'
-    - source: 对方账户/对方银行
-      field: 对手账户
-      pattern: '(?s)^.*?([0-9*]{8,}).*$'
-    - source: 对方账户/对方银行
-      field: 对手账户
-      pattern: '(?s)^.*无.*$'
-      replacement: ''
   reader_id: openpyxl_grid
 - id: md5:93783dc5cadc47278e89e6fe66b26b0f
   file_type: excel
@@ -1776,41 +1496,4 @@
         总笔数: null
         附言: 账户方附言
         摘要: 银行备注
-  reader_id: openpyxl_grid
-- id: md5:a4b28bd1de5449fc9f8ae99878e8e1f5
-  file_type: excel
-  bank: 未识别
-  account_type: 对公
-  series_family: jiujiang_corporate_detail_grid_v1
-  fingerprint:
-    metadata:
-      all:
-        creator: openpyxl
-        last_modified_by: 陈会开
-    style:
-      all:
-      - text: 交易时间
-        font: STSong
-        size_min: 8
-        size_max: 10
-        row_max: 2
-        col_max: 1
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 交易时间
-    columns:
-      all:
-        交易时间: 交易时间
-        交易金额: 交易金额
-        收入: 收入金额
-        支出: 支出金额
-        余额: 账户余额
-        币种: null
-        对方账号: 对手账户
-        对方户名: 对手名称
-        摘要: 银行备注
-        交易用途: 银行备注
   reader_id: openpyxl_grid

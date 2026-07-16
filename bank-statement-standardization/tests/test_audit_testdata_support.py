@@ -1,6 +1,7 @@
 import importlib.util
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -72,6 +73,27 @@ class AuditTestdataSupportTests(unittest.TestCase):
             files = list(module.iter_statement_files(root))
 
         self.assertEqual([p.name for p in files], ["流水.pdf", "流水.xlsx"])
+
+    def test_iter_statement_files_skips_wps_pdf_to_excel_conversion(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            client = root / "客户A"
+            client.mkdir()
+            converted = client / "转换流水.xlsx"
+            custom_properties = """<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="CRO">
+    <vt:lpwstr>wqlLaW5nc29mdCBQREYgdG8gV1BTIDExNQ</vt:lpwstr>
+  </property>
+</Properties>"""
+            with zipfile.ZipFile(converted, "w") as archive:
+                archive.writestr("docProps/custom.xml", custom_properties)
+
+            files = list(module.iter_statement_files(root))
+
+        self.assertEqual(files, [])
 
     def test_build_outputs_sleeps_between_files_by_default(self):
         module = load_module()

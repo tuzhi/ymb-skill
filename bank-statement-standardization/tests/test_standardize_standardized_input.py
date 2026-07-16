@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -130,6 +131,27 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
             self.assertEqual(len(skipped), 1)
             self.assertEqual(skipped[0][0], "statement.pdf_2")
             self.assertIn("伪后缀", skipped[0][1])
+
+    def test_screen_files_rejects_wps_pdf_to_excel_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            converted = Path(tmp) / "converted.xlsx"
+            custom_properties = """<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="CRO">
+    <vt:lpwstr>wqlLaW5nc29mdCBQREYgdG8gV1BTIDEyMA</vt:lpwstr>
+  </property>
+</Properties>"""
+            with zipfile.ZipFile(converted, "w") as archive:
+                archive.writestr("docProps/custom.xml", custom_properties)
+
+            candidates, skipped = standardize.screen_files([str(converted)])
+
+            self.assertEqual(candidates, [])
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0][0], "converted.xlsx")
+            self.assertIn("Kingsoft PDF to WPS 120", skipped[0][1])
+            self.assertIn("不作为原始流水接收", skipped[0][1])
 
 
 if __name__ == "__main__":

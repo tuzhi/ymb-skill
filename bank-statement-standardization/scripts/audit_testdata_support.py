@@ -87,6 +87,9 @@ def iter_statement_files(root):
             continue
         if any(marker.lower() in lower for marker in GENERATED_NAME_MARKERS):
             continue
+        candidates, _skipped = standardize_core.screen_files([str(path)])
+        if not candidates:
+            continue
         files.append(path)
     return sorted(files, key=lambda p: str(p.relative_to(root)).lower())
 
