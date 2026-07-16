@@ -1109,7 +1109,7 @@
   reader_id: openpyxl_grid
 - id: md5:5ee6d3955fa1cca84bd4bed11ae23c6f
   file_type: excel
-  bank: 未识别
+  bank: 江西农商银行
   account_type: 未知
   series_family: rural_account_detail_query_biff_v1
   fingerprint:
@@ -1160,11 +1160,14 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
+  reader_options:
+    multi_sheet_same_layout: true
   reader_id: openpyxl_grid
 - id: md5:7bcf8c473982401fb994f27978e9b14d
   file_type: excel
-  bank: 未识别
+  bank: 江西农商银行
   account_type: 未知
+  series_family: rural_account_detail_query_biff_v1
   fingerprint:
     metadata:
       all:
@@ -1196,6 +1199,8 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
+  reader_options:
+    multi_sheet_same_layout: true
   reader_id: openpyxl_grid
 - id: md5:ba05eb8ff8fe5a2cd5612a5678b6f0c4
   file_type: excel
@@ -1700,8 +1705,9 @@
   reader_id: openpyxl_grid
 - id: md5:93783dc5cadc47278e89e6fe66b26b0f
   file_type: excel
-  bank: 未识别
+  bank: 江西农商银行
   account_type: 未知
+  series_family: rural_account_detail_query_biff_v1
   fingerprint:
     metadata:
       all:
@@ -1734,10 +1740,12 @@
         对方行名: null
         交易渠道: 交易渠道
         摘要: 银行备注
+  reader_options:
+    multi_sheet_same_layout: true
   reader_id: openpyxl_grid
 - id: md5:94ff523d47e25a05d64e18944ecb9bf4
   file_type: excel
-  bank: 未识别
+  bank: 江西农商银行
   account_type: 未知
   series_family: rural_account_detail_query_biff_v1
   fingerprint:

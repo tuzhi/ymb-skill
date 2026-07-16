@@ -317,6 +317,39 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(report["来源组"][0]["待核查候选数"], 1)
         self.assertEqual(report["待核查候选"][0]["未自动折叠原因"], "缺少完整对手账户")
 
+    def test_same_account_exact_overlap_keeps_more_complete_cross_file_row(self):
+        sparse = transaction(
+            "分段简版.pdf", "6222081505000091789", "2025-12-23 15:24:18", "72734.52",
+            "", "",
+        )
+        sparse["支出金额"] = "50.00"
+        sparse["收入金额"] = ""
+        complete = transaction(
+            "分段详版.pdf", "6222081505000091789", "2025-12-23 15:24:18", "72734.52",
+            "分宜海螺建筑材料有限责任公司", "6222000000000000000",
+        )
+        complete["支出金额"] = "50.00"
+        complete["收入金额"] = ""
+
+        deduped, report = integrate.dedup_same_account_exact_overlap(pd.DataFrame([sparse, complete]))
+
+        self.assertEqual(len(deduped), 1)
+        self.assertEqual(deduped.iloc[0]["来源文件名"], "分段详版.pdf")
+        self.assertEqual(report["移除笔数"], 1)
+
+    def test_same_account_exact_overlap_preserves_ambiguous_same_source_rows(self):
+        rows = []
+        for source in ("分段1.pdf", "分段1.pdf", "分段2.pdf"):
+            row = transaction(source, "6222081505000091789", "2025-12-23 15:24:18", "72734.52")
+            row["支出金额"] = "50.00"
+            row["收入金额"] = ""
+            rows.append(row)
+
+        deduped, report = integrate.dedup_same_account_exact_overlap(pd.DataFrame(rows))
+
+        self.assertEqual(len(deduped), 3)
+        self.assertEqual(report["移除笔数"], 0)
+
     def test_reciprocal_transfer_restores_unknown_account_and_monthly_suffix_group(self):
         known = transaction(
             "北京银行.xlsx", "20000080375000116971117", "2026-03-30 08:08:07", "1000.00",

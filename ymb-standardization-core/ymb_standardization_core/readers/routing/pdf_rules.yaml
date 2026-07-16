@@ -363,10 +363,52 @@
         地区: null
         收入/支出金额: 收入金额
   reader_id: pdfplumber_table
+- id: md5:1ac2b953b8acacc332c7e2e0544eb1f6
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  series_family: icbc_personal_history_openpdf
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.27
+        Title: 借记卡账户明细清单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '卡号\s*([0-9*]+)'
+    columns:
+      all:
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: null
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+  reader_id: pdfplumber_table
 - id: md5:d933e13d10427ffb9d2590d52325b15e
   file_type: pdf
   bank: 中国工商银行
   account_type: 个人
+  series_family: icbc_personal_history_openpdf
   fingerprint:
     metadata:
       all:
@@ -935,14 +977,22 @@
         Payment Receipt Account Information: null
         Abstract: null
   reader_id: pdfplumber_table
-- id: md5:faa7f06d9f76df95dee8e82cb190016f
+- id: md5:717bcba4db286d79f4050c5e736ab11e
   file_type: pdf
-  bank: 未识别
-  account_type: 未知
+  bank: 中国工商银行
+  account_type: 对公
   fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
     identity:
       any:
-      - 时间戳
+      - 中国工商银行账户明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '本方账号户名[:：]\s*(.+?)\s+本方账号开户行[:：]'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
     date_format:
       any:
       - yyyy-mm-dd hh:mm:ss

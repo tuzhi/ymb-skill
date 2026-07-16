@@ -52,6 +52,7 @@ def _excel_candidate(rule, match):
         "account_type": rule.account_type,
         "series_family": rule.series_family,
         "source_order": rule.source_order,
+        "multi_sheet_same_layout": rule.multi_sheet_same_layout,
         "column_mapping": rule.column_mapping,
         "preamble_mapping": rule.preamble_mapping,
         "preamble_extractors": rule.preamble_extractors,
@@ -288,14 +289,19 @@ def _maybe_decrypted_office_file(path, open_password=None):
     return _OfficeSource(path, open_password=open_password)
 
 
-def _call_excel_reader(path, open_password=None):
+def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     reader = _require_reader(_excel_reader, "excel")
     try:
         params = inspect.signature(reader).parameters
     except (TypeError, ValueError):
         params = {}
+    kwargs = {}
     if "open_password" in params:
-        return reader(path, open_password=open_password)
+        kwargs["open_password"] = open_password
+    if "all_sheets_same_layout" in params:
+        kwargs["all_sheets_same_layout"] = all_sheets_same_layout
+    if kwargs:
+        return reader(path, **kwargs)
     return reader(path)
 
 
@@ -394,6 +400,12 @@ def read_rows(path, hints=None):
         sheet, rows = _call_excel_reader(path, open_password=open_password)
         context = _excel_context(path, rows, sheet, open_password=open_password)
         route_info = route_excel(rows, sheet, context=context)
+        if route_info.get("multi_sheet_same_layout"):
+            sheet, rows = _call_excel_reader(
+                path,
+                open_password=open_password,
+                all_sheets_same_layout=True,
+            )
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
             rows = _read_cmb_mixed_grid(rows)
         return ReadResult(

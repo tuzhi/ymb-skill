@@ -119,6 +119,18 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
             self.assertEqual(candidates, [str(standardized)])
             self.assertEqual(skipped, [])
 
+    def test_screen_files_reports_pdf_with_duplicate_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            disguised_pdf = Path(tmp) / "statement.pdf_2"
+            disguised_pdf.write_bytes(b"%PDF-1.7\n")
+
+            candidates, skipped = standardize.screen_files([str(disguised_pdf)])
+
+            self.assertEqual(candidates, [])
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0][0], "statement.pdf_2")
+            self.assertIn("伪后缀", skipped[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()

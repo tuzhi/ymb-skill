@@ -69,6 +69,11 @@ def classify_ext(path):
         return "候选", ""
     if ext in SUPPORTED_EXT:
         return "候选", ""
+    if re.search(r"\.pdf_\d+$", os.path.basename(path).lower()):
+        return (
+            "跳过",
+            "文件内容疑似 PDF，但扩展名为伪后缀；请改为 .pdf。若为扫描件，仍需先 OCR 转文本",
+        )
     if ext in KNOWN_NONSTATEMENT_EXT:
         return "跳过", f"非流水格式（{ext}）：本技能仅支持 Excel/CSV/文本/非图片PDF；图片或扫描件请先 OCR 转文本"
     return "忽略", ""
@@ -387,19 +392,25 @@ def parse_datetime(date_part, time_part):
 
 
 # ---- 原始文件读取（统一成 list[list]） ----------------------------------------
-def read_rows_excel(path, open_password=None):
-    """返回 (sheet名, rows:list[list])。取第一个有数据的 sheet。"""
+def read_rows_excel(path, open_password=None, all_sheets_same_layout=False):
+    """返回 (sheet名, rows:list[list])；按路由配置可合并同表头的多个 sheet。"""
     from ymb_standardization_core.readers.input_router import _maybe_decrypted_office_file
 
     with _maybe_decrypted_office_file(path, open_password=open_password) as source:
         try:
-            return _read_rows_excel_source(source)
+            return _read_rows_excel_source(
+                source,
+                all_sheets_same_layout=all_sheets_same_layout,
+            )
         except ValueError as exc:
             repaired = _repair_xlsx_invalid_numeric_literals(source, exc)
             if not repaired:
                 raise
             try:
-                return _read_rows_excel_source(repaired)
+                return _read_rows_excel_source(
+                    repaired,
+                    all_sheets_same_layout=all_sheets_same_layout,
+                )
             finally:
                 try:
                     os.unlink(repaired)
@@ -407,15 +418,43 @@ def read_rows_excel(path, open_password=None):
                     pass
 
 
-def _read_rows_excel_source(source):
-    """Read the first non-empty worksheet from a pandas-compatible Excel source."""
+def _read_rows_excel_source(source, all_sheets_same_layout=False):
+    """读取首个非空 sheet；显式开启时合并表头完全一致的同构 sheet。"""
     with pd.ExcelFile(source) as xl:
+        populated = []
         for sheet in xl.sheet_names:
             df = xl.parse(sheet, header=None, dtype=str)
             if df.dropna(how="all").shape[0] >= 2:
                 rows = df.where(pd.notnull(df), None).values.tolist()
                 rows = _sanitize_nan_strings(rows)
-                return sheet, rows
+                populated.append((sheet, rows))
+        if populated:
+            first_sheet, first_rows = populated[0]
+            if not all_sheets_same_layout or len(populated) == 1:
+                return first_sheet, first_rows
+
+            first_header_idx, _ = find_header_row(first_rows)
+            if first_header_idx is None:
+                return first_sheet, first_rows
+            first_signature = tuple(_norm(value) for value in first_rows[first_header_idx])
+            compatible = []
+            for sheet, rows in populated:
+                header_idx, _ = find_header_row(rows)
+                if header_idx is None:
+                    continue
+                signature = tuple(_norm(value) for value in rows[header_idx])
+                if signature == first_signature:
+                    compatible.append((sheet, rows, header_idx))
+            if len(compatible) <= 1:
+                return first_sheet, first_rows
+
+            source_marker = "__原始工作表行号"
+            combined = [list(row) + [None] for row in first_rows[:first_header_idx]]
+            combined.append(list(first_rows[first_header_idx]) + [source_marker])
+            for sheet, rows, header_idx in compatible:
+                for row_number, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
+                    combined.append(list(row) + [f"{sheet}!{row_number}"])
+            return "；".join(sheet for sheet, _, _ in compatible), combined
         sheet = xl.sheet_names[0]
         df = xl.parse(sheet, header=None, dtype=str)
         rows = df.where(pd.notnull(df), None).values.tolist()
@@ -1091,6 +1130,10 @@ def standardize(path, out_dir=None, bank=None,
 
     header = [(_norm(c) if c is not None else "") for c in rows[header_idx]]
     data_rows = rows[header_idx + 1:]
+    source_marker_index = next(
+        (index for index, value in enumerate(header) if value == _norm("__原始工作表行号")),
+        None,
+    )
 
     acct = sniff_account_info(
         rows,
@@ -1411,7 +1454,13 @@ def standardize(path, out_dir=None, bank=None,
             "账户方附言": cust_memo,
             "交易渠道": channel,
             "来源文件名": fname,
-            "来源行号": raw_offset + ri,
+            "来源行号": (
+                str(row[source_marker_index]).strip()
+                if source_marker_index is not None
+                and source_marker_index < len(row)
+                and str(row[source_marker_index] or "").strip()
+                else raw_offset + ri
+            ),
             "__对手开户行": counterparty_bank,
         })
 

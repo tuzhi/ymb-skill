@@ -608,16 +608,24 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_corporate_debit_credit_timestamp_pdf_route(self):
         text = (
+            "中国工商银行账户明细清单 账号：1502209509300265378 币种：人民币 "
+            "本方账号户名：江西奥飞科技有限公司 本方账号开户行：南昌高新支行营业厅 时间范围： "
             "交易时间 借贷标志 对方单位 摘要 转出金额 转入金额 余额 时间戳 "
             "2025-07-31 17:57:53 借 赣州市百诚工程咨询有限公司 保证金 10000.00 214746.53"
         )
 
-        result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd hh:mm:ss"]})
+        context = {
+            "metadata": {"Producer": "iText 2.1.7 by 1T3XT"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:faa7f06d9f76df95dee8e82cb190016f'})
+        self.assertEqual(result["fingerprint_id"], "md5:717bcba4db286d79f4050c5e736ab11e")
         self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["bank"], "未识别")
+        self.assertEqual(result["bank"], "中国工商银行")
+        self.assertEqual(result["account_type"], "对公")
 
     def test_srbank_corporate_online_transaction_detail_pdf_route(self):
         text = (
@@ -797,6 +805,27 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertIn(result["fingerprint_id"], {'md5:f6e2839cbb6173153037ad740c0be800', 'md5:c32bf342dabb921d88641d06db8b4b54', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
+
+    def test_icbc_debit_history_openpdf_without_counterparty_columns_route(self):
+        text = (
+            "中国工商银行借记账户历史明细（电子版） 卡号 户名：夏侯军刚 起止日期 "
+            "交易日期 账号 储种 序号 币种 钞汇 摘要 地区 收入/支出金额 余额 渠道"
+        )
+        context = {
+            "metadata": {"Producer": "OpenPDF 1.3.27", "Title": "借记卡账户明细清单"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["fingerprint_id"], "md5:1ac2b953b8acacc332c7e2e0544eb1f6")
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
+        self.assertEqual(result["bank"], "中国工商银行")
+        self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["word_filters"], {"drop_chars": [{"rotated": True}]})
 
     def test_industrial_bank_transaction_detail_pdf_route(self):
         text = (

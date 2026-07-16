@@ -1172,6 +1172,82 @@ def dedup_cross_file(df):
     return kept.reset_index(drop=True), info
 
 
+def _exact_overlap_key(row):
+    """同一明确账户跨文件重叠所需的强键；任一核心字段缺失即不参与。"""
+    account = _account_key(row.get("本方账户"))
+    time = pd.to_datetime(row.get("交易时间"), errors="coerce")
+    amount = _cross_format_amount_key(row)
+    balance = _overlap_amount(row.get("账户余额"))
+    if not account or pd.isna(time) or amount is None or balance == "":
+        return None
+    return account, time.isoformat(), *amount, balance
+
+
+def dedup_same_account_exact_overlap(df):
+    """折叠同一明确账户在不同文件中的精确重叠交易。
+
+    强键同时要求交易时间、收支方向、金额和交易后余额完全一致。相同来源内出现重复键，或任一侧
+    不能形成跨来源唯一对应时一律保留；自动折叠时保留标准字段更完整的记录。该规则主要处理同一
+    银行分段导出区间重叠、但其中一版缺少对手字段而导致内容指纹不同的情况。
+    """
+    info = {"规则版本": "same-account-exact-overlap-v1", "折叠组数": 0, "移除笔数": 0, "明细": []}
+    if df.empty or not {"本方账户", "来源文件名"}.issubset(df.columns):
+        return df, info
+
+    result = df.copy()
+    groups = defaultdict(list)
+    for index, row in result.iterrows():
+        key = _exact_overlap_key(row)
+        if key is not None:
+            groups[key].append(index)
+
+    std_cols = [c for c in result.columns if not c.endswith("_num") and not c.startswith("__")]
+    remove_indices = set()
+    for key, indices in groups.items():
+        if len(indices) < 2:
+            continue
+        by_source = defaultdict(list)
+        for index in indices:
+            by_source[_clean_text(result.at[index, "来源文件名"])].append(index)
+        if len(by_source) < 2 or any(len(values) != 1 for values in by_source.values()):
+            continue
+
+        ranked = sorted(
+            indices,
+            key=lambda index: (
+                -sum(
+                    1 for column in std_cols
+                    if _clean_text(result.at[index, column])
+                ),
+                _clean_text(result.at[index, "来源文件名"]),
+                index,
+            ),
+        )
+        keep_index = ranked[0]
+        removed = ranked[1:]
+        remove_indices.update(removed)
+        info["折叠组数"] += 1
+        info["移除笔数"] += len(removed)
+        if len(info["明细"]) < 30:
+            info["明细"].append({
+                "重复组编号": f"EO-{info['折叠组数']:06d}",
+                "本方账户": _clean_text(result.at[keep_index, "本方账户"]),
+                "交易时间": _clean_text(result.at[keep_index, "交易时间"]),
+                "保留交易唯一编号": _clean_text(result.at[keep_index, "交易唯一编号"]),
+                "保留来源文件": _clean_text(result.at[keep_index, "来源文件名"]),
+                "移除交易唯一编号列表": [
+                    _clean_text(result.at[index, "交易唯一编号"]) for index in removed
+                ],
+                "移除来源文件列表": [
+                    _clean_text(result.at[index, "来源文件名"]) for index in removed
+                ],
+            })
+
+    if remove_indices:
+        result = result.drop(index=sorted(remove_indices))
+    return result.reset_index(drop=True), info
+
+
 def _source_format(source):
     return os.path.splitext(_clean_text(source))[1].lower()
 
@@ -1586,15 +1662,17 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     balance_series = finalize_series_report(df, balance_series)
     unknown_pairing = finalize_pair_report(df, unknown_pairing)
 
-    # 同名 PDF 与 XLS/XLSX 先按强证据逐笔一对一对齐；再折叠内容指纹完全相同的重复导入。
-    # 前者解决秒/毫秒精度、PDF 文本空格等格式差异，后者继续处理完全一致交易。
+    # 同名 PDF 与 XLS/XLSX 先逐笔对齐；再折叠同一明确账户跨文件的精确重叠区间；
+    # 最后继续处理内容指纹完全一致的重复导入。
     df, cross_format_info = align_same_source_cross_format(df)
+    df, exact_overlap_info = dedup_same_account_exact_overlap(df)
     df, exact_dedup_info = dedup_cross_file(df)
     dedup_info = {
-        "折叠组数": cross_format_info["折叠组数"] + exact_dedup_info["折叠组数"],
-        "移除笔数": cross_format_info["移除笔数"] + exact_dedup_info["移除笔数"],
+        "折叠组数": cross_format_info["折叠组数"] + exact_overlap_info["折叠组数"] + exact_dedup_info["折叠组数"],
+        "移除笔数": cross_format_info["移除笔数"] + exact_overlap_info["移除笔数"] + exact_dedup_info["移除笔数"],
         "明细": exact_dedup_info["明细"],
         "同源跨格式逐笔对齐": cross_format_info,
+        "同账户跨文件精确重叠": exact_overlap_info,
         "完全相同内容指纹折叠": exact_dedup_info,
     }
 
@@ -1704,8 +1782,9 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
                        "选余额断点最少的行序——既保留各文件原始对账口径，又正确跨文件归并、消除"
                        "倒序/日内倒序/同秒多笔/内部记账序≠时间戳导致的伪断点；不以交易时间硬排。",
             "跨文件去重规则": "同名 PDF/XLS(X) 先按方向、金额分值、完整对手账户及60秒时间窗做互相唯一的逐笔对齐，"
-                          "且至少20笔、较小来源覆盖率≥98%才自动折叠；随后按交易唯一编号折叠完全相同交易。"
-                          "两类规则均优先保留结构化表格，来源独有和歧义记录不删除",
+                          "且至少20笔、较小来源覆盖率≥98%才自动折叠；同一明确账号再按交易时间、方向金额、"
+                          "交易后余额完全一致且跨来源唯一的强键折叠重叠区间；最后按交易唯一编号折叠完全相同交易。"
+                          "来源独有和歧义记录不删除",
             "疑似重复判断规则": ["本方账户", "交易时间", "收入金额", "支出金额", "账户余额", "对手名称"],
             "自有账户互转判断规则": "本方多账户间金额相等、时间≤3天、对手为本方名称/账户；仅标记不删除",
             "余额校验范围": "按本方账户分别校验",

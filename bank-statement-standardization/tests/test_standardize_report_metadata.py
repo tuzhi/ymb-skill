@@ -17,6 +17,50 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_icbc_openpdf_without_counterparty_columns_filters_rotated_watermark(self):
+        pdf = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "江西赣驰"
+            / "夏侯军刚流水161827.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供江西赣驰工行无对手列 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 2500)
+        self.assertEqual(report["文件画像"]["fingerprint_id"], "md5:1ac2b953b8acacc332c7e2e0544eb1f6")
+        self.assertEqual({row["本方名称"] for row in rows}, {"夏侯军刚"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"6222081505000091789"})
+        self.assertEqual({row["开户行"] for row in rows}, {"中国工商银行"})
+        self.assertTrue(all(row["交易时间"].startswith("20") for row in rows))
+        self.assertTrue(all(row["交易金额"] for row in rows))
+        self.assertEqual({row["对手名称"] for row in rows}, {""})
+        self.assertEqual({row["对手账户"] for row in rows}, {""})
+
+    def test_rural_account_detail_xls_combines_same_layout_sheets(self):
+        samples = [
+            ("江西赣驰2025年流水(1).xls", 936, "江西赣驰10-12月流水!"),
+            ("江西赣驰2026年流水(2).xls", 718, "2026年4-5月!"),
+        ]
+        for filename, expected_rows, expected_last_sheet in samples:
+            excel = REPO_ROOT / "bank-statement-standardization" / "testdata" / "江西赣驰" / filename
+            if not excel.exists():
+                self.skipTest(f"本地未提供多 Sheet 样本：{filename}")
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
+                csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+
+                self.assertEqual(len(rows), expected_rows)
+                self.assertTrue(report["文件画像"]["series_family"].startswith("rural_account_detail_query"))
+                self.assertTrue(any(row["来源行号"].startswith(expected_last_sheet) for row in rows))
+
     def test_yaml_source_order_precedes_auto_order_for_icbc_card_detail(self):
         excel = (
             REPO_ROOT
@@ -149,7 +193,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(bank, "")
         self.assertEqual(profile["candidate_count"], 0)
 
-    def test_srbank_corporate_pdf_separates_router_and_inferred_bank(self):
+    def test_srbank_corporate_pdf_confirms_router_and_transaction_profile(self):
         pdf = (
             REPO_ROOT
             / "bank-statement-standardization"
@@ -164,10 +208,10 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             _csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
 
         image = report["文件画像"]
-        self.assertEqual(image["router_bank"], "未识别")
+        self.assertEqual(image["router_bank"], "上饶银行")
         self.assertEqual(image["inferred_bank"], "上饶银行")
-        self.assertEqual(image["bank_status"], "inferred")
-        self.assertEqual(image["bank_source"], "internal_transaction_profile")
+        self.assertEqual(image["bank_status"], "confirmed")
+        self.assertEqual(image["bank_source"], "router")
         self.assertEqual(image["确认银行"], "上饶银行")
         self.assertEqual(image["internal_transaction_profile"]["candidate_count"], 11)
 
@@ -188,6 +232,30 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 self.assertEqual(report["文件画像"]["本方账户"], expected_account)
                 self.assertEqual({row["本方名称"] for row in rows}, {expected_name})
                 self.assertEqual({row["本方账户"] for row in rows}, {expected_account})
+
+    def test_icbc_timestamp_pdf_extracts_corporate_owner_and_account(self):
+        pdf = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "江西奥飞科技"
+            / "25年3月1-25年7月31流水.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供江西奥飞科技工行 PDF 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        self.assertEqual(len(rows), 444)
+        self.assertEqual(report["文件画像"]["router_bank"], "中国工商银行")
+        self.assertEqual(report["文件画像"]["账户类型"], "对公")
+        self.assertEqual(report["文件画像"]["本方名称"], "江西奥飞科技有限公司")
+        self.assertEqual(report["文件画像"]["本方账户"], "1502209509300265378")
+        self.assertEqual({row["本方名称"] for row in rows}, {"江西奥飞科技有限公司"})
+        self.assertEqual({row["本方账户"] for row in rows}, {"1502209509300265378"})
 
     def test_account_metadata_is_not_guessed_without_route_configuration(self):
         info = standardize.sniff_account_info(

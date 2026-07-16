@@ -126,7 +126,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "中国工商银行")
         self.assertEqual(route["account_type"], "个人")
 
-    def test_detail_download_debit_credit_counterparty_excel_does_not_infer_bank(self):
+    def test_detail_download_debit_credit_counterparty_excel_routes_to_bank_of_beijing(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "北京银行2025.4.1-2026.3.31号流水.xlsx"
         if not excel.exists():
@@ -139,7 +139,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "北京银行")
         self.assertEqual(route["account_type"], "对公")
 
     def test_current_account_detail_query_excel_routes_to_changsha_bank(self):
@@ -460,7 +460,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "对公")
 
-    def test_account_history_detail_excel_does_not_infer_bank(self):
+    def test_account_history_detail_excel_routes_to_abc(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "农行2025.4.1-10.31号流水.xlsx"
         if not excel.exists():
@@ -473,10 +473,10 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "中国农业银行")
         self.assertEqual(route["account_type"], "对公")
 
-    def test_counterparty_wide_debit_credit_excel_does_not_infer_bank(self):
+    def test_counterparty_wide_debit_credit_excel_routes_to_bank_of_beijing(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "北京银行流水明细2025.5-2026.4.xlsx"
         if not excel.exists():
@@ -489,7 +489,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "北京银行")
         self.assertEqual(route["account_type"], "对公")
 
     def test_industrial_bank_transaction_detail_excel_route(self):
@@ -508,7 +508,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "兴业银行")
         self.assertEqual(route["account_type"], "个人")
 
-    def test_rural_commercial_laptop_account_query_excel_does_not_infer_bank(self):
+    def test_rural_commercial_laptop_account_query_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "江西赣驰" / "江西赣驰2025年流水(1).xls"
         if not excel.exists():
@@ -521,10 +521,10 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
 
-    def test_rural_commercial_biff_super_online_debit_excel_does_not_infer_bank(self):
+    def test_rural_commercial_biff_super_online_debit_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "江西轩宇塑业有限公司" / "农商2601-03.xls"
         if not excel.exists():
@@ -537,7 +537,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
 
     def test_rural_account_query_header_variants_share_series_family(self):
@@ -556,7 +556,7 @@ class InputRouterTests(unittest.TestCase):
 
                 self.assertEqual(route["decision"], "matched")
                 self.assertEqual(route["fingerprint_id"], fingerprint_id)
-                self.assertEqual(route["bank"], "未识别")
+                self.assertEqual(route["bank"], "江西农商银行")
                 self.assertEqual(route["account_type"], "未知")
                 self.assertEqual(
                     route["series_family"],
@@ -674,7 +674,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertTrue(route["metadata_evidence"])
         self.assertTrue(route["style_evidence"])
 
-    def test_account_query_result_does_not_infer_nanchang_rural_commercial_bank_from_transaction_rows(self):
+    def test_account_query_result_routes_nanchang_sample_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "秦国有" / "20260604 (2).xls"
         if not excel.exists():
@@ -687,11 +687,11 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertTrue(route["style_evidence"])
         self.assertIn("交易日期", route["columns_evidence"])
 
-    def test_account_query_result_does_not_infer_jiangxi_lushan_rural_commercial_bank_from_transaction_rows(self):
+    def test_account_query_result_routes_lushan_sample_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "袁军" / "1-3.xls"
         if not excel.exists():
@@ -704,11 +704,11 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertTrue(route["style_evidence"])
         self.assertIn("交易日期", route["columns_evidence"])
 
-    def test_generic_rural_commercial_account_query_does_not_infer_bank(self):
+    def test_generic_rural_commercial_account_query_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "广源流水" / "农商流水1.xls"
 
@@ -719,14 +719,14 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
         self.assertTrue(route["style_evidence"])
         self.assertEqual(route["metadata_evidence"]["application"], "BIFF/XLS")
         self.assertEqual(route["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("交易日期", route["columns_evidence"])
 
-    def test_rural_commercial_super_online_debit_excel_does_not_infer_bank(self):
+    def test_rural_commercial_super_online_debit_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "江西轩宇塑业有限公司" / "农商202501-03.xls"
         if not excel.exists():
@@ -739,10 +739,10 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
 
-    def test_rural_commercial_administrator_account_query_excel_does_not_infer_bank(self):
+    def test_rural_commercial_administrator_account_query_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "2025年4月份农商行（7738）网银流水 - 副本.xls"
         if not excel.exists():
@@ -755,7 +755,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
 
     def test_rural_commercial_administrator_no_range_excel_does_not_infer_bank(self):
@@ -774,7 +774,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "未识别")
         self.assertEqual(route["account_type"], "未知")
 
-    def test_rural_commercial_expedited_transfer_excel_does_not_infer_bank(self):
+    def test_rural_commercial_expedited_transfer_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "永瑞制衣-周康" / "20260413.xls"
         if not excel.exists():
@@ -787,7 +787,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["bank"], "江西农商银行")
         self.assertEqual(route["account_type"], "未知")
 
     def test_pdf_input_keeps_existing_pdf_router(self):
@@ -990,7 +990,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("交易时间", result.route_info["columns_evidence"])
 
-    def test_jiujiang_bank_wide_transaction_export_does_not_infer_bank(self):
+    def test_jiujiang_bank_wide_transaction_export_routes_to_jiujiang_bank(self):
         module = load_input_router()
         excel = ROOT / "testdata" / "昌浩公司流水" / "九江银行流水明细2025.5-2026.4.xlsx"
         if not excel.exists():
@@ -1003,8 +1003,8 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "openpyxl_grid")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["bank"], "未识别")
-        self.assertEqual(route["account_type"], "未知")
+        self.assertEqual(route["bank"], "九江银行")
+        self.assertEqual(route["account_type"], "对公")
 
     def test_jiujiang_bank_transaction_statement_pdf_route(self):
         module = load_input_router()
