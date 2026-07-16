@@ -110,6 +110,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
         self.assertEqual(route_info["fingerprint_id"], "md5:cb2278ac12a08930475e412c101c28f6")
+        self.assertEqual(route_info["bank"], "招商银行")
         self.assertEqual(route_info["preamble_mapping"], {"用户所属公司": "本方名称"})
         self.assertEqual(rows[0], [
             "交易日期",

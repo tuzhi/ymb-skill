@@ -852,7 +852,7 @@
   reader_id: pdfplumber_table
 - id: md5:cb2278ac12a08930475e412c101c28f6
   file_type: pdf
-  bank: 未识别
+  bank: 招商银行
   account_type: 对公
   fingerprint:
     metadata:

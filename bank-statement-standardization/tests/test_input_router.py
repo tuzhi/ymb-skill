@@ -768,7 +768,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertIn("郭金伟", result.preamble)
         self.assertGreater(len(result.rows), 10)
 
-    def test_corporate_account_statement_pdf_route_does_not_infer_bank(self):
+    def test_cmb_corporate_account_statement_pdf_route_uses_confirmed_bank(self):
         module = load_input_router()
         pdf = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
 
@@ -779,7 +779,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(result.route_info["reader_id"], "pdfplumber_line_table")
         self.assertEqual(result.route_info["decision"], "matched")
-        self.assertEqual(result.route_info["bank"], "未识别")
+        self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "对公")
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "OpenPDF 1.3.30")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd"])
