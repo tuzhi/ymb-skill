@@ -150,6 +150,8 @@ def _accounts_equal(left, right):
 
 
 def _reciprocal_lookup_key(row, reverse=False):
+    if _clean_text(row.get("__time_precision")) != "second":
+        return None
     time = _clean_text(row.get("交易时间"))
     income = _overlap_amount(row.get("收入金额"))
     expense = _overlap_amount(row.get("支出金额"))
@@ -192,7 +194,8 @@ def infer_identity_from_reciprocal_transfers(df):
     """用同批次另一账户的反向互转记录补齐本方账号、户名和开户行。
 
     证据必须同时满足：金额反向一致，且目标行的对手名称能与证据行本方名称精确互证；
-    时间完全一致沿用单笔强证据；仅时间相差不超过 5 秒时，要求至少三笔、跨三个日期形成唯一账号共识。
+    双方来源时间都明确精确到秒时，时间完全一致沿用单笔强证据；仅时间相差不超过 5 秒时，
+    要求至少三笔、跨三个日期形成唯一账号共识。日期级、分钟级或精度未知的记录不参与身份反推。
     名称有一侧缺失时，才允许用完整账号精确相等代替。长账号前缀关系不能单独触发身份推断。
     对手开户行只作为阶段二内部证据，最终标准流水不会输出该内部列。
     """
@@ -673,7 +676,7 @@ def merge_balance_continuous_sources(df):
 
     默认仍要求同 fingerprint、银行、账户类型和文件名家族。只有 YAML 明确声明
     ``series_family`` 时，才允许兼容模板跨 fingerprint 建链。有明确账号锚点时
-    两卷即可；完全没有身份锚点时至少需要三卷、两条无分叉的精确余额边界。
+    两卷即可；完全没有身份锚点时也允许两卷以一条无分叉的精确余额边界归并。
     空白身份可以组成逻辑账户，但不能伪造真实户名、账号或银行。
     """
     result = df.copy()
@@ -776,11 +779,11 @@ def merge_balance_continuous_sources(df):
                 or len(account_types) > 1):
             return
         if mode == "series_family":
-            # 无明确账号时提高门槛：至少三卷和两条连续边界，避免一次余额巧合误并。
+            # series_family 已限定兼容分卷家族；无明确账号时仍要求无分叉的精确余额边界。
             if not accounts:
                 if any(member["source"] in ambiguous_sources for member in members):
                     return
-                if len(members) < 3 or len(links) < 2:
+                if len(members) < 2 or len(links) < 1:
                     return
             account_type = (
                 next(iter(account_types)) if account_types
@@ -1123,6 +1126,7 @@ def load_inputs(paths):
         df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
         df["__fingerprint_id"] = image.get("fingerprint_id") or ""
         df["__series_family"] = image.get("series_family") or ""
+        df["__time_precision"] = image.get("transaction_time_precision") or ""
         # 文件内行序：standardize 已把倒序文件翻正，故 0..n 即该文件的时间正序（含同秒多笔的原始相对顺序）。
         # 余额校验与输出排序都用它，绝不用交易时间当主键，避免同时刻多笔被打乱产生伪断点。
         df["__fileseq"] = range(len(df))
@@ -1771,7 +1775,7 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
                           "共享批次虚拟账户；真实账号仍保持未知",
             "余额连续分卷归并": "默认要求同 fingerprint、银行、账户类型和文件名家族；"
                                 "YAML 显式声明相同 series_family 时可跨 fingerprint 建链，"
-                                "有明确账号时两卷即可；无身份锚点时至少三卷、两条无分叉的精确余额边界，"
+                                "有无明确账号均允许两卷以一条无分叉的精确余额边界归并，"
                                 "且已知账号、户名、银行、账户类型不得冲突；"
                                 "文件名只召回默认候选，不单独决定归并",
             "批次内账号归并顺序": "加载标准化文件后、重算交易唯一编号前、跨文件去重前",

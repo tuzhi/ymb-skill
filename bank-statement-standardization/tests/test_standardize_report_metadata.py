@@ -17,6 +17,23 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_nanjing_statement_reports_source_time_precision_and_series_family(self):
+        root = REPO_ROOT / "bank-statement-standardization" / "testdata" / "金鼎"
+        samples = (
+            ("金鼎南京2022年10月对账明细.xls", "date"),
+            ("金鼎南京2023年1月对账明细.xls", "second"),
+        )
+        for filename, precision in samples:
+            source = root / filename
+            if not source.exists():
+                self.skipTest(f"本地未提供南京银行样本：{filename}")
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
+                _csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+
+            image = report["文件画像"]
+            self.assertEqual(image["series_family"], "nanjing_transaction_detail_biff_v1")
+            self.assertEqual(image["transaction_time_precision"], precision)
+
     def test_icbc_openpdf_without_counterparty_columns_filters_rotated_watermark(self):
         pdf = (
             REPO_ROOT

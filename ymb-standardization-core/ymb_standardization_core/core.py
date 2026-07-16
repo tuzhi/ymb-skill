@@ -391,6 +391,47 @@ def parse_datetime(date_part, time_part):
         return f"{date_str} 00:00:00"
 
 
+def infer_transaction_time_precision(data_rows, date_cols, time_cols, route_info=None):
+    """从原始单元格与路由格式证据判断交易时间精度。"""
+    route_info = route_info or {}
+    evidence = [
+        str(value).strip().lower()
+        for value in route_info.get("date_format_evidence", [])
+        if str(value).strip()
+    ]
+    if any("ss" in value and "hh" in value for value in evidence):
+        return "second"
+
+    candidate_cols = list(dict.fromkeys([*date_cols, *time_cols]))
+    saw_date = False
+    saw_minute = False
+    for row in data_rows:
+        for ci in candidate_cols:
+            if ci >= len(row) or row[ci] in (None, "", "nan"):
+                continue
+            text = str(row[ci]).strip()
+            if re.search(r"(?<!\d)\d{14,}(?!\d)", text):
+                return "second"
+            if re.search(
+                r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?!\d)",
+                text,
+            ):
+                return "second"
+            if ci in time_cols and re.fullmatch(
+                r"(?:[01]\d|2[0-3])[0-5]\d[0-5]\d", text
+            ):
+                return "second"
+            if re.search(r"(?<!\d)(?:[01]?\d|2[0-3]):[0-5]\d(?![:\d])", text):
+                saw_minute = True
+            if re.search(r"\d{4}[-/]?\d{1,2}[-/]?\d{1,2}", text):
+                saw_date = True
+    if saw_minute:
+        return "minute"
+    if saw_date or date_cols:
+        return "date"
+    return "unknown"
+
+
 # ---- 原始文件读取（统一成 list[list]） ----------------------------------------
 def read_rows_excel(path, open_password=None, all_sheets_same_layout=False):
     """返回 (sheet名, rows:list[list])；按路由配置可合并同表头的多个 sheet。"""
@@ -1241,6 +1282,9 @@ def standardize(path, out_dir=None, bank=None,
     date_cols = field_to_cols.get("交易日期", [])
     time_cols = field_to_cols.get("交易时间", [])
     has_split_dt = bool(date_cols)
+    transaction_time_precision = infer_transaction_time_precision(
+        data_rows, date_cols, time_cols, route_info
+    )
 
     # 非流水文件自动排除（仅在全自动识别时启用；--header-row/--map 视为用户已确认，不拦截）：
     # 一张真正的流水至少要「有金额或余额」且「有时间或余额」可定位；据此把发票/名册/其它表筛掉。
@@ -1599,6 +1643,8 @@ def standardize(path, out_dir=None, bank=None,
             "decision": route_info.get("decision", ""),
             "fingerprint_id": route_info.get("fingerprint_id", route_info.get("id", "")),
             "series_family": route_info.get("series_family", ""),
+            "transaction_time_precision": transaction_time_precision,
+            "date_format_evidence": route_info.get("date_format_evidence", []),
             "file_type": route_info.get("file_type", file_kind),
             "bank": route_info.get("bank", ""),
             "account_type": route_info.get("account_type", ""),

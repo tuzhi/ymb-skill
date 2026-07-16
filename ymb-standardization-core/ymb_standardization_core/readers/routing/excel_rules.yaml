@@ -1318,6 +1318,7 @@
   file_type: excel
   bank: 南京银行
   account_type: 未知
+  series_family: nanjing_transaction_detail_biff_v1
   fingerprint:
     metadata:
       all:

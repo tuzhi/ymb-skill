@@ -42,6 +42,7 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
         "来源文件名": source,
         "来源行号": "1",
         "__源标准化文件": f"{Path(source).stem}__standardized.csv",
+        "__time_precision": "second",
         "__fileseq": 0,
     }
 
@@ -174,7 +175,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(report["已归并组数"], 1)
         self.assertEqual(report["归并明细"][0]["身份锚点"], "明确账号")
 
-    def test_two_volume_series_family_without_identity_anchor_does_not_merge(self):
+    def test_two_volume_series_family_without_identity_anchor_merges_on_exact_boundary(self):
         rows = []
         for source, fingerprint, time, balance, income in (
             ("九江银行交易明细2.xlsx", "md5:no-header-a", "2025-07-01 10:00:00", "100.00", "100.00"),
@@ -195,8 +196,13 @@ class BatchAccountResolutionTests(unittest.TestCase):
 
         resolved, report = integrate.merge_balance_continuous_sources(pd.DataFrame(rows))
 
-        self.assertEqual(resolved["本方账户"].nunique(), 2)
-        self.assertEqual(report["已归并组数"], 0)
+        self.assertEqual(resolved["本方账户"].nunique(), 1)
+        self.assertTrue(
+            resolved["本方账户"].iloc[0].startswith("批次虚拟账户#九江银行#SERIES-")
+        )
+        self.assertEqual(report["已归并组数"], 1)
+        self.assertEqual(report["已归并文件数"], 2)
+        self.assertEqual(len(report["归并明细"][0]["balance_links"]), 1)
 
     def test_three_balance_links_merge_unidentified_series_family(self):
         rows = []
@@ -503,6 +509,31 @@ class BatchAccountResolutionTests(unittest.TestCase):
         unknown["开户行"] = ""
         unknown["收入金额"] = "100.00"
         unknown["支出金额"] = ""
+
+        resolved, report = integrate.infer_identity_from_reciprocal_transfers(
+            pd.DataFrame([known, unknown])
+        )
+
+        self.assertIn("未识别账户#unknown", set(resolved["本方账户"]))
+        self.assertEqual(report["补全文件数"], 0)
+
+    def test_reciprocal_transfer_rejects_date_precision_even_when_times_match(self):
+        known = transaction(
+            "known.xlsx", "6222000000000001", "2026-01-01 00:00:00", "1000.00",
+            "目标公司", "149799090000014882",
+        )
+        known["收入金额"] = ""
+        known["支出金额"] = "100.00"
+        known["__time_precision"] = "date"
+        unknown = transaction(
+            "unknown.xls", "未识别账户#unknown", "2026-01-01 00:00:00", "1100.00",
+            "目标公司", "6222000000000001",
+        )
+        unknown["本方名称"] = ""
+        unknown["开户行"] = ""
+        unknown["收入金额"] = "100.00"
+        unknown["支出金额"] = ""
+        unknown["__time_precision"] = "date"
 
         resolved, report = integrate.infer_identity_from_reciprocal_transfers(
             pd.DataFrame([known, unknown])
