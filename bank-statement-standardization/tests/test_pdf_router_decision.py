@@ -593,16 +593,16 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_corporate_online_detail_table_pdf_route(self):
         text = (
-            "企业网上银行--账户管理/明细查询 单位名称 账号 开户行 户名 "
+            "中国工商银行版权所有 企业网上银行--账户管理/明细查询 单位名称 账号 开户行 户名 "
             "交易时间 转出金额 转入金额 币种 余额 对方单位 对方账号 摘要 操作 详细信息"
         )
 
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:fcbe39d694aa34cf564500f187aa8137'})
+        self.assertIn(result["fingerprint_id"], {'md5:779ac95e49164978d2f63a808b850459'})
         self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["bank"], "未识别")
+        self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "对公")
 
     def test_jiujiang_bank_corporate_detail_pdf_route(self):

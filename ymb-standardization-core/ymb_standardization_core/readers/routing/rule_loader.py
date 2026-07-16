@@ -24,6 +24,7 @@ class RouteRule:
     text_table_layout: str = ""
     source_order: str = ""
     multi_sheet_same_layout: bool = False
+    header_merge: dict = field(default_factory=dict)
     column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
@@ -430,6 +431,29 @@ def _multi_sheet_same_layout(item):
     return bool(_reader_options(item).get("multi_sheet_same_layout", False))
 
 
+def _header_merge(item):
+    config = _reader_options(item).get("header_merge") or {}
+    if not config:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("reader_options.header_merge must be a dict")
+    rows = int(config.get("rows") or 0)
+    if rows < 2:
+        raise ValueError("reader_options.header_merge.rows must be at least 2")
+    columns = config.get("columns") or {}
+    if not isinstance(columns, dict) or not columns:
+        raise ValueError("reader_options.header_merge.columns must be a non-empty dict")
+    return {
+        "rows": rows,
+        "separator": str(config.get("separator") or "").strip(),
+        "columns": {
+            str(source).strip(): str(target).strip()
+            for source, target in columns.items()
+            if str(source).strip() and str(target).strip()
+        },
+    }
+
+
 def _column_transforms(item, fingerprint):
     options = _reader_options(item)
     transforms = options.get("column_transforms")
@@ -528,8 +552,15 @@ def _drop_rows(item):
             raise ValueError("reader_options.drop_rows items must be dicts")
         column = str(rule.get("column") or "").strip()
         values = [str(value).strip() for value in (rule.get("values") or []) if str(value).strip()]
+        any_values = [
+            str(value).strip()
+            for value in (rule.get("any_values") or [])
+            if str(value).strip()
+        ]
         if column and values:
             normalized.append({"column": column, "values": values})
+        elif any_values:
+            normalized.append({"any_values": any_values})
     return normalized
 
 
@@ -586,6 +617,7 @@ def load_pdf_route_rules():
             text_table_layout=_text_table_layout(item),
             source_order=_source_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
+            header_merge=_header_merge(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
@@ -623,6 +655,7 @@ def load_excel_route_rules():
             series_family=str(item.get("series_family") or "").strip(),
             source_order=_source_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
+            header_merge=_header_merge(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),

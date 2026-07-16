@@ -85,6 +85,7 @@ def _excel_candidate(rule, match):
         "series_family": rule.series_family,
         "source_order": rule.source_order,
         "multi_sheet_same_layout": rule.multi_sheet_same_layout,
+        "header_merge": rule.header_merge,
         "column_mapping": rule.column_mapping,
         "preamble_mapping": rule.preamble_mapping,
         "preamble_extractors": rule.preamble_extractors,
@@ -337,6 +338,62 @@ def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     return reader(path)
 
 
+def _merge_configured_excel_header(rows, route_info):
+    """按 fingerprint 显式配置合并多层表头，不改变原始数据行号。"""
+    config = (route_info or {}).get("header_merge") or {}
+    if not rows or not config:
+        return rows, route_info
+    row_count = int(config.get("rows") or 0)
+    route_columns = {
+        str(column or "").strip()
+        for column in (route_info.get("column_mapping") or {})
+        if str(column or "").strip()
+    }
+    if row_count < 2 or not route_columns:
+        return rows, route_info
+    header_index = max(
+        range(min(30, len(rows))),
+        key=lambda index: sum(
+            1 for value in rows[index]
+            if str(value or "").strip() in route_columns
+        ),
+    )
+    if header_index + row_count > len(rows):
+        return rows, route_info
+
+    width = max(len(rows[header_index + offset]) for offset in range(row_count))
+    separator = str(config.get("separator") or "")
+    merged = []
+    parent = ""
+    for column_index in range(width):
+        top = str(
+            rows[header_index][column_index]
+            if column_index < len(rows[header_index]) else ""
+        ).strip()
+        if top:
+            parent = top
+        parts = []
+        for offset in range(1, row_count):
+            row = rows[header_index + offset]
+            value = str(row[column_index] if column_index < len(row) else "").strip()
+            if value:
+                parts.append(value)
+        if parts:
+            merged.append(separator.join([value for value in (top or parent, *parts) if value]))
+        else:
+            merged.append(top)
+
+    output = [list(row) for row in rows]
+    output[header_index] = merged
+    for offset in range(1, row_count):
+        output[header_index + offset] = [None] * width
+    updated_route = dict(route_info)
+    updated_mapping = dict(updated_route.get("column_mapping") or {})
+    updated_mapping.update(config.get("columns") or {})
+    updated_route["column_mapping"] = updated_mapping
+    return output, updated_route
+
+
 def _parse_cmb_compact_row(row):
     """解析招行 Excel 首页把日期/币种/金额压在一个单元格的行。"""
     left = str(row[0] or "").strip() if row else ""
@@ -443,6 +500,7 @@ def read_rows(path, hints=None):
             )
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
             rows = _read_cmb_mixed_grid(rows)
+        rows, route_info = _merge_configured_excel_header(rows, route_info)
         return ReadResult(
             kind="excel",
             preamble="",

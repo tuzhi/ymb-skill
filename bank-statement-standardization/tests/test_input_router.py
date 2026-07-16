@@ -315,6 +315,39 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "中国建设银行")
         self.assertEqual(route["account_type"], "对公")
+        self.assertIn("发生额/元借方", result.rows[7])
+        self.assertIn("发生额/元贷方", result.rows[7])
+        self.assertEqual(route["column_mapping"]["发生额/元借方"], "支出金额")
+        self.assertEqual(route["column_mapping"]["发生额/元贷方"], "收入金额")
+        self.assertIsNone(route["column_mapping"]["本方账户开户机构"])
+        self.assertTrue(all(value is None for value in result.rows[8]))
+
+    def test_icbc_corporate_online_pdf_extracts_identity_and_drops_quarter_totals(self):
+        module = load_input_router()
+        pdf = (
+            ROOT / "testdata" / "潘荣平消防设备" / "新余分公司"
+            / "2025年10-12月-8.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供工行企业网银 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+        flattened = {
+            str(value or "").strip()
+            for row in result.rows
+            for value in row
+        }
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["bank"], "中国工商银行")
+        self.assertEqual(route["account_type"], "对公")
+        self.assertEqual(route["fingerprint_id"], "md5:779ac95e49164978d2f63a808b850459")
+        self.assertIn("温州平荣消防器材有限公司江西分公司", result.preamble)
+        self.assertIn("1505201109200407568", result.preamble)
+        self.assertNotIn("合计 (人民币):", flattened)
+        self.assertNotIn("借方发生额：", flattened)
+        self.assertNotIn("贷方发生额：", flattened)
 
     def test_bank_of_nanjing_transaction_detail_xls_route(self):
         module = load_input_router()

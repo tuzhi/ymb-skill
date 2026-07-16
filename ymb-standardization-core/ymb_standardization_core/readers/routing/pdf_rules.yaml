@@ -940,14 +940,19 @@
   reader_options:
     text_table_layout: currency
   reader_id: pdfplumber_text_lines
-- id: md5:fcbe39d694aa34cf564500f187aa8137
+- id: md5:779ac95e49164978d2f63a808b850459
   file_type: pdf
-  bank: 未识别
+  bank: 中国工商银行
   account_type: 对公
   fingerprint:
     identity:
       any:
-      - 企业网上银行--账户管理/明细查询
+      - 中国工商银行版权所有
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '单位名称[:：]\s*([^*\n]+?)\s*(?=\*?账号[:：])'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{10,})'
     columns:
       all:
         交易时间: 交易时间
@@ -960,6 +965,12 @@
         摘要: 银行备注
         操作: null
         详细信息: null
+  reader_options:
+    drop_rows:
+    - any_values:
+      - '合计 (人民币):'
+      - '借方发生额：'
+      - '贷方发生额：'
   reader_id: pdfplumber_table
 - id: md5:cdccd6123047eb2b26165e7e19d4e205
   file_type: pdf

@@ -170,6 +170,16 @@ def _drop_configured_rows(rows, rules):
     for row in rows[1:]:
         drop = False
         for rule in rules:
+            any_values = {
+                str(item).strip()
+                for item in rule.get("any_values", [])
+                if str(item).strip()
+            }
+            if any_values and any(
+                str(value or "").strip() in any_values for value in row
+            ):
+                drop = True
+                break
             column = str(rule.get("column") or "").strip()
             if column not in headers:
                 continue
@@ -331,12 +341,13 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     if reader_id == "pdfplumber_line_table":
         return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
     if reader_id == "pdfplumber_table":
-        return _extract_pdf_tables_default(
+        rows = _extract_pdf_tables_default(
             pdf,
             column_transforms=column_transforms,
             word_filters=route_info.get("word_filters") or {},
             row_anchor=route_info.get("row_anchor") or {},
         )
+        return _drop_configured_rows(rows, route_info.get("drop_rows") or [])
     return []
 
 

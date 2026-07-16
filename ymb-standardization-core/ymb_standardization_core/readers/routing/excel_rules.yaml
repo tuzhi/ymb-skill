@@ -654,7 +654,7 @@
         凭证号: null
         交易介质编号: null
   reader_id: openpyxl_grid
-- id: md5:18380fd1c071bab330ba5094f2fe27b8
+- id: md5:b08faed90eca67f6b2aa6f2c0751540c
   file_type: excel
   bank: 中国建设银行
   account_type: 对公
@@ -689,8 +689,14 @@
         企业流水号: null
         本方账号: 本方账户
         本方账户名称: 本方名称
-        本方账户开户机构: 本方账户
+        本方账户开户机构: null
   reader_id: openpyxl_grid
+  reader_options:
+    header_merge:
+      rows: 2
+      columns:
+        发生额/元借方: 支出金额
+        发生额/元贷方: 收入金额
 - id: md5:e49c078d0db822b618768b7a1eb159bc
   file_type: excel
   bank: 中国建设银行
