@@ -419,6 +419,34 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "交易状态"], "正常")
         self.assertEqual(df.loc[1, "分析收入金额"], 100)
 
+    def test_bank_write_off_uses_same_strict_pairing_as_reversal(self):
+        common = {
+            "本方账户": "6227002061070284107",
+            "来源文件名": "银行流水.pdf",
+            "交易时间": "2025-07-09 00:00:00",
+            "对手名称": "刘文平",
+            "对手账户": "6216617003004764283",
+            "一级标签": "其他类",
+            "二级标签": "其他",
+            "三级标签": "其他支出",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "90", "银行备注": "跨行转出",
+             "账户方附言": "跨行转出", "收入金额": "", "支出金额": "20000", "账户余额": "647932.08"},
+            {**common, "交易唯一编号": "TX-write-off", "来源行号": "91", "银行备注": "抹账",
+             "账户方附言": "跨行转出", "收入金额": "", "支出金额": "20000", "账户余额": "667932.08"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["配对组数"], 1)
+        self.assertEqual(summary["银行冲正"]["待复核冲正数"], 0)
+        self.assertEqual(df["交易状态"].tolist(), ["被抹账", "抹账"])
+        self.assertEqual(df["分析交易金额"].tolist(), [0, 0])
+        self.assertEqual(df.loc[1, "二级标签"], "冲正交易")
+        self.assertEqual(df.loc[1, "三级标签"], "抹账")
+        self.assertEqual(df.loc[1, "命中关键词"], "抹账+相邻交易+余额闭环")
+
     def test_technical_alipay_order_ids_do_not_match_order_keyword_rules(self):
         rules = pd.DataFrame([
             {

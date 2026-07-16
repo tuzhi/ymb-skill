@@ -325,6 +325,16 @@ def _relation_account(value):
     return re.sub(r"[^0-9A-Za-z*]", "", _relation_text(value))
 
 
+def _bank_reversal_type(value):
+    """Return the bank's cancellation term without changing pairing semantics."""
+    text = _relation_text(value)
+    if "抹账" in text:
+        return "抹账"
+    if "冲正" in text:
+        return "冲正"
+    return ""
+
+
 def _same_transaction_day(left, right):
     values = pd.to_datetime(pd.Series([left, right]), errors="coerce")
     if values.notna().all():
@@ -333,8 +343,9 @@ def _same_transaction_day(left, right):
 
 
 def _is_local_bank_reversal_pair(original, reversal):
-    """严格判断原文件内相邻两笔是否构成银行冲正。"""
-    if "冲正" not in _relation_text(reversal.get("银行备注")):
+    """严格判断原文件内相邻两笔是否构成银行冲正或抹账。"""
+    reversal_type = _bank_reversal_type(reversal.get("银行备注"))
+    if not reversal_type:
         return False
     if not _same_transaction_day(original.get("交易时间"), reversal.get("交易时间")):
         return False
@@ -356,7 +367,11 @@ def _is_local_bank_reversal_pair(original, reversal):
     reversal_exp = pd.to_numeric(pd.Series([reversal.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
     original_amount = float(original_inc - original_exp)
     reversal_amount = float(reversal_inc - reversal_exp)
-    if original_amount == 0 or round(original_amount + reversal_amount, 2) != 0:
+    if original_amount == 0:
+        return False
+    # 部分银行的“抹账”行仍沿用原交易借贷方向，金额列本身不反向，
+    # 但交易后余额会恢复至原交易发生前。冲正仍要求金额明确反向。
+    if reversal_type == "冲正" and round(original_amount + reversal_amount, 2) != 0:
         return False
 
     original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]
@@ -378,7 +393,7 @@ def _is_local_bank_reversal_pair(original, reversal):
 
 
 def _apply_bank_reversals(out_df):
-    """只在同一来源文件内，将冲正行与上一笔有效交易作确定性配对。"""
+    """只在同一来源文件内，将冲正/抹账行与上一笔有效交易作确定性配对。"""
     summary = {
         "配对组数": 0,
         "被冲正原始交易数": 0,
@@ -390,7 +405,8 @@ def _apply_bank_reversals(out_df):
     if out_df.empty or not required.issubset(out_df.columns):
         return summary
 
-    reversal_mask = out_df["银行备注"].astype(str).str.contains("冲正", regex=False, na=False)
+    reversal_types = out_df["银行备注"].map(_bank_reversal_type)
+    reversal_mask = reversal_types != ""
     unresolved = set(out_df.index[reversal_mask])
     source_names = out_df["来源文件名"].fillna("").astype(str)
     for _, source_idx in out_df.groupby(source_names, sort=False).groups.items():
@@ -416,19 +432,20 @@ def _apply_bank_reversals(out_df):
 
             original_id = str(original_row.get("交易唯一编号") or "")
             reversal_id = str(reversal_row.get("交易唯一编号") or "")
+            reversal_type = reversal_types.loc[reversal_idx]
             paired = [original_idx, reversal_idx]
             out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
-            out_df.loc[original_idx, "交易状态"] = "被冲正"
-            out_df.loc[reversal_idx, "交易状态"] = "冲正"
+            out_df.loc[original_idx, "交易状态"] = f"被{reversal_type}"
+            out_df.loc[reversal_idx, "交易状态"] = reversal_type
             out_df.loc[original_idx, "关联冲正交易编号"] = reversal_id
             out_df.loc[reversal_idx, "关联冲正交易编号"] = original_id
             out_df.loc[reversal_idx, "一级标签"] = "其他类"
             out_df.loc[reversal_idx, "二级标签"] = "冲正交易"
-            out_df.loc[reversal_idx, "三级标签"] = "冲正"
+            out_df.loc[reversal_idx, "三级标签"] = reversal_type
             out_df.loc[reversal_idx, "标签来源"] = "银行冲正配对"
             out_df.loc[reversal_idx, "标签置信度"] = 0.95
             out_df.loc[reversal_idx, "命中规则编号"] = "BANK_LOCAL_REVERSAL"
-            out_df.loc[reversal_idx, "命中关键词"] = "冲正+相邻交易+余额闭环"
+            out_df.loc[reversal_idx, "命中关键词"] = f"{reversal_type}+相邻交易+余额闭环"
             out_df.loc[reversal_idx, "命中字段"] = "银行备注"
             summary["配对组数"] += 1
             summary["被冲正原始交易数"] += 1
@@ -519,9 +536,9 @@ def tag(csv_path, rules_path, out_dir=None):
         "人工复核事项": [
             {
                 "交易唯一编号": uid,
-                "复核原因": "银行备注含冲正，但未与同文件上一笔交易形成金额、对手和余额闭环",
+                "复核原因": "银行备注含冲正/抹账，但未与同文件上一笔交易形成金额、对手和余额闭环",
                 "候选标签": [],
-                "建议动作": "核对原始文件中的原交易与冲正关系",
+                "建议动作": "核对原始文件中的原交易与冲正/抹账关系",
             }
             for uid in relation_summary["银行冲正"]["待复核交易编号列表"]
         ] + [{"交易唯一编号": uid, "复核原因": "规则未命中，归兜底其他类",
