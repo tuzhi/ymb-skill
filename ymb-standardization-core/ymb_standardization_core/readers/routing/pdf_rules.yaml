@@ -1068,7 +1068,7 @@
       pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
       replacement: '\1'
   reader_id: pdfplumber_text_lines
-- id: md5:099d6dd5362e8052b2b079fac6ebf6e0
+- id: md5:350f23537180795535cad737d2e0c06b
   file_type: pdf
   bank: 丰城顺银村镇银行
   account_type: 个人
@@ -1076,6 +1076,9 @@
     identity:
       any:
       - 丰城顺银村镇银行股份有限公司
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
     columns:
       all:
         账户/卡明细信息: null

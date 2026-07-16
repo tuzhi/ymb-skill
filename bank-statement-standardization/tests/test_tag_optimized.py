@@ -447,6 +447,28 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "三级标签"], "抹账")
         self.assertEqual(df.loc[1, "命中关键词"], "抹账+相邻交易+余额闭环")
 
+    def test_bank_explicit_write_back_pairs_placeholder_counterparty(self):
+        common = {
+            "本方账户": "6216286618800011264", "来源文件名": "顺银流水.pdf",
+            "交易时间": "2025-06-04 09:50:43", "一级标签": "其他类",
+            "二级标签": "其他", "三级标签": "其他支出", "账户方附言": "",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-original", "来源行号": "10",
+             "对手名称": "熊益文", "对手账户": "6228481568727174579", "银行备注": "转帐",
+             "收入金额": "", "支出金额": "10710", "账户余额": "1283528"},
+            {**common, "交易唯一编号": "TX-write-back", "来源行号": "11",
+             "交易时间": "2025-06-04 09:50:44", "对手名称": "/",
+             "对手账户": "3118083303100200700151", "银行备注": "冲销",
+             "收入金额": "10710", "支出金额": "", "账户余额": "1294238"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["配对组数"], 1)
+        self.assertEqual(df["交易状态"].tolist(), ["被冲销", "冲销"])
+        self.assertEqual(df.loc[1, "三级标签"], "冲销")
+
     def test_bank_implicit_reversal_requires_same_precise_time_and_balance_closure(self):
         common = {
             "本方账户": "A100", "来源文件名": "工商银行流水.xls",

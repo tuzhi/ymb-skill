@@ -157,7 +157,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:099d6dd5362e8052b2b079fac6ebf6e0")
+        self.assertEqual(route_info["fingerprint_id"], "md5:350f23537180795535cad737d2e0c06b")
         self.assertEqual(rows[0], [
             "交易时间",
             "存入/支取",
@@ -169,11 +169,11 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "摘要",
             "备注",
         ])
-        self.assertGreater(len(rows), 100)
+        self.assertEqual(len(rows) - 1, 2000)
         self.assertEqual(rows[1], [
             "2025-06-04 09:29:38",
             "-30870.00",
-            "62284823286 64065375",
+            "6228482328664065375",
             "朱小平",
             "中国农业银行股份 有限公司",
             "1525858.00",
@@ -181,6 +181,23 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "转帐",
             "２０２５０６０２货款",
         ])
+        self.assertIn(
+            [
+                "2025-06-04 09:50:44", "+10710.00", "3118083303100200700151",
+                "/", "广东顺德农村商业 银行股份有限公司", "1294238.00",
+                "核心渠道", "冲销", "/ 补记 /",
+            ],
+            rows,
+        )
+        self.assertTrue(any(row[0] == "2025-06-13 11:12:15" and row[2] == "" for row in rows[1:]))
+        self.assertIn(
+            [
+                "2025-07-03 09:35:33", "-6980.00", "6228482328338011870",
+                "周海燕", "中国农业银行股份 有限公司", "292144.21",
+                "核心渠道", "转帐", "２０２５０７０２货款",
+            ],
+            rows,
+        )
 
     def test_pdfplumber_word_column_table_reader_groups_words_by_serial_number(self):
         cases = [

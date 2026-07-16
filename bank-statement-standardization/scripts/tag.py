@@ -332,6 +332,8 @@ def _bank_reversal_type(value):
         return "抹账"
     if "冲正" in text:
         return "冲正"
+    if "冲销" in text:
+        return "冲销"
     return ""
 
 
@@ -400,12 +402,17 @@ def _is_local_bank_reversal_pair(original, reversal):
 
     original_name = _relation_text(original.get("对手名称"))
     reversal_name = _relation_text(reversal.get("对手名称"))
-    if not original_name or original_name != reversal_name:
-        return False
     original_account = _relation_account(original.get("对手账户"))
     reversal_account = _relation_account(reversal.get("对手账户"))
-    if original_account and reversal_account and original_account != reversal_account:
-        return False
+    placeholder_reversal = reversal_type == "冲销" and reversal_name in {"", "/", "-", "***", "***/"}
+    if placeholder_reversal:
+        if not original_name:
+            return False
+    else:
+        if not original_name or original_name != reversal_name:
+            return False
+        if original_account and reversal_account and original_account != reversal_account:
+            return False
 
     original_inc = pd.to_numeric(pd.Series([original.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
     original_exp = pd.to_numeric(pd.Series([original.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
@@ -417,7 +424,7 @@ def _is_local_bank_reversal_pair(original, reversal):
         return False
     # 部分银行的“抹账”行仍沿用原交易借贷方向，金额列本身不反向，
     # 但交易后余额会恢复至原交易发生前。冲正仍要求金额明确反向。
-    if reversal_type == "冲正" and round(original_amount + reversal_amount, 2) != 0:
+    if reversal_type in {"冲正", "冲销"} and round(original_amount + reversal_amount, 2) != 0:
         return False
 
     original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]

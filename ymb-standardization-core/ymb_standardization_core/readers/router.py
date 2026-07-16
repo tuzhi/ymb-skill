@@ -1108,13 +1108,16 @@ TEXT_SEPARATOR_TABLE_HEADER = [
 def _split_text_separator_date_line(line):
     import re
 
-    match = re.match(r"^(20\d{2}-\d{2}-\d{2})\s+(\d{6,})(?:\s+(.*))?$", (line or "").strip())
+    match = re.match(r"^(20\d{2}-\d{2}-\d{2})(?:\s+(.*))?$", (line or "").strip())
     if not match:
         return None
+    remainder = (match.group(2) or "").strip()
+    parts = remainder.split(maxsplit=1)
+    has_account = bool(parts and re.fullmatch(r"\d{6,}", parts[0]))
     return {
         "date": match.group(1),
-        "account_head": match.group(2),
-        "bank_head": (match.group(3) or "").strip(),
+        "account_head": parts[0] if has_account else "",
+        "bank_head": (parts[1] if len(parts) > 1 else "") if has_account else remainder,
     }
 
 
@@ -1139,7 +1142,7 @@ def _split_text_separator_amount_line(line, bank_head, bank_tail):
         return None
     transfer_flag = tokens[0]
     amount_idx = None
-    amount_re = re.compile(r"^-+?\d[\d,]*\.\d{1,2}$")
+    amount_re = re.compile(r"^(?:--|[+-])\d[\d,]*\.\d{1,2}$")
     for idx in range(1, len(tokens)):
         if amount_re.match(tokens[idx]):
             amount_idx = idx
@@ -1157,8 +1160,20 @@ def _split_text_separator_amount_line(line, bank_head, bank_tail):
 
     before_balance = tokens[amount_idx + 1:balance_idx]
     if bank_head or bank_tail:
-        counterparty_name = " ".join(before_balance).strip()
-        counterparty_bank = " ".join(x for x in [bank_head, bank_tail] if x).strip()
+        bank_token_idx = next(
+            (
+                idx for idx, token in enumerate(before_balance[1:], start=1)
+                if any(marker in token for marker in ("银行", "信用社", "农商", "农村商业", "村镇"))
+            ),
+            None,
+        )
+        if bank_token_idx is None:
+            counterparty_name = " ".join(before_balance).strip()
+            inline_bank = ""
+        else:
+            counterparty_name = " ".join(before_balance[:bank_token_idx]).strip()
+            inline_bank = " ".join(before_balance[bank_token_idx:]).strip()
+        counterparty_bank = " ".join(x for x in [bank_head, inline_bank, bank_tail] if x).strip()
     else:
         counterparty_name = before_balance[0] if before_balance else ""
         counterparty_bank = " ".join(before_balance[1:]).strip()
@@ -1169,7 +1184,7 @@ def _split_text_separator_amount_line(line, bank_head, bank_tail):
     remark = " ".join(after_balance[2:]).strip() if len(after_balance) > 2 else ""
     amount = tokens[amount_idx].replace(",", "")
     if amount.startswith("--"):
-        amount = "-" + amount.lstrip("-")
+        amount = "+" + amount.lstrip("-")
     return {
         "transfer_flag": transfer_flag,
         "amount": amount,
@@ -1198,11 +1213,43 @@ def _parse_text_separator_transaction(lines, start_idx):
     if not amount_part:
         return None
 
-    account = " ".join(x for x in [date_part["account_head"], time_part["account_tail"]] if x).strip()
+    account = "".join(x for x in [date_part["account_head"], time_part["account_tail"]] if x).strip()
     return [
         f"{date_part['date']} {time_part['time']}",
         amount_part["amount"],
         account,
+        amount_part["counterparty_name"],
+        amount_part["counterparty_bank"],
+        amount_part["balance"],
+        amount_part["channel"],
+        amount_part["summary"],
+        amount_part["remark"],
+    ]
+
+
+def _parse_text_separator_page_boundary_transaction(date_line, time_line):
+    """Parse a row whose first two physical lines were merged at a PDF page footer."""
+    import re
+
+    match = re.match(
+        r"^(20\d{2}-\d{2}-\d{2})\s+(\S+)\s+((?:--|[+-])\d[\d,]*\.\d{1,2})"
+        r"(?:\s+(\d{6,}))?(?:\s+(.*))?$",
+        str(date_line or "").strip(),
+    )
+    time_part = _split_text_separator_time_line(time_line)
+    if not match or not time_part:
+        return None
+    account_head = (match.group(4) or "").strip()
+    amount_line = " ".join(
+        part for part in [match.group(2), match.group(3), (match.group(5) or "").strip()] if part
+    )
+    amount_part = _split_text_separator_amount_line(amount_line, "", time_part["bank_tail"])
+    if not amount_part:
+        return None
+    return [
+        f"{match.group(1)} {time_part['time']}",
+        amount_part["amount"],
+        "".join(part for part in [account_head, time_part["account_tail"]] if part),
         amount_part["counterparty_name"],
         amount_part["counterparty_bank"],
         amount_part["balance"],
@@ -1222,20 +1269,32 @@ def _extract_pdf_text_separator_table_rows(pdf):
     rows = [TEXT_SEPARATOR_TABLE_HEADER]
     import re
 
+    all_lines = []
     for page in pdf.pages:
         text = page.extract_text() or ""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not any(_is_text_separator_line(line) for line in lines):
             continue
-        idx = 0
-        while idx < len(lines):
-            if re.match(r"^20\d{2}-\d{2}-\d{2}\s+\d{6,}", lines[idx]):
-                parsed = _parse_text_separator_transaction(lines, idx)
-                if parsed:
-                    rows.append(parsed)
-                    idx += 3
-                    continue
-            idx += 1
+        all_lines.extend(lines)
+
+    idx = 0
+    while idx < len(all_lines):
+        if re.match(r"^20\d{2}-\d{2}-\d{2}(?:\s|$)", all_lines[idx]):
+            parsed = _parse_text_separator_transaction(all_lines, idx)
+            if not parsed and re.search(r"\s(?:--|[+-])\d[\d,]*\.\d{1,2}(?:\s|$)", all_lines[idx]):
+                for continuation_idx in range(idx + 1, min(idx + 20, len(all_lines))):
+                    if re.match(r"^20\d{2}-\d{2}-\d{2}(?:\s|$)", all_lines[continuation_idx]):
+                        break
+                    if re.match(r"^\d{2}:\d{2}:\d{2}(?:\s|$)", all_lines[continuation_idx]):
+                        parsed = _parse_text_separator_page_boundary_transaction(
+                            all_lines[idx], all_lines[continuation_idx]
+                        )
+                        break
+            if parsed:
+                rows.append(parsed)
+                idx += 3
+                continue
+        idx += 1
     return rows if len(rows) > 1 else []
 
 
