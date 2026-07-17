@@ -1230,6 +1230,10 @@
       field: 收支方向
       pattern: ^分付还款$
       replacement: 支出
+    - source: 交易对方
+      field: 对手名称
+      pattern: '(?<=[\u3400-\u9fff])\s+(?=[\ue000-\uf8ff])'
+      replacement: ''
     column_transforms:
       交易对方:
         newline: cjk_join

@@ -1028,6 +1028,26 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             self.assertTrue(all(row[amount_field] for row in matched))
             self.assertTrue(all(not row[opposite_field] for row in matched))
 
+    def test_wechat_pdf_removes_wrap_space_before_private_use_nickname_symbol(self):
+        pdf = (
+            REPO_ROOT / "bank-statement-standardization" / "testdata" / "熊全子"
+            / "微信支付交易明细证明(20250101-20251231)_20260606101535.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供熊全子微信流水样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, _report = standardize.standardize(str(pdf), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
+
+        matched = [row for row in rows if row["对手名称"].startswith("AAAAA\ue513峰")]
+        self.assertEqual(len(matched), 9)
+        self.assertEqual(
+            {row["对手名称"] for row in matched},
+            {"AAAAA\ue513峰\ue513尚\ue513五金建材"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
