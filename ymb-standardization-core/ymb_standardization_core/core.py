@@ -317,6 +317,10 @@ def best_continuity_order(rows):
         ("按日期升序·日内原序", sorted(idx, key=lambda i: (daykey(i), i))),
         ("按日期升序·日内翻转", sorted(idx, key=lambda i: (daykey(i), -i))),
     ]
+    precise_time = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
+    if all(precise_time.match(str(rows[i][3] or "").strip()) for i in idx):
+        # 仅秒级及以上时间才允许按完整时间重排；日期级/分钟级流水不能据此臆定日内顺序。
+        candidates.append(("按完整时间升序", sorted(idx, key=lambda i: (rows[i][3], i))))
     chain = _chain_order(rows)         # 余额链重建（治同秒多笔/内部序≠时间），仅当严格更优才胜出
     if chain is not None:
         candidates.append(("余额链重建", chain))

@@ -209,6 +209,20 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "2026-01-03",
         ])
 
+    def test_precise_timestamp_order_can_repair_intraday_mixed_rows(self):
+        rows = [
+            (38464.34, None, 24006.00, "2025-11-30 10:00:00"),
+            (62470.34, 50000.00, None, "2025-11-24 10:00:00"),
+            (12470.34, 100.00, None, "2025-11-21 15:00:00"),
+            (12470.34, 0.10, None, "2025-11-21 16:35:00"),
+            (12470.24, None, 0.10, "2025-11-21 16:07:00"),
+        ]
+
+        order, strategy = standardize.best_continuity_order(rows)
+
+        self.assertEqual(strategy, "按完整时间升序")
+        self.assertEqual(order, [2, 4, 3, 1, 0])
+
     def test_boc_payer_payee_columns_resolve_against_inquirer_account(self):
         excel = (
             REPO_ROOT

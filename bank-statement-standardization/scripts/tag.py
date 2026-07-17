@@ -446,7 +446,7 @@ def _is_local_bank_reversal_pair(original, reversal):
 
 
 def _apply_bank_reversals(out_df):
-    """只在同一来源文件内，将冲正/抹账行与上一笔有效交易作确定性配对。"""
+    """只在同一来源文件内，将冲正/抹账行与物理相邻的有效交易作确定性配对。"""
     summary = {
         "配对组数": 0,
         "被冲正原始交易数": 0,
@@ -468,21 +468,28 @@ def _apply_bank_reversals(out_df):
         ordered["__source_row"] = pd.to_numeric(ordered["来源行号"], errors="coerce")
         ordered = ordered[ordered["__source_row"].notna()].sort_values("__source_row", kind="mergesort")
         indices = ordered.index.tolist()
-        for position in range(1, len(indices)):
-            reversal_idx = indices[position]
+        for position, reversal_idx in enumerate(indices):
             if reversal_idx not in unresolved:
                 continue
-            original_idx = indices[position - 1]
-            original_row = out_df.loc[original_idx]
             reversal_row = out_df.loc[reversal_idx]
-            original_source_row = float(ordered.loc[original_idx, "__source_row"])
             reversal_source_row = float(ordered.loc[reversal_idx, "__source_row"])
-            if reversal_source_row - original_source_row != 1:
+            matches = []
+            for neighbor_position in (position - 1, position + 1):
+                if neighbor_position < 0 or neighbor_position >= len(indices):
+                    continue
+                original_idx = indices[neighbor_position]
+                original_source_row = float(ordered.loc[original_idx, "__source_row"])
+                if abs(reversal_source_row - original_source_row) != 1:
+                    continue
+                if str(out_df.loc[original_idx, "交易状态"]) != "正常":
+                    continue
+                if _is_local_bank_reversal_pair(out_df.loc[original_idx], reversal_row):
+                    matches.append(original_idx)
+            if not matches:
                 continue
-            if str(out_df.loc[original_idx, "交易状态"]) != "正常":
-                continue
-            if not _is_local_bank_reversal_pair(original_row, reversal_row):
-                continue
+            # 保留原有“优先上一来源行”的语义；仅当上一行不闭环时，才尝试倒序导出的下一来源行。
+            original_idx = matches[0]
+            original_row = out_df.loc[original_idx]
 
             original_id = str(original_row.get("交易唯一编号") or "")
             reversal_id = str(reversal_row.get("交易唯一编号") or "")
