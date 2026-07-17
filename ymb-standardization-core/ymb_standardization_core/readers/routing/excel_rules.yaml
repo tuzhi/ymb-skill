@@ -813,7 +813,7 @@
         内部编号: null
         公司一卡通号: null
   reader_id: openpyxl_grid
-- id: md5:79074121ad8d14a3f1464983a1256187
+- id: md5:06db157d302ac75531f3678ebdc778b8
   file_type: excel
   bank: 未识别
   account_type: 未知
@@ -841,7 +841,7 @@
         交易金额(元): 交易金额
         对方户名: 对手名称
         对方账号: 对手账户
-        转账类型: null
+        转账类型: 收支方向
         账户余额(元): 账户余额
         附言: 账户方附言
   reader_id: openpyxl_grid
@@ -898,6 +898,10 @@
     - source: 交易类型
       field: 收支方向
       pattern: ^分付还款$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^信用卡还款$
       replacement: 支出
   reader_id: openpyxl_grid
 - id: md5:5ee6d3955fa1cca84bd4bed11ae23c6f

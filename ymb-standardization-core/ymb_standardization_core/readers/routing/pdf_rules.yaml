@@ -1084,6 +1084,10 @@
       field: 收支方向
       pattern: ^分付还款$
       replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^信用卡还款$
+      replacement: 支出
     - source: 交易对方
       field: 对手名称
       pattern: '(?<=[\u3400-\u9fff])\s+(?=[\ue000-\uf8ff])'

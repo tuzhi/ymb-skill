@@ -361,6 +361,23 @@ def _relation_account(value):
     return re.sub(r"[^0-9A-Za-z*]", "", _relation_text(value))
 
 
+def _explicit_reversal_accounts_compatible(left, right):
+    """显式冲正中允许完整账号与有足够首尾证据的掩码账号匹配。"""
+    left_account = _relation_account(left)
+    right_account = _relation_account(right)
+    if not left_account or not right_account:
+        return True
+    if left_account == right_account:
+        return True
+    if ("*" in left_account) == ("*" in right_account):
+        return False
+
+    masked, full = (left_account, right_account) if "*" in left_account else (right_account, left_account)
+    prefix = masked.split("*", 1)[0]
+    suffix = masked.rsplit("*", 1)[-1]
+    return len(prefix) >= 4 and len(suffix) >= 4 and full.startswith(prefix) and full.endswith(suffix)
+
+
 def _bank_reversal_type(value):
     """Return the bank's cancellation term without changing pairing semantics."""
     text = _relation_text(value)
@@ -447,7 +464,7 @@ def _is_local_bank_reversal_pair(original, reversal):
     else:
         if not original_name or original_name != reversal_name:
             return False
-        if original_account and reversal_account and original_account != reversal_account:
+        if not _explicit_reversal_accounts_compatible(original_account, reversal_account):
             return False
 
     original_inc = pd.to_numeric(pd.Series([original.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
@@ -476,7 +493,8 @@ def _is_local_bank_reversal_pair(original, reversal):
         _relation_text(original.get("银行备注")),
         _relation_text(original.get("账户方附言")),
     }
-    if reversal_memo and reversal_memo not in original_context:
+    explicit_original_reference = "冲正原交易" in reversal_memo or "原流水号" in reversal_memo
+    if reversal_memo and reversal_memo not in original_context and not explicit_original_reference:
         return False
     return True
 

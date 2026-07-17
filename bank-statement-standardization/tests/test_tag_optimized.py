@@ -451,6 +451,49 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "交易状态"], "正常")
         self.assertEqual(df.loc[1, "分析收入金额"], 100)
 
+    def test_bank_reversal_accepts_full_and_masked_counterparty_accounts(self):
+        common = {
+            "本方账户": "1502069301003807332", "来源文件名": "工商银行历史明细.pdf",
+            "对手名称": "冯俊昌", "交易时间": "2026-01-22 13:32:17",
+            "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他支出",
+            "账户方附言": "",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "39",
+             "对手账户": "6251939201318881", "银行备注": "跨行汇款",
+             "收入金额": "", "支出金额": "3961", "账户余额": "6682.62"},
+            {**common, "交易唯一编号": "TX-reversal", "来源行号": "40",
+             "交易时间": "2026-01-22 13:32:19", "对手账户": "6251****8881",
+             "银行备注": "汇款冲正", "收入金额": "3961", "支出金额": "",
+             "账户余额": "10643.62"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["配对组数"], 1)
+        self.assertEqual(df["交易状态"].tolist(), ["被冲正", "冲正"])
+
+    def test_bank_reversal_accepts_explicit_original_transaction_reference(self):
+        common = {
+            "本方账户": "6228480678975281778", "来源文件名": "农业银行流水.pdf",
+            "交易时间": "2025-10-11 17:42:11", "对手名称": "张朋贤",
+            "对手账户": "", "一级标签": "其他类", "二级标签": "其他",
+            "三级标签": "其他支出",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "550",
+             "银行备注": "转支", "账户方附言": "", "收入金额": "",
+             "支出金额": "20000", "账户余额": "898.30"},
+            {**common, "交易唯一编号": "TX-reversal", "来源行号": "551",
+             "银行备注": "冲正", "账户方附言": "冲正原交易，原流水号为1031000000262025101273846687",
+             "收入金额": "20000", "支出金额": "", "账户余额": "20898.30"},
+        ])
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["配对组数"], 1)
+        self.assertEqual(df["交易状态"].tolist(), ["被冲正", "冲正"])
+
     def test_bank_write_off_uses_same_strict_pairing_as_reversal(self):
         common = {
             "本方账户": "6227002061070284107",
