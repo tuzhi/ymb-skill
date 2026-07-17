@@ -550,6 +550,35 @@
         余额: 账户余额
         对方账户名: 对手名称
         对方卡号/账号: 对手账户
+  reader_options:
+    column_transforms:
+      交易名称:
+        newline: cjk_join
+      渠道:
+        newline: cjk_join
+      网点名称:
+        newline: cjk_join
+      附言:
+        newline: cjk_join
+      对方账户名:
+        newline: cjk_join
+      对方卡号/账号:
+        newline: remove_all
+      对方开户行:
+        newline: cjk_join
+    extract_mapping:
+    - source: 对方账户名
+      field: 对手名称
+      pattern: '^\s*-+\s*$'
+      replacement: ''
+    - source: 对方卡号/账号
+      field: 对手账户
+      pattern: '^\s*-+\s*$'
+      replacement: ''
+    - source: 对方账户名
+      field: 对手名称
+      pattern: '^(.*?)-\s+(.+)$'
+      replacement: '\1-\2'
   reader_id: pdfplumber_table
 - id: md5:9858d002b7a09dd4d28147128a08c637
   file_type: pdf
@@ -1139,7 +1168,7 @@
       对方户名:
         newline: cjk_join
   reader_id: pdfplumber_coordinate_table
-- id: md5:a13c8439b61942e06e33a571713bd85c
+- id: md5:736db5142663fe121ee00a19d869e2a9
   file_type: pdf
   bank: 微信支付
   account_type: 个人
@@ -1151,7 +1180,7 @@
     - field: 本方名称
       pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
     - field: 本方账户
-      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息如\s*下'
+      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息\s*如\s*下'
     columns:
       all:
         兹证明: null

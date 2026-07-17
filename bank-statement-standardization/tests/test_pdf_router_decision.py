@@ -376,7 +376,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
             "md5:eb90af33b5f89117b801f28b10fdc111",
             "md5:ad9958268d66435c0cba9f63bd3f8a34",
-            "md5:a13c8439b61942e06e33a571713bd85c",
+            "md5:736db5142663fe121ee00a19d869e2a9",
         ]:
             self.assertIn(fingerprint_id, by_id)
         self.assertEqual(rules[0].bank, "中国农业银行")
@@ -389,7 +389,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(by_id["md5:ad9958268d66435c0cba9f63bd3f8a34"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
-            self.assertIn(marker, by_id["md5:a13c8439b61942e06e33a571713bd85c"].column_markers)
+            self.assertIn(marker, by_id["md5:736db5142663fe121ee00a19d869e2a9"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
         rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "pdf_rules.yaml"
@@ -441,7 +441,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:a13c8439b61942e06e33a571713bd85c")
+        self.assertEqual(result["fingerprint_id"], "md5:736db5142663fe121ee00a19d869e2a9")
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["decision"], "matched")
 

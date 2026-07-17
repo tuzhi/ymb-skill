@@ -814,6 +814,77 @@ class InputRouterTests(unittest.TestCase):
         self.assertIn("郭金伟", result.preamble)
         self.assertGreater(len(result.rows), 10)
 
+    def test_boc_personal_statement_joins_multiline_counterparty_fields(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "王超" / "KA0200035ff72ed91cf0001.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供王超中国银行个人流水 PDF 样本")
+
+        result = module.read_rows(str(pdf), hints={"open_password": "025423"})
+        route = result.route_info
+        headers = result.rows[0]
+        rows = [dict(zip(headers, row)) for row in result.rows[1:]]
+
+        self.assertEqual(route["fingerprint_id"], "md5:46cb259aaeb59d1ed620281dcd3f1714")
+        self.assertEqual(route["column_transforms"]["对方账户名"]["newline"], "cjk_join")
+        self.assertEqual(route["column_transforms"]["对方卡号/账号"]["newline"], "remove_all")
+        self.assertIn("支付宝支付科技有限公司", {row["对方账户名"] for row in rows})
+        self.assertIn(
+            "付费通(拼多多支付)- 拼多多钱包余额充值",
+            {row["对方账户名"] for row in rows},
+        )
+        self.assertIn("10200101104401040000012", {row["对方卡号/账号"] for row in rows})
+        self.assertEqual(
+            route["extract_mapping"],
+            [
+                {
+                    "source": "对方账户名",
+                    "field": "对手名称",
+                    "pattern": r"^\s*-+\s*$",
+                    "replacement": "",
+                },
+                {
+                    "source": "对方卡号/账号",
+                    "field": "对手账户",
+                    "pattern": r"^\s*-+\s*$",
+                    "replacement": "",
+                },
+                {
+                    "source": "对方账户名",
+                    "field": "对手名称",
+                    "pattern": r"^(.*?)-\s+(.+)$",
+                    "replacement": r"\1-\2",
+                },
+            ],
+        )
+
+    def test_wechat_proof_extracts_account_when_preamble_wraps_before_ru_xia(self):
+        module = load_input_router()
+        pdf = (
+            ROOT
+            / "testdata"
+            / "范新春"
+            / "微信支付交易明细证明(20250501-20260501)_20260527150734.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供杨小燕微信支付交易明细证明 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+        header_idx, _hits = core.find_header_row(result.rows)
+        account = core.sniff_account_info(
+            result.rows,
+            header_idx,
+            preamble=result.preamble,
+            preamble_mapping=route.get("preamble_mapping"),
+            preamble_extractors=route.get("preamble_extractors"),
+            column_mapping=route.get("column_mapping"),
+        )
+
+        self.assertEqual(route["fingerprint_id"], "md5:736db5142663fe121ee00a19d869e2a9")
+        self.assertEqual(account["本方名称"], "杨小燕")
+        self.assertEqual(account["本方账户"], "wxid_mkxnotkoc4gw21")
+
     def test_cmb_corporate_account_statement_pdf_route_uses_confirmed_bank(self):
         module = load_input_router()
         pdf = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
