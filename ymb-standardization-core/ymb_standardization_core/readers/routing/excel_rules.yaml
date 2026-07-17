@@ -1151,7 +1151,7 @@
   reader_id: openpyxl_grid
 - id: md5:ed497d178cc98663ced8a9317b842e73
   file_type: excel
-  bank: 未识别
+  bank: 江西银行
   account_type: 对公
   fingerprint:
     metadata:
