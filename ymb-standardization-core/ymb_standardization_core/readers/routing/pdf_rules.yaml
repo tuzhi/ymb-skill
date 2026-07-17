@@ -341,42 +341,6 @@
       drop_chars:
       - rotated: true
   reader_id: pdfplumber_table
-- id: md5:2c4f5f565b4fc6362b8e75ca3fb5282d
-  file_type: pdf
-  bank: 中国工商银行
-  account_type: 个人
-  fingerprint:
-    metadata:
-      all:
-        Creator: WPS 表格
-        Title: 借记卡账户明细清单
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 中国工商银行借记账户历史明细
-    preamble_extractors:
-    - field: 本方名称
-      pattern: '户名[:：]\s*([^\s]+)'
-    columns:
-      all:
-        电子版: null
-        卡号: 本方账户
-        户名: 本方名称
-        交易日期: 交易日期
-        账号: 本方账户
-        储种: null
-        序号: null
-        币种: null
-        钞汇: null
-        地区: null
-        收入/支出金额: 收入金额
-  reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
-  reader_id: pdfplumber_table
 - id: md5:1ac2b953b8acacc332c7e2e0544eb1f6
   file_type: pdf
   bank: 中国工商银行
@@ -881,51 +845,6 @@
         收(付)方账号: 对手账户
         交易类型: 银行备注
   reader_id: pdfplumber_line_table
-- id: md5:99ce159ec31cbf24d7dc7279c6844048
-  file_type: pdf
-  bank: 九江银行
-  account_type: 个人
-  fingerprint:
-    style:
-      all:
-      - text: 九江银行交易流水
-        font: SimSun
-        size_min: 9
-        size_max: 11
-        top_max: 40
-        centered: true
-    date_format:
-      any:
-      - yyyy-mm-dd hh:mm:ss
-    identity:
-      any:
-      - 九江银行交易流水
-      - Transaction Statement of Bank of JiuJiang
-    preamble_extractors:
-    - field: 本方名称
-      pattern: '姓名[:：]\s*([^\s]+)'
-    - field: 本方账户
-      pattern: '账号[:：]\s*(\d[\d*\s]{5,}\d)'
-    columns:
-      all:
-        '合同ID号:': null
-        '版本: V2': null
-        九江银行交易流水: null
-        Transaction Statement of Bank of JiuJiang: null
-        '姓名:': null
-        '账号:': 本方账户
-        '账户类型:': null
-        '开户行:': null
-        '申请时间:': null
-        记账日期: 交易日期
-        货币: null
-        交易金额: 交易金额
-        联机余额: 账户余额
-        交易摘要: 银行备注
-        对手信息: 对手名称
-  reader_options:
-    text_table_layout: currency
-  reader_id: pdfplumber_text_lines
 - id: md5:779ac95e49164978d2f63a808b850459
   file_type: pdf
   bank: 中国工商银行

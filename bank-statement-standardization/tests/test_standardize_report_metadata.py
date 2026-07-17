@@ -17,15 +17,11 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
-    def test_icbc_personal_pdfium_and_wps_extract_owner_without_watermark_accounts(self):
+    def test_icbc_personal_pdfium_extracts_owner_without_watermark_accounts(self):
         samples = (
             (
                 "吕建光", "工商银行历史明细.pdf", "吕建光", "1502211001208140653",
                 "md5:12073bf82ed836a1dcba3d4bb8aa2047", 399,
-            ),
-            (
-                "徐长河", "工商银行历史明细（申请单号：26060513375455134973）.pdf",
-                "徐长河", "1503229401201946829", "md5:2c4f5f565b4fc6362b8e75ca3fb5282d", 281,
             ),
         )
         for folder, filename, expected_name, expected_account, expected_fp, expected_rows in samples:
@@ -343,23 +339,23 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(image["确认银行"], "上饶银行")
         self.assertEqual(image["internal_transaction_profile"]["candidate_count"], 11)
 
-    def test_jiujiang_personal_pdf_extracts_owner_and_masked_account(self):
+    def test_wps_converted_pdfs_are_marked_and_skipped(self):
         samples = (
-            ("广源流水", "熊亮流水.pdf", "熊亮", "6231 **** **** *** 6621", 3253),
-            ("金伟", "2063891248809000962_1.pdf", "金伟", "6231 **** **** *** 6272", 514),
+            ("广源流水", "熊亮流水.pdf_2"),
+            ("金伟", "2063891248809000962_1.pdf_2"),
+            ("徐长河", "工商银行历史明细（申请单号：26060513375455134973）.pdf_2"),
+            ("宁聚&付亮亮&徐美琴", "付亮亮建行3763.pdf_2"),
         )
-        for folder, filename, expected_name, expected_account, expected_rows in samples:
-            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
-                pdf = REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename
-                csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
-                with open(csv_path, encoding="utf-8-sig", newline="") as f:
-                    rows = list(csv.DictReader(f))
+        paths = [
+            str(REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename)
+            for folder, filename in samples
+        ]
 
-                self.assertEqual(len(rows), expected_rows)
-                self.assertEqual(report["文件画像"]["本方名称"], expected_name)
-                self.assertEqual(report["文件画像"]["本方账户"], expected_account)
-                self.assertEqual({row["本方名称"] for row in rows}, {expected_name})
-                self.assertEqual({row["本方账户"] for row in rows}, {expected_account})
+        candidates, skipped = standardize.screen_files(paths)
+
+        self.assertEqual(candidates, [])
+        self.assertEqual({name for name, _reason in skipped}, {filename for _folder, filename in samples})
+        self.assertTrue(all("转换文件或非原始文件" in reason for _name, reason in skipped))
 
     def test_icbc_timestamp_pdf_extracts_corporate_owner_and_account(self):
         pdf = (

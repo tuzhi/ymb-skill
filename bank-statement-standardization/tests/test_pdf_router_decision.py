@@ -778,7 +778,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -840,9 +840,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
-        self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["fingerprint_id"], "")
+        self.assertEqual(result["decision"], "unmatched")
 
     def test_icbc_debit_history_openpdf_pdf_route(self):
         text = (
@@ -859,7 +858,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:2c4f5f565b4fc6362b8e75ca3fb5282d', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:d933e13d10427ffb9d2590d52325b15e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
