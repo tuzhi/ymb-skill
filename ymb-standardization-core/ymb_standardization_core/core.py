@@ -239,20 +239,67 @@ def parse_amount(v):
 
 
 # ---- 行序整理：余额连续性优先（保留原始对账口径，消除排序导致的伪断点） -------------
-# 以下函数都以「四元组行」为输入，与 dict/DataFrame 解耦，供 standardize（单文件）与
-# integrate（账户级合并/去重后）复用：rows = [(余额|None, 收入|None, 支出|None, 交易时间字符串), ...]
+# 以下函数以「四元组行」或带批次键的「五元组行」为输入，与 dict/DataFrame 解耦，供
+# standardize（单文件）、integrate（账户级合并/去重后）及后续余额报告复用：
+# rows = [(余额|None, 收入|None, 支出|None, 交易时间字符串[, 内存批次键]), ...]
 
-def _balance_breaks(rows):
-    """按给定顺序统计余额断点数：账户余额 != 上一笔余额 + 收入 − 支出。余额是对账真值。"""
-    breaks, prev = 0, None
-    for bal, inc, exp, _t in rows:
-        inc = inc or 0
-        exp = exp or 0
-        if prev is not None and bal is not None and abs(bal - (prev + inc - exp)) >= 0.01:
-            breaks += 1
+
+def _continuity_row_parts(row):
+    """兼容原有四元组，以及仅供余额校验使用的五元组。"""
+    bal, inc, exp, transaction_time = row[:4]
+    batch_key = row[4] if len(row) > 4 else None
+    return bal, inc, exp, transaction_time, batch_key
+
+
+def _continuity_units(rows):
+    """生成余额校验单元：普通交易逐笔校验，连续批量交易汇总后只校验一次。
+
+    银行批量代发可能把一个批次展开成多名收款人的明细，但每行重复展示同一个批次后余额。
+    这里的汇总只存在于内存，不删除、不合并、不改写最终输出的逐笔交易。
+    """
+    units = []
+    for index, row in enumerate(rows):
+        bal, inc, exp, transaction_time, batch_key = _continuity_row_parts(row)
+        if batch_key and units and units[-1]["batch_key"] == batch_key:
+            unit = units[-1]
+        else:
+            unit = {
+                "batch_key": batch_key,
+                "indices": [],
+                "balance": bal,
+                "income": 0.0,
+                "expense": 0.0,
+                "time": transaction_time,
+            }
+            units.append(unit)
+        unit["indices"].append(index)
+        unit["income"] += inc or 0
+        unit["expense"] += exp or 0
+    return units
+
+
+def balance_break_indices(rows):
+    """返回余额断点对应的明细行索引；共享余额批次按批次净额只校验一次。"""
+    breaks, prev = [], None
+    for unit in _continuity_units(rows):
+        bal = unit["balance"]
+        if prev is not None and bal is not None:
+            expected = prev + unit["income"] - unit["expense"]
+            if abs(bal - expected) >= 0.01:
+                # 批次异常定位到批次末行，便于报告展示完整批次边界。
+                breaks.append(unit["indices"][-1])
         if bal is not None:
             prev = bal
     return breaks
+
+
+def continuity_unit_count(rows):
+    """返回实际余额校验单元数，批次内多笔只计一个单元。"""
+    return len(_continuity_units(rows))
+
+def _balance_breaks(rows):
+    """按给定顺序统计余额断点数；批量交易按共享余额批次计算。"""
+    return len(balance_break_indices(rows))
 
 
 def _chain_order(rows):
@@ -304,13 +351,17 @@ def best_continuity_order(rows):
     idx = list(range(n))
     if n < 3:
         return idx, "原序"
-    have_bal = sum(1 for bal, *_ in rows if bal is not None)
+    have_bal = sum(1 for row in rows if _continuity_row_parts(row)[0] is not None)
     if have_bal < max(2, n // 2):       # 余额不足以判定，退化为时间趋势
-        times = [t for *_, t in rows if t]
+        times = [
+            _continuity_row_parts(row)[3]
+            for row in rows
+            if _continuity_row_parts(row)[3]
+        ]
         dec = sum(1 for a, b in zip(times, times[1:]) if b < a)
         inc = sum(1 for a, b in zip(times, times[1:]) if b > a)
         return (idx[::-1], "时间倒序翻正") if dec > inc else (idx, "原序")
-    daykey = lambda i: (rows[i][3] or "")[:10]
+    daykey = lambda i: (_continuity_row_parts(rows[i])[3] or "")[:10]
     candidates = [
         ("原序", idx),
         ("整体翻转", idx[::-1]),
@@ -318,12 +369,18 @@ def best_continuity_order(rows):
         ("按日期升序·日内翻转", sorted(idx, key=lambda i: (daykey(i), -i))),
     ]
     precise_time = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
-    if all(precise_time.match(str(rows[i][3] or "").strip()) for i in idx):
+    if all(precise_time.match(str(_continuity_row_parts(rows[i])[3] or "").strip()) for i in idx):
         # 仅秒级及以上时间才允许按完整时间重排；日期级/分钟级流水不能据此臆定日内顺序。
-        candidates.append(("按完整时间升序", sorted(idx, key=lambda i: (rows[i][3], i))))
-    chain = _chain_order(rows)         # 余额链重建（治同秒多笔/内部序≠时间），仅当严格更优才胜出
-    if chain is not None:
-        candidates.append(("余额链重建", chain))
+        candidates.append(("按完整时间升序", sorted(
+            idx, key=lambda i: (_continuity_row_parts(rows[i])[3], i)
+        )))
+    has_batch = any(_continuity_row_parts(row)[4] for row in rows)
+    if not has_batch:
+        # 普通流水继续使用原有逐笔余额链。
+        chain_rows = [_continuity_row_parts(row)[:4] for row in rows]
+        chain = _chain_order(chain_rows)
+        if chain is not None:
+            candidates.append(("余额链重建", chain))
     best = None
     for name, order in candidates:
         br = _balance_breaks([rows[i] for i in order])
@@ -332,9 +389,69 @@ def best_continuity_order(rows):
     return best[0], best[1]
 
 
+def continuity_rows(records):
+    """把标准记录转换为余额校验行，并识别连续共享余额批次。
+
+    识别条件必须同时满足：同来源文件、记录连续、交易时间相同、余额相同、收支方向一致、
+    账户类型为对公，且备注或附言至少命中“批量、代发、工资”之一。同余额是必要条件，
+    防止把同一秒内正常逐笔记账的工资交易误当成共享余额批次。
+    """
+    rows, evidence = [], []
+    for record in records:
+        bal = parse_amount(record.get("账户余额"))
+        inc = parse_amount(record.get("收入金额"))
+        exp = parse_amount(record.get("支出金额"))
+        transaction_time = str(record.get("交易时间") or "").strip()
+        rows.append([bal, inc, exp, transaction_time, None])
+        business_text = _norm(
+            f"{record.get('银行备注') or ''} {record.get('账户方附言') or ''}"
+        )
+        if inc is not None and inc > 0 and not (exp is not None and exp > 0):
+            direction = "收入"
+        elif exp is not None and exp > 0 and not (inc is not None and inc > 0):
+            direction = "支出"
+        else:
+            direction = ""
+        evidence.append({
+            "source": str(record.get("来源文件名") or "").strip(),
+            "time": transaction_time,
+            "balance": round(bal, 2) if bal is not None else None,
+            "direction": direction,
+            "corporate": str(record.get("账户类型") or "").strip() == "对公",
+            "keyword": any(word in business_text for word in ("批量", "代发", "工资")),
+        })
+
+    start = 0
+    while start < len(rows):
+        first = evidence[start]
+        signature = (first["source"], first["time"], first["balance"])
+        end = start + 1
+        # 只向后吸收连续且“同文件、同时间、同余额”的记录，绝不跨过普通交易拼批次。
+        while end < len(rows):
+            current = evidence[end]
+            if (current["source"], current["time"], current["balance"]) != signature:
+                break
+            end += 1
+        group = evidence[start:end]
+        directions = {item["direction"] for item in group}
+        if (
+            end - start >= 2
+            and first["source"] and first["time"] and first["balance"] is not None
+            and all(item["corporate"] for item in group)
+            and len(directions) == 1 and "" not in directions
+            and any(item["keyword"] for item in group)
+        ):
+            # 批次键只在内存存在；标准 CSV 和最终交付物仍保持原有字段及逐笔明细。
+            batch_key = ("shared_balance_batch", start, end, *signature)
+            for index in range(start, end):
+                rows[index][4] = batch_key
+        start = end
+    return [tuple(row) for row in rows]
+
+
 def _rows_from_records(records):
-    return [(parse_amount(r.get("账户余额")), parse_amount(r.get("收入金额")),
-             parse_amount(r.get("支出金额")), r.get("交易时间") or "") for r in records]
+    """兼容标准化流程原有内部调用名称。"""
+    return continuity_rows(records)
 
 
 def parse_datetime(date_part, time_part, date_order=""):

@@ -224,6 +224,50 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             "2026-01-03",
         ])
 
+    def test_corporate_payroll_shared_balance_is_checked_as_one_batch(self):
+        records = [
+            {"交易时间": "2026-01-01 09:00:00", "账户余额": "1000", "账户类型": "对公",
+             "来源文件名": "工资.pdf"},
+            {"交易时间": "2026-01-02 09:00:00", "支出金额": "100", "账户余额": "700",
+             "账户类型": "对公", "账户方附言": "工资", "来源文件名": "工资.pdf"},
+            {"交易时间": "2026-01-02 09:00:00", "支出金额": "200", "账户余额": "700",
+             "账户类型": "对公", "账户方附言": "工资", "来源文件名": "工资.pdf"},
+            {"交易时间": "2026-01-03 09:00:00", "收入金额": "50", "账户余额": "750",
+             "账户类型": "对公", "来源文件名": "工资.pdf"},
+        ]
+
+        rows = standardize.continuity_rows(records)
+
+        self.assertEqual(standardize.continuity_unit_count(rows), 3)
+        self.assertEqual(standardize.balance_break_indices(rows), [])
+        self.assertEqual(rows[1][4], rows[2][4])
+
+        reversed_rows = standardize.continuity_rows(list(reversed(records)))
+        order, strategy = standardize.best_continuity_order(reversed_rows)
+        self.assertEqual(strategy, "整体翻转")
+        self.assertEqual(order, [3, 2, 1, 0])
+
+    def test_shared_balance_batch_requires_same_balance_corporate_and_contiguous_rows(self):
+        base = [
+            {"交易时间": "2026-01-02 09:00:00", "支出金额": "100", "账户余额": "900",
+             "账户类型": "对公", "银行备注": "批量代发工资", "来源文件名": "工资.pdf"},
+            {"交易时间": "2026-01-02 09:00:00", "支出金额": "200", "账户余额": "700",
+             "账户类型": "对公", "银行备注": "批量代发工资", "来源文件名": "工资.pdf"},
+        ]
+        self.assertEqual(standardize.continuity_unit_count(standardize.continuity_rows(base)), 2)
+
+        same_balance = [dict(row, 账户余额="700") for row in base]
+        personal = [dict(row, 账户类型="个人") for row in same_balance]
+        self.assertEqual(standardize.continuity_unit_count(standardize.continuity_rows(personal)), 2)
+
+        separator = {"交易时间": "2026-01-02 09:00:01", "支出金额": "1", "账户余额": "699",
+                     "账户类型": "对公", "来源文件名": "工资.pdf"}
+        non_contiguous = [same_balance[0], separator, same_balance[1]]
+        self.assertEqual(
+            standardize.continuity_unit_count(standardize.continuity_rows(non_contiguous)),
+            3,
+        )
+
     def test_precise_timestamp_order_can_repair_intraday_mixed_rows(self):
         rows = [
             (38464.34, None, 24006.00, "2025-11-30 10:00:00"),

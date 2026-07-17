@@ -30,6 +30,9 @@ try:
 except ImportError:
     sys.exit("需要 pandas")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import standardize as S  # 统一复用 shared core 的批次级余额校验
+
 
 def resolve_csv(path):
     if os.path.isdir(path):
@@ -71,18 +74,19 @@ def balance_check_by_account(df):
     out = []
     for kv, g in df.groupby(["客户编号", df["本方账户"].fillna("")]):
         cid, acct = kv
-        g = g.sort_values("__seq")          # 保持整合后的原始时序，不按交易时间重排
+        g = g.sort_values("__seq").reset_index(drop=True)  # 保持整合后的原始时序，不按交易时间重排
         bal = g["账户余额_num"]
         if bal.notna().sum() < 2:
             out.append({"客户编号": cid, "本方账户": acct, "交易数": int(len(g)),
                         "校验状态": "未校验", "余额断点": 0, "断点交易示例": []})
             continue
-        net = g["收入金额_num"].fillna(0) - g["支出金额_num"].fillna(0)
-        diff = (bal - (bal.shift(1) + net)).abs()
-        nb = int((diff >= 0.01).sum())
+        # shared core 负责批次识别与余额断点计算，本阶段只负责客户/账户隔离。
+        rows = S.continuity_rows(g.to_dict("records"))
+        break_indices = S.balance_break_indices(rows)
+        nb = len(break_indices)
         out.append({"客户编号": cid, "本方账户": acct, "交易数": int(len(g)),
                     "校验状态": "通过" if nb == 0 else "预警", "余额断点": nb,
-                    "断点交易示例": g.loc[diff >= 0.01, "交易唯一编号"].head(5).tolist()})
+                    "断点交易示例": g.iloc[break_indices]["交易唯一编号"].head(5).tolist()})
     return out
 
 

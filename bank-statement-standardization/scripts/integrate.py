@@ -1109,12 +1109,8 @@ def order_accounts_for_continuity(df):
     parts = []
     for _acct, g in df.groupby(df["本方账户"].fillna(""), sort=True):
         g = g.reset_index(drop=True)
-        rows = [(None if pd.isna(b) else float(b),
-                 None if pd.isna(i) else float(i),
-                 None if pd.isna(e) else float(e),
-                 "" if pd.isna(t) else str(t))
-                for b, i, e, t in zip(g["账户余额_num"], g["收入金额_num"],
-                                      g["支出金额_num"], g["交易时间"])]
+        # 批量代发的识别与余额口径统一放在 shared core，本阶段不复制业务判断。
+        rows = S.continuity_rows(g.to_dict("records"))
         order, _strategy = S.best_continuity_order(rows)
         parts.append(g.iloc[order])
     return pd.concat(parts, ignore_index=True) if parts else df
@@ -1541,10 +1537,10 @@ def balance_check(df):
             results.append({"本方账户": acct or "(空)", "校验状态": "未校验",
                             "异常数量": 0, "异常示例": [], "说明": "无足够余额数据"})
             continue
-        net = g["收入金额_num"].fillna(0) - g["支出金额_num"].fillna(0)
-        expected = bal.shift(1) + net
-        diff = (bal - expected).abs()
-        breaks = g[diff >= 0.01]
+        # 由 shared core 返回断点索引，批次共享余额只在批次边界校验一次。
+        rows = S.continuity_rows(g.to_dict("records"))
+        break_indices = S.balance_break_indices(rows)
+        breaks = g.iloc[break_indices]
         examples = []
         for _, r in breaks.head(8).iterrows():
             examples.append({
@@ -1553,8 +1549,8 @@ def balance_check(df):
                 "账户余额": r.get("账户余额", ""), "来源文件名": r["来源文件名"],
                 "来源行号": r["来源行号"],
             })
-        nb = int((diff >= 0.01).sum())
-        checkable = max(1, int(bal.notna().sum()) - 1)
+        nb = len(break_indices)
+        checkable = max(1, S.continuity_unit_count(rows) - 1)
         rate = nb / checkable
         if nb == 0:
             note = "余额连续"

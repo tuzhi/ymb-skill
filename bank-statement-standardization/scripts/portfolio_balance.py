@@ -28,6 +28,9 @@ try:
 except ImportError:
     sys.exit("需要 pandas")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import standardize as S  # 统一复用 shared core 的批次级余额校验
+
 
 def _prep(df):
     df = df.copy()
@@ -53,22 +56,23 @@ def balance_check_per_account(df):
     df = df.assign(__k=_acct_key(df))
     out = []
     for k, g in df.groupby("__k"):
-        g = g.sort_values("__seq")          # 保持整合后的原始时序
+        g = g.sort_values("__seq").reset_index(drop=True)  # 保持整合后的原始时序
         bal = g["__账户余额"]
         if bal.notna().sum() < 2:
             out.append({"账户": k, "交易数": int(len(g)), "校验状态": "未校验",
                         "余额断点": 0, "断点交易示例": [], "期末余额": None})
             continue
-        net = g["__收入金额"].fillna(0) - g["__支出金额"].fillna(0)
-        diff = (bal - (bal.shift(1) + net)).abs()
-        nb = int((diff >= 0.01).sum())
-        rate = nb / max(1, int(bal.notna().sum()) - 1)
+        # 批量、代发、工资等共享余额批次由 shared core 统一识别，本层不重复业务规则。
+        rows = S.continuity_rows(g.to_dict("records"))
+        break_indices = S.balance_break_indices(rows)
+        nb = len(break_indices)
+        rate = nb / max(1, S.continuity_unit_count(rows) - 1)
         out.append({"账户": k, "交易数": int(len(g)),
                     "校验状态": "通过" if nb == 0 else "预警", "余额断点": nb,
                     "断点率": round(rate, 3),
                     # 断点率畸高几乎必然是解析不全/漏行（大表被截断/抽样），而非真实排序问题
                     "疑似解析不全": bool(nb and rate > 0.3),
-                    "断点交易示例": g.loc[diff >= 0.01, "交易唯一编号"].head(5).tolist(),
+                    "断点交易示例": g.iloc[break_indices]["交易唯一编号"].head(5).tolist(),
                     "期末余额": float(bal.dropna().iloc[-1])})
     return out
 
