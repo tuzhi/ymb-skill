@@ -877,6 +877,28 @@
         交易单号: null
         商户单号: null
         备注: 银行备注
+  reader_options:
+    extract_mapping:
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱充值$
+      replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱提现$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^转入零钱通.*$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱通转出.*$
+      replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^分付还款$
+      replacement: 支出
   reader_id: openpyxl_grid
 - id: md5:5ee6d3955fa1cca84bd4bed11ae23c6f
   file_type: excel

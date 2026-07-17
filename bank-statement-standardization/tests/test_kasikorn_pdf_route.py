@@ -42,10 +42,18 @@ class KasikornPdfRouteTests(unittest.TestCase):
         self.assertFalse(image["ocr_used"])
         self.assertEqual(image["本方名称"], "HUAHUA JIANG")
         self.assertEqual(image["本方账户"], "061-8-92723-7")
+        self.assertEqual(image["date_order"], "dmy")
+        self.assertEqual(image["transaction_time_precision"], "minute")
         self.assertEqual(len(rows), 484)
         self.assertEqual(sum(1 for r in rows if r["收入金额"]), 94)
         self.assertEqual(sum(1 for r in rows if r["支出金额"]), 390)
         self.assertTrue(all(r["交易时间"] for r in rows))
+        self.assertEqual(rows[0]["交易时间"], "2025-12-01 08:23")
+        self.assertEqual(rows[-1]["交易时间"], "2026-05-30 15:55")
+        self.assertEqual(rows[0]["对手账户"], "X1042")
+        self.assertEqual(rows[0]["对手名称"], "MR. Thanawat Phim")
+        self.assertEqual(sum(bool(r["对手账户"]) for r in rows), 334)
+        self.assertEqual(sum(bool(r["对手名称"]) for r in rows), 461)
 
 
 if __name__ == "__main__":

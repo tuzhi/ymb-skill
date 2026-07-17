@@ -84,6 +84,7 @@ def _excel_candidate(rule, match):
         "account_type": rule.account_type,
         "series_family": rule.series_family,
         "source_order": rule.source_order,
+        "date_order": rule.date_order,
         "multi_sheet_same_layout": rule.multi_sheet_same_layout,
         "header_merge": rule.header_merge,
         "column_mapping": rule.column_mapping,

@@ -337,7 +337,7 @@ def _rows_from_records(records):
              parse_amount(r.get("支出金额")), r.get("交易时间") or "") for r in records]
 
 
-def parse_datetime(date_part, time_part):
+def parse_datetime(date_part, time_part, date_order=""):
     """合并日期列与时间列，同时保留原始时间精度。
 
     用正则从拼接串里分别抽取「日期 token」和「时间 token」，因此对以下脏数据都鲁棒：
@@ -366,13 +366,25 @@ def parse_datetime(date_part, time_part):
         if 1990 <= y <= 2100 and 1 <= mo <= 12 and 1 <= day <= 31 and hh < 24 and mm < 60 and ss < 60:
             return f"{y:04d}-{mo:02d}-{day:02d} {hh:02d}:{mm:02d}:{ss:02d}"
 
-    # 日期 token：YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD
+    # 日期 token：YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD；两位年份仅在 YAML 明确声明顺序时解析。
     md = re.search(r"(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})", raw)
+    short_md = None
+    date_order = str(date_order or "").strip().lower()
+    if not md and date_order in {"dmy", "mdy", "ymd"}:
+        short_md = re.search(r"(?<!\d)(\d{2})[-/](\d{2})[-/](\d{2})(?!\d)", raw)
     # 时间 token：HH:MM:SS / HH:MM / 紧跟在日期后的 6 位 HHMMSS
     mt = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", raw)
-    if not md:
+    if not md and not short_md:
         return raw
-    y, mo, day = md.group(1), md.group(2).zfill(2), md.group(3).zfill(2)
+    if short_md:
+        parts = {key: int(value) for key, value in zip(date_order, short_md.groups())}
+        short_year = parts["y"]
+        y = str(2000 + short_year if short_year <= 68 else 1900 + short_year)
+        mo, day = str(parts["m"]).zfill(2), str(parts["d"]).zfill(2)
+        date_token_end = short_md.end()
+    else:
+        y, mo, day = md.group(1), md.group(2).zfill(2), md.group(3).zfill(2)
+        date_token_end = md.end()
     date_str = f"{y}-{mo}-{day}"
 
     hh = mm = ss = "00"
@@ -383,7 +395,7 @@ def parse_datetime(date_part, time_part):
         precision = "second" if mt.group(3) is not None else "minute"
     else:
         # 没有带冒号的时间：尝试日期后面紧跟的 6 位/4 位数字（HHMMSS / HHMM）
-        tail = raw[md.end():]
+        tail = raw[date_token_end:]
         m6 = re.search(r"(\d{6})", tail) or re.search(r"(\d{6})", t)
         if m6:
             v = m6.group(1)
@@ -436,7 +448,11 @@ def infer_transaction_time_precision(data_rows, date_cols, time_cols, route_info
             for index in time_cols
             if index < len(row) and str(row[index] or "").strip()
         )
-        parsed = parse_datetime(date_value or time_value, time_value if date_cols else "")
+        parsed = parse_datetime(
+            date_value or time_value,
+            time_value if date_cols else "",
+            route_info.get("date_order", ""),
+        )
         precision = normalized_transaction_time_precision(parsed)
         if precision != "unknown":
             seen.add(precision)
@@ -1394,9 +1410,9 @@ def standardize(path, out_dir=None, bank=None,
 
         # 时间
         if has_split_dt:
-            t = parse_datetime(cell(date_cols), cell(time_cols))
+            t = parse_datetime(cell(date_cols), cell(time_cols), route_info.get("date_order", ""))
         elif time_cols:
-            t = parse_datetime(cell(time_cols), "")
+            t = parse_datetime(cell(time_cols), "", route_info.get("date_order", ""))
         else:
             t = ""
 
@@ -1672,6 +1688,7 @@ def standardize(path, out_dir=None, bank=None,
             "series_family": route_info.get("series_family", ""),
             "transaction_time_precision": transaction_time_precision,
             "date_format_evidence": route_info.get("date_format_evidence", []),
+            "date_order": route_info.get("date_order", ""),
             "file_type": route_info.get("file_type", file_kind),
             "bank": route_info.get("bank", ""),
             "account_type": route_info.get("account_type", ""),

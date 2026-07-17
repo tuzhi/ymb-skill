@@ -66,6 +66,10 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             standardize.parse_datetime("2026-05-05", "09:30:12"),
             "2026-05-05 09:30:12",
         )
+        self.assertEqual(
+            standardize.parse_datetime("01-12-25", "08:23", "dmy"),
+            "2025-12-01 08:23",
+        )
         rows = [
             ["2026-05-05", ""],
             ["2026-05-06", "09:30:12"],
@@ -515,6 +519,12 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 self.assertEqual({row["本方名称"] for row in rows}, {owner}, path.name)
                 self.assertEqual({row["本方账户"] for row in rows}, {account}, path.name)
                 self.assertEqual({row["开户行"] for row in rows}, {bank}, path.name)
+                if bank == "微信支付":
+                    repayment_rows = [row for row in rows if row["银行备注"].startswith("分付还款")]
+                    self.assertTrue(repayment_rows, path.name)
+                    self.assertTrue(all(not row["收入金额"] for row in repayment_rows), path.name)
+                    self.assertTrue(all(row["支出金额"] for row in repayment_rows), path.name)
+                    self.assertTrue(all(float(row["交易金额"]) < 0 for row in repayment_rows), path.name)
 
     def test_zeng_xiaoyuan_cmb_pdf_extracts_owner_account_and_counterparty_account(self):
         pdf = (
@@ -836,6 +846,45 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(out_rows[0]["本方名称"], "刘伟兰")
         self.assertEqual(out_rows[0]["本方账户"], "微信支付#刘伟兰")
         self.assertFalse(out_rows[0]["本方账户"].startswith("未识别账户#"))
+
+        internal_rows = [
+            row for row in out_rows
+            if row["银行备注"].startswith(("零钱充值", "零钱提现", "转入零钱通", "零钱通转出"))
+        ]
+        self.assertEqual(len(internal_rows), 11)
+        self.assertTrue(all(bool(row["收入金额"]) != bool(row["支出金额"]) for row in internal_rows))
+        self.assertAlmostEqual(
+            sum(abs(float(row["交易金额"])) for row in internal_rows),
+            215782.67,
+            places=2,
+        )
+
+    def test_wechat_installment_repayments_override_slash_direction_as_expense(self):
+        excel = (
+            REPO_ROOT
+            / "bank-statement-standardization"
+            / "testdata"
+            / "万建平"
+            / "微信支付账单流水文件(20250301-20260301)——【 2.xlsx"
+        )
+        if not excel.exists():
+            self.skipTest("本地未提供微信支付账单 Excel 样本")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _json_path, _report = standardize.standardize(str(excel), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                out_rows = list(csv.DictReader(f))
+
+        repayment_rows = [row for row in out_rows if row["银行备注"].startswith("分付还款")]
+        self.assertEqual(len(repayment_rows), 15)
+        self.assertTrue(all(row["收入金额"] == "" for row in repayment_rows))
+        self.assertTrue(all(row["支出金额"] != "" for row in repayment_rows))
+        self.assertTrue(all(float(row["交易金额"]) < 0 for row in repayment_rows))
+        self.assertAlmostEqual(
+            sum(float(row["支出金额"]) for row in repayment_rows),
+            3907.48,
+            places=2,
+        )
 
     def test_cmb_corporate_pdf_treats_payee_account_as_counterparty_account(self):
         pdf = (

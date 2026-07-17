@@ -23,6 +23,7 @@ class RouteRule:
     series_family: str = ""
     text_table_layout: str = ""
     source_order: str = ""
+    date_order: str = ""
     multi_sheet_same_layout: bool = False
     header_merge: dict = field(default_factory=dict)
     column_transforms: dict = field(default_factory=dict)
@@ -427,6 +428,13 @@ def _source_order(item):
     return source_order
 
 
+def _date_order(item):
+    date_order = str(_reader_options(item).get("date_order") or "").strip().lower()
+    if date_order not in {"", "dmy", "mdy", "ymd"}:
+        raise ValueError(f"unsupported reader_options.date_order: {date_order}")
+    return date_order
+
+
 def _multi_sheet_same_layout(item):
     return bool(_reader_options(item).get("multi_sheet_same_layout", False))
 
@@ -616,6 +624,7 @@ def load_pdf_route_rules():
             series_family=str(item.get("series_family") or "").strip(),
             text_table_layout=_text_table_layout(item),
             source_order=_source_order(item),
+            date_order=_date_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
             header_merge=_header_merge(item),
             column_mapping=_column_mapping(fingerprint),
@@ -654,6 +663,7 @@ def load_excel_route_rules():
             account_type=item.get("account_type", "未知"),
             series_family=str(item.get("series_family") or "").strip(),
             source_order=_source_order(item),
+            date_order=_date_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
             header_merge=_header_merge(item),
             column_mapping=_column_mapping(fingerprint),

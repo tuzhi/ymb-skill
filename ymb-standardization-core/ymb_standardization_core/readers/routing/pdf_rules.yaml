@@ -135,6 +135,7 @@
         Details: 账户方附言
         Eff.Date: null
   reader_options:
+    date_order: dmy
     row_transforms:
       anchor_column: Date
       anchor_pattern: ^\d{2}-\d{2}-\d{2}$
@@ -172,6 +173,19 @@
       - Withholding Tax
       - Deposit Transfer Withdrawal
       - Transfer Withdrawal For more information,
+    extract_mapping:
+    - source: Details
+      field: 对手账户
+      pattern: '^(?:To|From)\s+.*?\b(X[A-Z0-9]{4,})\b.*$'
+      replacement: '\1'
+    - source: Details
+      field: 对手名称
+      pattern: '^(?:To|From)\s+.*?\bX[A-Z0-9]{4,}\b\s*(.*?)(?:\+\+)?$'
+      replacement: '\1'
+    - source: Details
+      field: 对手名称
+      pattern: '^Paid for Ref\s+(?:X[A-Z0-9]{4,}|\d+)\s+(.*)$'
+      replacement: '\1'
   reader_id: pdfplumber_grid_line_table
 - id: md5:eb90af33b5f89117b801f28b10fdc111
   file_type: pdf
@@ -1212,6 +1226,10 @@
       field: 收支方向
       pattern: ^零钱通转出.*$
       replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^分付还款$
+      replacement: 支出
     column_transforms:
       交易对方:
         newline: cjk_join
