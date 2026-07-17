@@ -721,10 +721,25 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf("\n".join(lines), 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertEqual(result["fingerprint_id"], "md5:7f811c14e0a4fdfc0d0efeaf64be0210")
+        self.assertEqual(result["fingerprint_id"], "md5:faa41e63d794e9c93a71a882791fb90f")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["column_mapping"]["卡号"], None)
+        self.assertEqual(result["extract_mapping"], [
+            {
+                "source": "对方银行卡号",
+                "field": "对手账户",
+                "pattern": "^(.+)$",
+                "replacement": r"\1",
+            },
+            {
+                "source": "对方银行卡号",
+                "field": "对手账户",
+                "pattern": r"\s+",
+                "replacement": "",
+            },
+        ])
 
         corporate_lines = [
             "上饶银行账户交易明细",

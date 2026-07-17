@@ -694,7 +694,7 @@
         摘要: 银行备注
         超网-贷记转出: 支出金额
   reader_id: pdfplumber_table
-- id: md5:7f811c14e0a4fdfc0d0efeaf64be0210
+- id: md5:faa41e63d794e9c93a71a882791fb90f
   file_type: pdf
   bank: 上饶银行
   account_type: 个人
@@ -726,9 +726,18 @@
         交易金额: 交易金额
         余额: 账户余额
         对方银行: null
-        卡号: 本方账户
+        卡号: null
         对方户名: 对手名称
         摘要: 银行备注
+  reader_options:
+    extract_mapping:
+    - source: 对方银行卡号
+      field: 对手账户
+      pattern: '^(.+)$'
+    - source: 对方银行卡号
+      field: 对手账户
+      pattern: '\s+'
+      replacement: ''
   reader_id: pdfplumber_table
 - id: md5:f2ac81b34fea59be828e6e5dbd017b63
   file_type: pdf
