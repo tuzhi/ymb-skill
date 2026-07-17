@@ -69,10 +69,10 @@ def classify_ext(path):
         return "候选", ""
     if ext in SUPPORTED_EXT:
         return "候选", ""
-    if re.search(r"\.pdf_\d+$", os.path.basename(path).lower()):
+    if re.search(r"\.(?:xlsx|xlsm|xls|pdf)_\d+$", os.path.basename(path).lower()):
         return (
             "跳过",
-            "文件内容疑似 PDF，但扩展名为伪后缀；请改为 .pdf。若为扫描件，仍需先 OCR 转文本",
+            "文件已用 _数字伪后缀标记为转换文件或非原始文件，不作为原始流水接收",
         )
     if ext in KNOWN_NONSTATEMENT_EXT:
         return "跳过", f"非流水格式（{ext}）：本技能仅支持 Excel/CSV/文本/非图片PDF；图片或扫描件请先 OCR 转文本"

@@ -132,6 +132,19 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
             self.assertEqual(skipped[0][0], "statement.pdf_2")
             self.assertIn("伪后缀", skipped[0][1])
 
+    def test_screen_files_reports_excel_with_duplicate_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            converted_excel = Path(tmp) / "statement.xlsx_2"
+            converted_excel.write_bytes(b"converted workbook")
+
+            candidates, skipped = standardize.screen_files([str(converted_excel)])
+
+            self.assertEqual(candidates, [])
+            self.assertEqual(len(skipped), 1)
+            self.assertEqual(skipped[0][0], "statement.xlsx_2")
+            self.assertIn("转换文件", skipped[0][1])
+            self.assertIn("不作为原始流水接收", skipped[0][1])
+
     def test_screen_files_rejects_wps_pdf_to_excel_conversion(self):
         with tempfile.TemporaryDirectory() as tmp:
             converted = Path(tmp) / "converted.xlsx"
