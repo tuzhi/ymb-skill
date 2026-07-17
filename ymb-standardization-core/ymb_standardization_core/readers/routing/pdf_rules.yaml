@@ -498,6 +498,9 @@
         账户余额: 账户余额
         对方账号与户名: 对手名称
   reader_options:
+    column_transforms:
+      对方账号与户名:
+        newline: cjk_join
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户

@@ -322,6 +322,30 @@ class InputRouterTests(unittest.TestCase):
         self.assertIsNone(route["column_mapping"]["本方账户开户机构"])
         self.assertTrue(all(value is None for value in result.rows[8]))
 
+    def test_ccb_personal_pdf_joins_multiline_counterparty_name(self):
+        module = load_input_router()
+        pdf = ROOT / "testdata" / "涂志" / "hqmx_20260604142056.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供建行个人活期 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+        counterparty_index = result.rows[0].index("对方账号与户名")
+        counterparties = {str(row[counterparty_index]) for row in result.rows[1:]}
+
+        self.assertEqual(route["reader_id"], "pdfplumber_table")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["bank"], "中国建设银行")
+        self.assertEqual(route["account_type"], "个人")
+        self.assertIn(
+            "20880027421700340156/支付宝支付科技有限公司",
+            counterparties,
+        )
+        self.assertIn(
+            "44201501100059992888/平安证券股份有限公司（客户）",
+            counterparties,
+        )
+
     def test_icbc_corporate_online_pdf_extracts_identity_and_drops_quarter_totals(self):
         module = load_input_router()
         pdf = (
