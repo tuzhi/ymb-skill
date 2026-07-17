@@ -1,4 +1,4 @@
-- id: md5:f1f82a652560900aea7c11139b852abf
+- id: md5:9e511d80594efdc217b4ce8a6d1cfd5a
   file_type: pdf
   bank: 中国农业银行
   account_type: 个人
@@ -26,9 +26,6 @@
     row_anchor:
       column: 交易日期
       pattern: ^20\d{6}$
-    column_transforms:
-      对手信息:
-        newline: cjk_join
   reader_options:
     extract_mapping:
     - source: 对手信息
@@ -39,7 +36,7 @@
       pattern: '^\s*\d{12,}\s*$'
       replacement: ''
   reader_id: pdfplumber_coordinate_table
-- id: md5:58cf5d000d5fe58b0247e61150522ba9
+- id: md5:3a12345edcf754cba36162616ca4737d
   file_type: pdf
   bank: 江西农商银行
   account_type: 个人
@@ -71,13 +68,6 @@
     row_anchor:
       column: 记账日期
       pattern: ^20\d{2}-\d{2}-\d{2}$
-    column_transforms:
-      交易摘要:
-        newline: cjk_join
-      对方户名:
-        newline: cjk_join
-      对方账号:
-        newline: remove_all
     word_filters:
       drop_words_below_page_bottom: 45
       stop_line_contains_any:
@@ -230,19 +220,6 @@
       anchor_column: 交易日期
       anchor_pattern: ^20\d{2}-\d{2}-\d{2}$
       continuation: until_next_anchor
-    column_transforms:
-      交易摘要:
-        newline: cjk_join
-      对方账号:
-        newline: remove_all
-      对方户名:
-        newline: cjk_join
-      对方行:
-        newline: cjk_join
-      交易渠道:
-        newline: cjk_join
-      备注:
-        newline: cjk_join
     word_filters:
       stop_line_contains_any:
       - 重要提示
@@ -483,11 +460,6 @@
     word_filters:
       drop_chars:
       - rotated: true
-    column_transforms:
-      对方户名:
-        newline: cjk_join
-      对方账号:
-        newline: remove_all
     extract_mapping:
     - source: 对方账号
       field: 对手账户
@@ -512,9 +484,6 @@
         账户余额: 账户余额
         对方账号与户名: 对手名称
   reader_options:
-    column_transforms:
-      对方账号与户名:
-        newline: cjk_join
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户
@@ -565,21 +534,6 @@
         对方账户名: 对手名称
         对方卡号/账号: 对手账户
   reader_options:
-    column_transforms:
-      交易名称:
-        newline: cjk_join
-      渠道:
-        newline: cjk_join
-      网点名称:
-        newline: cjk_join
-      附言:
-        newline: cjk_join
-      对方账户名:
-        newline: cjk_join
-      对方卡号/账号:
-        newline: remove_all
-      对方开户行:
-        newline: cjk_join
     extract_mapping:
     - source: 对方账户名
       field: 对手名称
@@ -774,17 +728,6 @@
       anchor_column: 序号
       anchor_pattern: '^\d+$'
       continuation: until_next_anchor_across_pages
-    column_transforms:
-      交易时间:
-        newline: remove_all
-      对方账号:
-        newline: remove_all
-      对方户名:
-        newline: cjk_join
-      摘要:
-        newline: cjk_join
-      附言:
-        newline: cjk_join
   reader_id: pdfplumber_table
 - id: md5:6cadae92bf0342082ec8ce1556cf1ac0
   file_type: pdf
@@ -852,11 +795,6 @@
     row_transforms:
       anchor_column: 记账日期
       anchor_pattern: '^20\d{2}-\d{2}-\d{2}$'
-    column_transforms:
-      交易摘要:
-        newline: cjk_join
-      对手信息:
-        newline: cjk_join
     extract_mapping:
     - source: 对手信息
       field: 对手账户
@@ -871,6 +809,10 @@
     - source: 对手信息
       field: 对手名称
       pattern: '^\s*(?<!\d)\d{8,}(?!\d)\s+(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
+      replacement: '\1'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^Type\s*Counter\s*Party\s*(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
       replacement: '\1'
   reader_id: pdfplumber_coordinate_table
 - id: md5:0a45d881baf8861f2799735ca60e0652
@@ -912,7 +854,7 @@
       pattern: '(?s)^.*无.*$'
       replacement: ''
   reader_id: pdfplumber_table
-- id: md5:cb2278ac12a08930475e412c101c28f6
+- id: md5:1de98a4d0d435b5daca86f7338ccd7e0
   file_type: pdf
   bank: 招商银行
   account_type: 对公
@@ -938,17 +880,6 @@
         收(付)方名称: 对手名称
         收(付)方账号: 对手账户
         交易类型: 银行备注
-    column_transforms:
-      交易日期:
-        newline: space
-      摘要:
-        newline: cjk_join
-      收(付)方名称:
-        newline: cjk_join
-      收(付)方账号:
-        newline: remove_all
-      交易类型:
-        newline: cjk_join
   reader_id: pdfplumber_line_table
 - id: md5:99ce159ec31cbf24d7dc7279c6844048
   file_type: pdf
@@ -1161,7 +1092,7 @@
         存入/支取: 交易金额
         交易后余额: 账户余额
   reader_id: pdfplumber_coordinate_table
-- id: md5:cfad9d275e1a54a34f9c452ae43ba884
+- id: md5:5550365935c904e0f19086789b2496e7
   file_type: pdf
   bank: 江西裕民银行
   account_type: 个人
@@ -1185,11 +1116,6 @@
     row_anchor:
       column: 交易日期
       pattern: ^\d{4}[‑-]\d{2}[‑-]\d{2}$
-    column_transforms:
-      交易类别:
-        newline: cjk_join
-      对方户名:
-        newline: cjk_join
   reader_id: pdfplumber_coordinate_table
 - id: md5:736db5142663fe121ee00a19d869e2a9
   file_type: pdf
@@ -1243,9 +1169,6 @@
       field: 对手名称
       pattern: '(?<=[\u3400-\u9fff])\s+(?=[\ue000-\uf8ff])'
       replacement: ''
-    column_transforms:
-      交易对方:
-        newline: cjk_join
   reader_id: pdfplumber_table
 - id: md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6
   file_type: pdf

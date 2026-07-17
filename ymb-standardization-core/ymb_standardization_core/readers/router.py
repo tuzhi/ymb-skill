@@ -16,7 +16,6 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
-        "column_transforms": route_evidence.get("column_transforms", {}) if route_evidence else {},
         "word_filters": route_evidence.get("word_filters", {}) if route_evidence else {},
         "direction_from_column": route_evidence.get("direction_from_column", {}) if route_evidence else {},
         "drop_rows": route_evidence.get("drop_rows", []) if route_evidence else [],
@@ -125,7 +124,6 @@ def route_pdf(text, table_row_count, page_count, context=None):
             columns_evidence=match["columns_evidence"],
             route_evidence={
                 "reader_header_candidates": rule.column_markers,
-                "column_transforms": rule.column_transforms,
                 "word_filters": rule.word_filters,
                 "direction_from_column": rule.direction_from_column,
                 "drop_rows": rule.drop_rows,
@@ -317,13 +315,11 @@ def _postprocess_reader_rows(rows, route_info):
 
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     route_info = route_info or {}
-    column_transforms = route_info.get("column_transforms") or {}
     if reader_id == "pdfplumber_coordinate_table":
         coordinate_rows = _extract_pdf_coordinate_table_rows(
             pdf,
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
-            column_transforms=column_transforms,
             word_filters=route_info.get("word_filters") or {},
         )
         separator_rows = _extract_pdf_text_separator_table_rows(pdf)
@@ -337,15 +333,13 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             pdf,
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
-            column_transforms=column_transforms,
             word_filters=route_info.get("word_filters") or {},
         ), route_info)
     if reader_id == "pdfplumber_line_table":
-        return _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=column_transforms)
+        return _extract_pdf_tables_from_horizontal_lines(pdf)
     if reader_id == "pdfplumber_table":
         rows = _extract_pdf_tables_default(
             pdf,
-            column_transforms=column_transforms,
             word_filters=route_info.get("word_filters") or {},
             row_anchor=route_info.get("row_anchor") or {},
         )
@@ -353,80 +347,25 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     return []
 
 
-def _is_cjk_char(value):
-    if not value:
-        return False
-    code = ord(value)
-    return (
-        0x3400 <= code <= 0x4DBF
-        or 0x4E00 <= code <= 0x9FFF
-        or 0xF900 <= code <= 0xFAFF
-    )
-
-
-def _join_cjk_fragments(parts):
-    cjk_join_punctuation = "，。；：！？、（(【《〈“‘"
-    cjk_closing_punctuation = "）)】》〉”’"
-    output = ""
-    for part in parts:
-        if not part:
-            continue
-        if not output:
-            output = part
-        elif (
-            (_is_cjk_char(output[-1]) or output[-1] in cjk_join_punctuation)
-            and (_is_cjk_char(part[0]) or part[0] in cjk_join_punctuation or part[0] in cjk_closing_punctuation)
-        ):
-            output += part
-        else:
-            output += " " + part
-    return output.strip()
-
-
-def _clean_pdf_cell(value, column_name="", column_transforms=None):
+def _clean_pdf_cell(value):
+    """Join visual line breaks without inventing spaces; preserve spaces within a line."""
     normalized_value = (
         str(value or "")
         .replace("‑", "-")
         .replace("行", "行")
         .replace("易", "易")
     )
-    parts = normalized_value.split()
-    if not parts:
-        return ""
-    transform = (column_transforms or {}).get(str(column_name or "").strip(), {})
-    newline = str(transform.get("newline") or "space").strip()
-    if newline == "remove_all":
-        cleaned = "".join(parts).strip()
-    elif newline == "cjk_join":
-        cleaned = _join_cjk_fragments(parts)
-    else:
-        cleaned = " ".join(parts).strip()
-    return cleaned
+    normalized_value = re.sub(r"(?:\r\n?|\n|\u2028|\u2029)+", "", normalized_value)
+    return re.sub(r"[^\S\r\n]+", " ", normalized_value).strip()
 
 
-def _clean_pdf_table_cells(row, headers=None, column_transforms=None):
-    headers = headers or []
-    return [
-        _clean_pdf_cell(
-            cell,
-            headers[index] if index < len(headers) else "",
-            column_transforms=column_transforms,
-        )
-        for index, cell in enumerate(row)
-    ]
+def _clean_pdf_table_cells(row):
+    return [_clean_pdf_cell(cell) for cell in row]
 
 
-def _append_pdf_table_rows(all_rows, table_rows, header_sig, column_transforms=None):
-    headers = all_rows[0] if header_sig and all_rows else []
-    transform_columns = set((column_transforms or {}).keys())
-    if transform_columns:
-        for candidate in [*reversed(all_rows), *table_rows]:
-            candidate_headers = _clean_pdf_table_cells(candidate)
-            if transform_columns.intersection(candidate_headers):
-                headers = candidate_headers
-                break
+def _append_pdf_table_rows(all_rows, table_rows, header_sig):
     for r in table_rows:
-        cells = _clean_pdf_table_cells(r, headers=headers, column_transforms=column_transforms)
+        cells = _clean_pdf_table_cells(r)
         if not any(cells):
             continue
         sig = "|".join(cells)
@@ -459,7 +398,7 @@ def _pdf_table_row_anchor_matches(row, headers, row_anchor):
     return bool(re.fullmatch(pattern, text)) if pattern else bool(text)
 
 
-def _merge_pdf_table_continuation(previous, continuation, headers, column_transforms=None):
+def _merge_pdf_table_continuation(previous, continuation, headers):
     width = max(len(headers), len(previous), len(continuation))
     merged = []
     for index in range(width):
@@ -468,15 +407,11 @@ def _merge_pdf_table_continuation(previous, continuation, headers, column_transf
             value = str(row[index] if index < len(row) else "").strip()
             if value:
                 parts.append(value)
-        merged.append(_clean_pdf_cell(
-            " ".join(parts),
-            headers[index] if index < len(headers) else "",
-            column_transforms=column_transforms,
-        ))
+        merged.append(_clean_pdf_cell("".join(parts)))
     return merged
 
 
-def _extract_pdf_tables_default(pdf, column_transforms=None, word_filters=None, row_anchor=None):
+def _extract_pdf_tables_default(pdf, word_filters=None, row_anchor=None):
     all_rows = []
     header_sig = None
     merge_across_pages = (
@@ -488,7 +423,7 @@ def _extract_pdf_tables_default(pdf, column_transforms=None, word_filters=None, 
         if word_filters:
             page = page.filter(lambda char: not _drop_word_filter_char(char, word_filters))
         for tbl in page.extract_tables():
-            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig, column_transforms=column_transforms)
+            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig)
         if not merge_across_pages or page_start <= 1 or len(all_rows) <= page_start:
             continue
         headers = all_rows[0]
@@ -510,7 +445,6 @@ def _extract_pdf_tables_default(pdf, column_transforms=None, word_filters=None, 
                 previous,
                 continuation,
                 headers,
-                column_transforms=column_transforms,
             )
             previous = all_rows[page_start - 1]
             del all_rows[page_start]
@@ -552,7 +486,7 @@ def _looks_like_statement_header(row):
     return sum(1 for marker in markers if marker in text) >= 3
 
 
-def _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=None):
+def _extract_pdf_tables_from_horizontal_lines(pdf):
     """Fallback for ruled PDFs with horizontal row lines but no vertical borders."""
     all_rows = []
     header_sig = None
@@ -571,7 +505,7 @@ def _extract_pdf_tables_from_horizontal_lines(pdf, column_transforms=None):
             "text_y_tolerance": 3,
         }
         for tbl in page.extract_tables(table_settings=settings):
-            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig, column_transforms=column_transforms)
+            header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig)
     if not all_rows or not _looks_like_statement_header(all_rows[0]):
         return []
     return all_rows
@@ -775,9 +709,18 @@ def _coordinate_stop_top(words, word_filters=None):
     return None
 
 
-def _coordinate_cell_text(header, cell, column_transforms=None):
-    text = " ".join(value for _top, _x0, value in sorted(cell)).strip()
-    return _clean_pdf_cell(text, header, column_transforms=column_transforms)
+def _coordinate_cell_text(cell):
+    lines = []
+    for _top, group in sorted(_group_words_by_top(
+        {"top": top, "x0": x0, "text": value}
+        for top, x0, value in cell
+    ).items()):
+        lines.append(" ".join(
+            str(word.get("text") or "").strip()
+            for word in sorted(group, key=lambda item: float(item.get("x0", 0)))
+            if str(word.get("text") or "").strip()
+        ))
+    return _clean_pdf_cell("\n".join(lines))
 
 
 def _grid_line_vertical_boundaries(page, min_segments=5, body_top_min=None):
@@ -863,8 +806,7 @@ def _coordinate_row_bounds(index, anchors, body_top_min, page_height, row_anchor
     return start_top, end_top
 
 
-def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
-                                      word_filters=None):
+def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
     """Use real vertical ruling lines for x columns and row_anchor words for y rows."""
     all_rows = []
     output_headers = None
@@ -938,7 +880,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
             row = [
-                _coordinate_cell_text(headers[cell_index], cell, column_transforms=column_transforms)
+                _coordinate_cell_text(cell)
                 for cell_index, cell in enumerate(cells)
             ]
             if row and row[0]:
@@ -946,8 +888,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, c
     return all_rows if len(all_rows) > 1 else []
 
 
-def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, column_transforms=None,
-                                        word_filters=None):
+def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
@@ -1017,11 +958,7 @@ def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, 
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))
             row = [
-                _coordinate_cell_text(
-                    headers[cell_index],
-                    cell,
-                    column_transforms=column_transforms,
-                )
+                _coordinate_cell_text(cell)
                 for cell_index, cell in enumerate(cells)
             ]
             if row and row[0]:

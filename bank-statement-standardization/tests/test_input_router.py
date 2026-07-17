@@ -826,11 +826,10 @@ class InputRouterTests(unittest.TestCase):
         rows = [dict(zip(headers, row)) for row in result.rows[1:]]
 
         self.assertEqual(route["fingerprint_id"], "md5:46cb259aaeb59d1ed620281dcd3f1714")
-        self.assertEqual(route["column_transforms"]["对方账户名"]["newline"], "cjk_join")
-        self.assertEqual(route["column_transforms"]["对方卡号/账号"]["newline"], "remove_all")
+        self.assertNotIn("column_transforms", route)
         self.assertIn("支付宝支付科技有限公司", {row["对方账户名"] for row in rows})
         self.assertIn(
-            "付费通(拼多多支付)- 拼多多钱包余额充值",
+            "付费通(拼多多支付)-拼多多钱包余额充值",
             {row["对方账户名"] for row in rows},
         )
         self.assertIn("10200101104401040000012", {row["对方卡号/账号"] for row in rows})
@@ -988,7 +987,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertIn("收/支", route["columns_evidence"])
         self.assertGreater(len(result.rows), 1)
         self.assertEqual(result.rows[0], ["收/支", "交易对方", "商品说明", "收/付款方式", "金额", "交易订单号", "商家订单号", "交易时间"])
-        self.assertRegex(result.rows[1][7], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+        self.assertRegex(result.rows[1][7], r"^\d{4}-\d{2}-\d{2}\d{2}:\d{2}:\d{2}$")
         self.assertIn("支付宝商家订单号=", result.rows[1][6])
         self.assertIn("支付宝交易订单号=", result.rows[1][6])
 

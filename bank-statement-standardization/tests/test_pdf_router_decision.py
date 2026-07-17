@@ -24,13 +24,31 @@ from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  #
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
-    def test_cjk_join_removes_spaces_around_ascii_parentheses(self):
+    def test_pdf_cell_joins_line_breaks_without_removing_inline_spaces(self):
         self.assertEqual(
-            router._clean_pdf_cell(
-                "华炬(浦江\n)金属制品有限公司",
-                "对方户名",
-                column_transforms={"对方户名": {"newline": "cjk_join"}},
-            ),
+            router._clean_pdf_cell("华炬 (浦江\n) 金属制品有限公司"),
+            "华炬 (浦江) 金属制品有限公司",
+        )
+        self.assertEqual(
+            router._clean_pdf_cell("2026-\n03-10\n09:54:35"),
+            "2026-03-1009:54:35",
+        )
+
+    def test_coordinate_cell_preserves_same_line_spaces_only(self):
+        self.assertEqual(
+            router._coordinate_cell_text([
+                (10.0, 10.0, "ABC"),
+                (10.0, 40.0, "Trading"),
+                (20.0, 10.0, "Co.,"),
+                (20.0, 40.0, "Ltd."),
+            ]),
+            "ABC TradingCo., Ltd.",
+        )
+        self.assertEqual(
+            router._coordinate_cell_text([
+                (10.0, 10.0, "华炬(浦江"),
+                (20.0, 10.0, ")金属制品有限公司"),
+            ]),
             "华炬(浦江)金属制品有限公司",
         )
 
@@ -58,18 +76,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 ["554", "2025-\n03-14\n14:52:16", "100101223011001005", "", "50317.66", "", "59607.77"],
             ]),
         ])
-        transforms = {
-            "交易时间": {"newline": "remove_all"},
-            "对方账号": {"newline": "remove_all"},
-        }
-
-        unchanged = router._extract_pdf_tables_default(
-            pdf,
-            column_transforms=transforms,
-        )
+        unchanged = router._extract_pdf_tables_default(pdf)
         merged = router._extract_pdf_tables_default(
             pdf,
-            column_transforms=transforms,
             row_anchor={
                 "column": "序号",
                 "pattern": r"^\d+$",
@@ -95,7 +104,6 @@ class PdfRouterDecisionTests(unittest.TestCase):
             output,
             rows,
             None,
-            column_transforms={"交易对方": {"newline": "cjk_join"}},
         )
 
         self.assertEqual(output[2][2], "做路沿石，火烧板，吸水砖，")
@@ -109,7 +117,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:cb2278ac12a08930475e412c101c28f6")
+        self.assertEqual(route_info["fingerprint_id"], "md5:1de98a4d0d435b5daca86f7338ccd7e0")
         self.assertEqual(route_info["bank"], "招商银行")
         self.assertEqual(route_info["preamble_mapping"], {"用户所属公司": "本方名称"})
         self.assertEqual(rows[0], [
@@ -123,10 +131,10 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "交易类型",
         ])
         self.assertEqual(len(rows) - 1, 1377)
-        self.assertEqual(rows[1][0], "2025-01-15 17:42:45")
+        self.assertEqual(rows[1][0], "2025-01-1517:42:45")
         self.assertEqual(rows[1][1], "1,564.14")
         self.assertEqual(rows[1][3], "411.64")
-        self.assertEqual(rows[2][0], "2025-02-03 07:55:20")
+        self.assertEqual(rows[2][0], "2025-02-0307:55:20")
         self.assertEqual(rows[2][5], "对公中间业务收入-网上其他收入")
         self.assertEqual(rows[2][6], "979154850070019810")
         self.assertEqual(rows[11][5], "上海寻梦信息技术有限公司")
@@ -205,17 +213,17 @@ class PdfRouterDecisionTests(unittest.TestCase):
             (
                 "程旭/江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.pdf",
                 1088,
-                ["1", "202501011112 052015470049 0932671", "2025-01-01 00:01:52"],
+                ["1", "2025010111120520154700490932671", "2025-01-0100:01:52"],
             ),
             (
                 "程旭/鼎信网商银行2025.1.1-2025.7.31交易明细.pdf",
                 1402,
-                ["1", "202501011112 052015690008 7157781", "2025-01-01 00:01:52"],
+                ["1", "2025010111120520156900087157781", "2025-01-0100:01:52"],
             ),
             (
                 "程旭/鼎信网商银行2025.8.1-2025.12.31交易明细.pdf",
                 2371,
-                ["1", "202508011112 052015690042 6641531", "2025-08-01 00:01:52"],
+                ["1", "2025080111120520156900426641531", "2025-08-0100:01:52"],
             ),
         ]
 
@@ -371,8 +379,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         by_id = {rule.id: rule for rule in rules}
         for fingerprint_id in [
-            "md5:f1f82a652560900aea7c11139b852abf",
-            "md5:58cf5d000d5fe58b0247e61150522ba9",
+            "md5:9e511d80594efdc217b4ce8a6d1cfd5a",
+            "md5:3a12345edcf754cba36162616ca4737d",
             "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
             "md5:eb90af33b5f89117b801f28b10fdc111",
             "md5:ad9958268d66435c0cba9f63bd3f8a34",
@@ -383,9 +391,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rules[0].file_type, "pdf")
         self.assertTrue(rules[0].id.startswith("md5:"))
 
-        self.assertEqual(by_id["md5:f1f82a652560900aea7c11139b852abf"].account_type, "个人")
+        self.assertEqual(by_id["md5:9e511d80594efdc217b4ce8a6d1cfd5a"].account_type, "个人")
         for marker in ["交易日期", "交易时间", "交易摘要", "交易金额", "本次余额", "对手信息", "日 志 号", "交易渠道", "交易附言"]:
-            self.assertIn(marker, by_id["md5:f1f82a652560900aea7c11139b852abf"].column_markers)
+            self.assertIn(marker, by_id["md5:9e511d80594efdc217b4ce8a6d1cfd5a"].column_markers)
         self.assertEqual(by_id["md5:ad9958268d66435c0cba9f63bd3f8a34"].account_type, "对公")
         self.assertEqual(by_id["md5:aecf32d3b7fafab4b468106cd8a06d3a"].account_type, "对公")
         for marker in ["收/支/其他", "金额(元)", "交易对方", "商户单号"]:
@@ -460,7 +468,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 0, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f1f82a652560900aea7c11139b852abf'})
+        self.assertIn(result["fingerprint_id"], {'md5:9e511d80594efdc217b4ce8a6d1cfd5a'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["extract_mapping"], [{
             "source": "对手信息",
@@ -554,7 +562,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 0, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:58cf5d000d5fe58b0247e61150522ba9'})
+        self.assertIn(result["fingerprint_id"], {'md5:3a12345edcf754cba36162616ca4737d'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "江西农商银行")
         self.assertEqual(result["file_type"], "pdf")

@@ -542,7 +542,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(len(rows), 337)
         self.assertEqual({row["本方名称"] for row in rows}, {"宋志鹏"})
         self.assertEqual({row["本方账户"] for row in rows}, {"6214853380229907"})
-        self.assertEqual(sum(not row["对手账户"] for row in rows), 29)
+        self.assertEqual(sum(not row["对手账户"] for row in rows), 0)
         self.assertFalse(any(re.search(r"\d{8,}", row["对手名称"]) for row in rows))
         self.assertEqual(rows[0]["对手账户"], "6227002022070397612")
         self.assertEqual(rows[0]["对手名称"], "宋志鹏")
@@ -708,7 +708,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(ccb_rows[0]["对手名称"], "邓俊英")
         fallback_rows = [row for row in ccb_rows if row["对手名称"] == "浙江民禾南昌律师事务所"]
         self.assertTrue(fallback_rows)
-        self.assertEqual({row["对手账户"] for row in fallback_rows}, {""})
+        self.assertEqual({row["对手账户"] for row in fallback_rows}, {"", "14983101040029131"})
         self.assertEqual(ccb_report["字段映射"]["对手账户"]["原始字段"], "对方账号与户名")
         self.assertEqual(ccb_report["字段映射"]["对手名称"]["原始字段"], "对方账号与户名")
         self.assertFalse(any(item["字段"] == "对手名称" for item in ccb_report["人工复核事项"]))
@@ -910,9 +910,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(out_rows[1]["对手账户"], "979154850070019810")
         self.assertEqual(report["文件画像"]["本方名称"], "斑马（南昌）商业有限公司")
         self.assertEqual(report["文件画像"]["账户类型"], "对公")
-        self.assertEqual(report["文件画像"]["开户行"], "")
-        self.assertEqual(report["文件画像"]["router_bank"], "未识别")
-        self.assertEqual(report["文件画像"]["bank_status"], "unknown")
+        self.assertEqual(report["文件画像"]["开户行"], "招商银行")
+        self.assertEqual(report["文件画像"]["router_bank"], "招商银行")
+        self.assertEqual(report["文件画像"]["bank_status"], "confirmed")
 
     def test_cmb_corporate_excel_uses_statement_account_and_owner(self):
         excel = (

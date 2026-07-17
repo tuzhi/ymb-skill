@@ -26,7 +26,6 @@ class RouteRule:
     date_order: str = ""
     multi_sheet_same_layout: bool = False
     header_merge: dict = field(default_factory=dict)
-    column_transforms: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
     direction_from_column: dict = field(default_factory=dict)
@@ -462,33 +461,6 @@ def _header_merge(item):
     }
 
 
-def _column_transforms(item, fingerprint):
-    options = _reader_options(item)
-    transforms = options.get("column_transforms")
-    if transforms is None:
-        transforms = (fingerprint or {}).get("column_transforms") or {}
-    if not isinstance(transforms, dict):
-        raise ValueError("reader_options.column_transforms must be a dict")
-    normalized = {}
-    for column, options in transforms.items():
-        source = str(column).strip()
-        if not source:
-            continue
-        if options is None:
-            continue
-        if not isinstance(options, dict):
-            raise ValueError("reader_options.column_transforms options must be dicts")
-        item = {}
-        newline = str(options.get("newline") or "").strip()
-        if newline:
-            if newline not in {"space", "cjk_join", "remove_all"}:
-                raise ValueError(f"unsupported newline transform: {newline}")
-            item["newline"] = newline
-        if item:
-            normalized[source] = item
-    return normalized
-
-
 def _row_anchor(item, fingerprint):
     options = _reader_options(item)
     row_transforms = options.get("row_transforms")
@@ -633,7 +605,6 @@ def load_pdf_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            column_transforms=_column_transforms(item, fingerprint),
             row_anchor=_row_anchor(item, fingerprint),
             word_filters=_word_filters(item, fingerprint),
             direction_from_column=_direction_from_column(item),
@@ -672,7 +643,6 @@ def load_excel_route_rules():
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            column_transforms=_column_transforms(item, fingerprint),
             row_anchor=_row_anchor(item, fingerprint),
             word_filters=_word_filters(item, fingerprint),
             direction_from_column=_direction_from_column(item),
