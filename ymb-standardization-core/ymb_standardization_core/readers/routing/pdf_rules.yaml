@@ -1203,4 +1203,30 @@
       - 收入
       - 支出
       - 不计
+  reader_options:
+    extract_mapping:
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-(?:自动|单次)转入.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-转出到余额.*$
+      replacement: 收入
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-.*收益(?:发放)?.*$
+      replacement: 收入
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*提现-实时提现.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*花呗(?:自动|主动)还款.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额升级服务收益发放.*$
+      replacement: 收入
   reader_id: pdfplumber_coordinate_table

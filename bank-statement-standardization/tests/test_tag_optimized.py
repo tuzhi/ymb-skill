@@ -149,6 +149,10 @@ class TagOptimizedTest(unittest.TestCase):
             ("支出", "支出金额", "转入零钱通-来自零钱"),
             ("收入", "收入金额", "零钱充值"),
             ("支出", "支出金额", "零钱提现"),
+            ("支出", "支出金额", "提现-实时提现"),
+            ("收入", "收入金额", "余额宝-2026.04.29-收益"),
+            ("支出", "支出金额", "余额宝-自动转入"),
+            ("收入", "收入金额", "余额升级服务收益发放"),
         ]
         for direction, amount_col, memo in cases:
             row = pd.Series({
@@ -245,7 +249,7 @@ class TagOptimizedTest(unittest.TestCase):
                 "本方账户": "alipay-account",
                 "来源文件名": "支付宝交易明细.pdf",
                 "银行备注": "退款-代付",
-                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=R1",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=M1_R1",
                 "收入金额": "",
                 "支出金额": "",
                 "收支方向": "未知",
@@ -263,7 +267,7 @@ class TagOptimizedTest(unittest.TestCase):
                 "本方账户": "alipay-account",
                 "来源文件名": "支付宝交易明细.pdf",
                 "银行备注": "退款-代付",
-                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=R2",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M1；支付宝交易订单号=M1_R2",
                 "收入金额": "",
                 "支出金额": "",
                 "收支方向": "未知",
@@ -289,7 +293,7 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "三级标签"], "退款支出")
         self.assertEqual(df.loc[2, "三级标签"], "退款支出")
 
-    def test_alipay_cancel_pair_allows_one_cancel_row_for_multiple_same_direction_orders(self):
+    def test_alipay_cancel_pair_only_cancels_transaction_order_related_rows(self):
         df = pd.DataFrame([
             {
                 "交易唯一编号": "TX-original-1",
@@ -332,7 +336,7 @@ class TagOptimizedTest(unittest.TestCase):
                 "本方账户": "alipay-account",
                 "来源文件名": "支付宝交易明细.pdf",
                 "银行备注": "退款-订单支付",
-                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M2；支付宝交易订单号=R",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=M2；支付宝交易订单号=O1_REFUND",
                 "收入金额": "",
                 "支出金额": "",
                 "收支方向": "未知",
@@ -349,14 +353,42 @@ class TagOptimizedTest(unittest.TestCase):
 
         summary = _apply_alipay_order_reversals(df)
 
-        self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 2, "冲正记录数": 1})
+        self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 1, "冲正记录数": 1})
         self.assertEqual(df.loc[0, "交易状态"], "被取消")
-        self.assertEqual(df.loc[1, "交易状态"], "被取消")
+        self.assertEqual(df.loc[1, "交易状态"], "正常")
         self.assertEqual(df.loc[2, "交易状态"], "取消")
-        self.assertEqual(df.loc[2, "关联冲正交易编号"], "TX-original-1；TX-original-2")
+        self.assertEqual(df.loc[2, "关联冲正交易编号"], "TX-original-1")
         self.assertEqual(df.loc[0, "分析支出金额"], 0)
-        self.assertEqual(df.loc[1, "分析支出金额"], 0)
+        self.assertEqual(df.loc[1, "分析支出金额"], 200)
         self.assertEqual(df.loc[2, "三级标签"], "退款支出")
+
+    def test_alipay_cancel_pair_rejects_unrelated_interest_pseudo_order(self):
+        df = pd.DataFrame([
+            {
+                "交易唯一编号": "TX-material", "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf", "银行备注": "材料付2万",
+                "账户方附言": "支付宝商家订单号=502054834515101INTEREST；支付宝交易订单号=PAYMENT1",
+                "收入金额": "", "支出金额": "20000", "收支方向": "支出",
+                "一级标签": "经营类", "二级标签": "主营业务", "三级标签": "采购支出",
+                "标签来源": "规则库", "标签置信度": "0.9", "命中规则编号": "R",
+                "命中关键词": "材料", "命中字段": "银行备注",
+            },
+            {
+                "交易唯一编号": "TX-interest", "本方账户": "alipay-account",
+                "来源文件名": "支付宝交易明细.pdf", "银行备注": "余额宝收益",
+                "账户方附言": "支付宝订单状态=取消/退款关联；支付宝商家订单号=502054834515101INTEREST；支付宝交易订单号=INTEREST1",
+                "收入金额": "", "支出金额": "", "收支方向": "未知",
+                "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他",
+                "标签来源": "兜底", "标签置信度": "0.3", "命中规则编号": "",
+                "命中关键词": "", "命中字段": "",
+            },
+        ])
+
+        summary = _apply_alipay_order_reversals(df)
+
+        self.assertEqual(summary, {"配对组数": 0, "冲正原始交易数": 0, "冲正记录数": 0})
+        self.assertEqual(df["交易状态"].tolist(), ["正常", "正常"])
+        self.assertEqual(df.loc[0, "分析支出金额"], 20000)
 
     def test_bank_reversal_pairs_only_adjacent_rows_with_balance_closure(self):
         common = {

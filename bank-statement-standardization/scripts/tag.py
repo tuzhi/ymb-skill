@@ -45,6 +45,7 @@ FIELD_CONF = {"对手名称": 0.9, "银行备注": 0.78, "账户方附言": 0.72
 ALIPAY_ORDER_RE = re.compile(r"支付宝(?:商家|交易)订单号=[^；;]+")
 ALIPAY_STATUS_RE = re.compile(r"支付宝订单状态=[^；;]+")
 ALIPAY_MERCHANT_ORDER_RE = re.compile(r"支付宝商家订单号=([^；;]+)")
+ALIPAY_TRANSACTION_ORDER_RE = re.compile(r"支付宝交易订单号=([^；;]+)")
 
 
 def _compile_keyword_pattern(rules):
@@ -173,6 +174,22 @@ def _extract_alipay_merchant_order(text):
     return m.group(1).strip() if m else ""
 
 
+def _extract_alipay_transaction_order(text):
+    m = ALIPAY_TRANSACTION_ORDER_RE.search(str(text or ""))
+    return m.group(1).strip() if m else ""
+
+
+def _alipay_transaction_orders_related(original, cancellation):
+    """退款交易号应复用原交易号，并在其后追加退款关联标识。"""
+    original = str(original or "").strip()
+    cancellation = str(cancellation or "").strip()
+    return bool(
+        original
+        and cancellation
+        and (original == cancellation or cancellation.startswith(f"{original}_"))
+    )
+
+
 def _is_alipay_rows(df):
     text = pd.Series("", index=df.index, dtype=object)
     for col in ("开户行", "来源文件名", "交易渠道", "账户方附言"):
@@ -254,6 +271,7 @@ def _apply_alipay_order_reversals(out_df):
     is_alipay = _is_alipay_rows(out_df)
     memo = out_df["账户方附言"].astype(str)
     merchant_orders = memo.map(_extract_alipay_merchant_order).where(is_alipay, "")
+    transaction_orders = memo.map(_extract_alipay_transaction_order).where(is_alipay, "")
     if not merchant_orders.any():
         return {"配对组数": 0, "冲正原始交易数": 0, "冲正记录数": 0}
 
@@ -281,6 +299,24 @@ def _apply_alipay_order_reversals(out_df):
         idx = list(idx)
         normal_idx = [i for i in idx if bool(has_cash_flow.loc[i]) and not bool(is_cancel.loc[i])]
         cancel_idx = [i for i in idx if bool(is_cancel.loc[i])]
+        if len(normal_idx) < 1 or len(cancel_idx) < 1:
+            continue
+        compatible_normal_idx = [
+            i for i in normal_idx
+            if any(
+                _alipay_transaction_orders_related(transaction_orders.loc[i], transaction_orders.loc[j])
+                for j in cancel_idx
+            )
+        ]
+        compatible_cancel_idx = [
+            j for j in cancel_idx
+            if any(
+                _alipay_transaction_orders_related(transaction_orders.loc[i], transaction_orders.loc[j])
+                for i in compatible_normal_idx
+            )
+        ]
+        normal_idx = compatible_normal_idx
+        cancel_idx = compatible_cancel_idx
         if len(normal_idx) < 1 or len(cancel_idx) < 1:
             continue
         normal_directions = {"收入" if inc.loc[i] > 0 else "支出" for i in normal_idx}

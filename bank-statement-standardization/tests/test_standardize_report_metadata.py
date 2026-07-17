@@ -52,12 +52,27 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         if not source.exists():
             self.skipTest("本地未提供支付宝 PDF 样本")
         with tempfile.TemporaryDirectory() as tmp:
-            _csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+            csv_path, _json_path, report = standardize.standardize(str(source), out_dir=tmp)
+            with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                rows = list(csv.DictReader(f))
 
         image = report["文件画像"]
         self.assertEqual(image["fingerprint_id"], "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6")
         self.assertEqual(image["本方名称"], "付丽翠")
         self.assertEqual(image["本方账户"], "19979389877")
+        cases = (
+            ("余额宝-自动转入", "支出金额"),
+            ("余额宝-转出到余额", "收入金额"),
+            ("余额宝-2026.04.29-收益", "收入金额"),
+            ("提现-实时提现", "支出金额"),
+            ("花呗自动还款", "支出金额"),
+            ("花呗主动还款", "支出金额"),
+            ("余额升级服务收益发放", "收入金额"),
+        )
+        for keyword, amount_field in cases:
+            matched = [row for row in rows if keyword in row["银行备注"]]
+            self.assertTrue(matched, keyword)
+            self.assertTrue(all(row[amount_field] for row in matched), keyword)
 
     def test_datetime_preserves_row_level_date_and_minute_precision(self):
         self.assertEqual(standardize.parse_datetime("2026-05-05", ""), "2026-05-05")
