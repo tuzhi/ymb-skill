@@ -3,6 +3,13 @@
 该包只负责把原始文件解析并映射为统一标准字段；状态机、整合、打标和交付物组装仍留在外层脚本。
 """
 
-from .core import NotABankStatement, standardize
+from .contracts import RouteDecision, StandardizationContext
+from .core import NotABankStatement, standardize, standardize_file
 
-__all__ = ["NotABankStatement", "standardize"]
+__all__ = [
+    "NotABankStatement",
+    "RouteDecision",
+    "StandardizationContext",
+    "standardize",
+    "standardize_file",
+]

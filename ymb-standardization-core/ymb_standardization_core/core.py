@@ -29,6 +29,8 @@ import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
+from ymb_standardization_core.contracts import RouteDecision, StandardizationContext
+
 try:
     import pandas as pd
     import yaml
@@ -1864,6 +1866,20 @@ def standardize(path, out_dir=None, bank=None,
     return csv_path, json_path, report
 
 
+def standardize_file(context: StandardizationContext):
+    """按公开上下文执行单文件标准化。"""
+    if not isinstance(context, StandardizationContext):
+        raise TypeError("context must be StandardizationContext")
+    return standardize(
+        context.path,
+        out_dir=context.out_dir,
+        bank=context.bank,
+        account_type=context.account_type,
+        header_row=context.header_row,
+        overrides=dict(context.overrides),
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description="单文件银行流水标准化")
     ap.add_argument("file")
@@ -1882,9 +1898,14 @@ def main():
             overrides[_norm(k)] = v.strip()
 
     try:
-        csv_path, json_path, report = standardize(
-            args.file, out_dir=args.out_dir, bank=args.bank,
-            account_type=args.account_type, header_row=args.header_row, overrides=overrides)
+        csv_path, json_path, report = standardize_file(StandardizationContext(
+            path=args.file,
+            out_dir=args.out_dir,
+            bank=args.bank,
+            account_type=args.account_type,
+            header_row=args.header_row,
+            overrides=overrides,
+        ))
     except NotABankStatement as e:
         sys.exit(f"[SKIP] {os.path.basename(args.file)}：{e.reason}")
 

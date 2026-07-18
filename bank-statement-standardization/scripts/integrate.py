@@ -35,6 +35,7 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import standardize as S   # 复用余额连续性行序整理（best_continuity_order）
+from stage_contracts import IntegrationContext
 
 NUMERIC = ["收入金额", "支出金额", "交易金额", "账户余额"]
 ALIPAY_TRADE_ORDER_RE = re.compile(r"支付宝交易订单号=([^；;]+)")
@@ -2064,6 +2065,18 @@ def integrate(customer, paths, out_dir=None, self_accounts=None):
     return out_csv, out_json, report
 
 
+def integrate_context(context: IntegrationContext):
+    """按公开上下文执行阶段二整合。"""
+    if not isinstance(context, IntegrationContext):
+        raise TypeError("context must be IntegrationContext")
+    return integrate(
+        context.customer,
+        list(context.inputs),
+        out_dir=context.out_dir,
+        self_accounts=list(context.self_accounts),
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description="单客户多流水整合与验证")
     ap.add_argument("customer")
@@ -2071,8 +2084,12 @@ def main():
     ap.add_argument("--out-dir")
     ap.add_argument("--self-accounts", nargs="*", default=[])
     args = ap.parse_args()
-    out_csv, out_json, report = integrate(
-        args.customer, args.inputs, out_dir=args.out_dir, self_accounts=args.self_accounts)
+    out_csv, out_json, report = integrate_context(IntegrationContext.create(
+        args.customer,
+        args.inputs,
+        out_dir=args.out_dir,
+        self_accounts=args.self_accounts,
+    ))
     o = report["客户整合概览"]
     print(f"[OK] {args.customer}: {o['整合文件数']} 文件 / {o['整合账户数']} 账户 / "
           f"{o['整合交易数']} 笔（原始 {o['原始交易数']}，跨文件去重 {o['跨文件去重笔数']}）/ "

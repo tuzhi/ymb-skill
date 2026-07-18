@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.readers.router import read_pdf_rows
 from ymb_standardization_core.readers.routing.rule_loader import load_excel_route_rules
+from ymb_standardization_core.contracts import RouteDecision
 
 
 @dataclass
@@ -22,7 +23,7 @@ class ReadResult:
     kind: str
     preamble: str
     rows: list
-    route_info: dict
+    route_info: RouteDecision
 
 
 _excel_reader = None
@@ -506,11 +507,16 @@ def read_rows(path, hints=None):
             kind="excel",
             preamble="",
             rows=rows,
-            route_info=route_info,
+            route_info=RouteDecision.from_mapping(route_info),
         )
     if ext in (".csv", ".txt", ".tsv"):
         raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
         preamble, rows, route_info = read_pdf_rows(path, open_password=open_password)
-        return ReadResult(kind="pdf", preamble=preamble, rows=rows, route_info=route_info)
+        return ReadResult(
+            kind="pdf",
+            preamble=preamble,
+            rows=rows,
+            route_info=RouteDecision.from_mapping(route_info),
+        )
     raise _unsupported_error(f"不支持的文件类型：{ext}")

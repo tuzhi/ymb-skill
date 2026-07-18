@@ -328,10 +328,10 @@ def run(client, args):
     tag_csv, _, srep = T.tag(int_csv, rules, out_dir=work)
     tagged = pd.read_csv(tag_csv, dtype=str)
 
-    return _finalize(client, int_csv, tagged, irep, srep, work, out_dir, skipped)
+    return finalize_deliverable(client, int_csv, tagged, irep, srep, work, out_dir, skipped)
 
 
-def _finalize(client, flow_csv, tagged, irep, srep, work, out_dir, skipped=None):
+def finalize_deliverable(client, flow_csv, tagged, irep, srep, work, out_dir, skipped=None):
     """从（已整合/已打标的）流水组装单文件交付物：补算组合余额、回填客户/虚拟账户余额列后写 xlsx。
     raw（run）与 reuse（run_reuse）两条路径共用此尾段，保证交付物口径完全一致。"""
     # 组合（虚拟账户）余额 + 余额校验（轻量、确定性，始终重算以保证与当前数据一致）
@@ -431,7 +431,7 @@ def run_reuse(client, reuse_path, out_dir):
     int_json = _glob_first(src_dir, "*__整合报告.json")
     irep = _load_json(int_json) if int_json else _build_integrate_report_from_df(client, tagged)
 
-    return _finalize(client, flow_csv, tagged, irep, srep, work, out_dir)
+    return finalize_deliverable(client, flow_csv, tagged, irep, srep, work, out_dir)
 
 
 def main():

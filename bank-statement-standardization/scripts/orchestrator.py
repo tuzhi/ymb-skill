@@ -6,7 +6,6 @@ import csv
 import glob
 import hashlib
 import json
-import locale
 import os
 import platform
 import re
@@ -25,6 +24,7 @@ import portfolio_balance as PB
 import standardize as S
 import tag as T
 import validate_stage as V
+from stage_contracts import IntegrationContext, StageResult
 
 
 IMPORTS = ("pandas", "openpyxl", "xlrd", "pdfplumber")
@@ -652,12 +652,12 @@ class Runner:
             "stage_1_standardize": self.declared_stage_1(upstream_manifest),
         }
         self.write_manifest()
-        return {
+        return StageResult("stage_1_standardize", {
             "mode": "manifest_declared_standardized_input",
             "upstream_manifest": self.manifest["upstream_manifest"],
             "processed_files": len(processed),
             "standardized": processed,
-        }
+        })
 
     def stage_1_standardize(self):
         work = self.work_dir()
@@ -679,11 +679,11 @@ class Runner:
         processed = []
         for path in raw_files:
             try:
-                csv_path, json_path, report = S.standardize(
-                    path,
+                csv_path, json_path, report = S.standardize_file(S.StandardizationContext(
+                    path=path,
                     out_dir=work,
                     account_type=self.args.account_type,
-                )
+                ))
                 processed.append({
                     "input": path,
                     "csv": csv_path,
@@ -701,39 +701,46 @@ class Runner:
 
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
         self.write_manifest()
-        return {"processed_files": len(processed), "standardized": processed}
+        return StageResult(
+            "stage_1_standardize",
+            {"processed_files": len(processed), "standardized": processed},
+        )
 
     def stage_2_integrate(self):
-        int_csv, int_json, report = I.integrate(self.args.client, [self.work_dir()], out_dir=self.work_dir())
+        int_csv, int_json, report = I.integrate_context(IntegrationContext.create(
+            self.args.client,
+            [self.work_dir()],
+            out_dir=self.work_dir(),
+        ))
         overview = report["客户整合概览"]
-        return {
+        return StageResult("stage_2_integrate", {
             "integrated_csv": int_csv,
             "integrated_report": int_json,
             "integrated_rows": overview["整合交易数"],
             "accounts": overview["整合账户数"],
-        }
+        })
 
     def stage_2b_portfolio_balance(self):
         int_csv = self.latest_artifact("*__整合流水.csv")
         daily_csv, report_json, report = PB.run(int_csv, out_dir=self.work_dir())
-        return {
+        return StageResult("stage_2b_portfolio_balance", {
             "portfolio_csv": daily_csv,
             "portfolio_report": report_json,
             "accounts": report["数据范围"]["账户数"],
             "warning_accounts": report["账户余额校验"]["预警账户数"],
-        }
+        })
 
     def stage_3_tag(self):
         int_csv = self.latest_artifact("*__整合流水.csv")
         rules = os.path.join(self.skill_dir, "assets", "tag_rules.csv")
         tag_csv, tag_json, report = T.tag(int_csv, rules, out_dir=self.work_dir())
         summary = report["标签梳理概览"]
-        return {
+        return StageResult("stage_3_tag", {
             "tagged_csv": tag_csv,
             "tag_report": tag_json,
             "tagged_rows": summary["交易总数"],
             "rule_hit_rate": summary["规则命中率"],
-        }
+        })
 
     def stage_4_package(self):
         import pandas as pd
@@ -748,7 +755,7 @@ class Runner:
             srep = json.load(f)
         tagged = pd.read_csv(tag_csv, dtype=str)
         skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
-        deliverable = P._finalize(
+        deliverable = P.finalize_deliverable(
             self.args.client,
             int_csv,
             tagged,
@@ -758,7 +765,7 @@ class Runner:
             self.out_dir,
             skipped,
         )
-        return {"deliverable": deliverable}
+        return StageResult("stage_4_package", {"deliverable": deliverable})
 
     def execute_stage_script(self, stage_id):
         handlers = {
@@ -826,57 +833,6 @@ class Runner:
             "script_execution_challenge": self.run_id,
             "input_snapshot": self.input_snapshot_details,
         })
-
-    def run_pipeline(self):
-        script = os.path.join(os.path.dirname(__file__), "package_deliverable.py")
-        cmd = [
-            sys.executable, script, "--client", self.args.client,
-            "--folder", os.path.abspath(self.args.folder), "--out-dir", self.out_dir,
-        ]
-        if self.args.account_type:
-            cmd += ["--account-type", self.args.account_type]
-        self.emit("INFO", "PIPELINE_START", "开始执行正式流水线", command=cmd)
-        lines = []
-        cp = subprocess.Popen(
-            cmd,
-            text=True,
-            encoding=locale.getpreferredencoding(False),
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        for line in cp.stdout:
-            lines.append(line)
-            print(line, end="", flush=True)
-        returncode = cp.wait()
-        output = "".join(lines)
-        with open(os.path.join(self.run_dir, "pipeline.stdout.log"), "w", encoding="utf-8") as f:
-            f.write(output)
-        with open(os.path.join(self.run_dir, "pipeline.stderr.log"), "w", encoding="utf-8") as f:
-            f.write("stderr 已合并到 pipeline.stdout.log，以便实时显示。\n")
-        if returncode:
-            raise RuntimeError(f"业务流水线失败，退出码 {returncode}：{output[-1000:]}")
-        self.receipt("package_deliverable", "ok", {"command": cmd})
-
-    def validate(self):
-        work = os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
-        checks = [
-            ("validate_stage_1", lambda: V.validate_standardize(
-                work, skipped_inputs=self.manifest.get("skipped_inputs", []))),
-            ("validate_stage_2", lambda: V.validate_integrate(work)),
-            ("validate_stage_2b", lambda: V.validate_portfolio(work)),
-        ]
-        integrated_rows = None
-        for stage, fn in checks:
-            result = fn()
-            if stage == "validate_stage_2":
-                integrated_rows = result["integrated_rows"]
-            self.receipt(stage, "ok", result)
-        tag = V.validate_tag(work, integrated_rows=integrated_rows)
-        self.receipt("validate_stage_3", "ok", tag)
-        final = V.validate_final(self.out_dir, self.args.client, tagged_rows=tag["tagged_rows"])
-        self.receipt("validate_final", "ok", final)
-        return final
 
     def bundle(self, level):
         bundle = self.bundle_path(level)
