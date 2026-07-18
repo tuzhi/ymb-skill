@@ -639,9 +639,24 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context={"date_patterns": ["yyyy-mm-dd"]})
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:ae05becb79352db902ea07365adcc6fa'})
+        self.assertEqual(result["fingerprint_id"], "md5:e6e38346900050e3619ef4d86ec20fb1")
+        self.assertEqual(result["account_type"], "个人")
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "中国光大银行")
+        self.assertEqual(result["preamble_extractors"], [
+            {"field": "本方名称", "pattern": r"客户姓名[:：]\s*([^\s]+)"},
+            {"field": "本方账户", "pattern": r"客户账号[:：]\s*(\d{8,})"},
+        ])
+        self.assertEqual(result["extract_mapping"], [
+            {
+                "source": "对手信息", "field": "对手账户",
+                "pattern": r"^.*?(?<!\d)(\d{12,})(?!\d).*$", "replacement": r"\1",
+            },
+            {
+                "source": "对手信息", "field": "对手名称",
+                "pattern": r"(?<!\d)\d{12,}(?!\d)", "replacement": "",
+            },
+        ])
 
     def test_corporate_debit_credit_timestamp_pdf_route(self):
         text = (

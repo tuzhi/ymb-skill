@@ -901,15 +901,20 @@
         摘要: 银行备注
         交易用途: 银行备注
   reader_id: pdfplumber_table
-- id: md5:ae05becb79352db902ea07365adcc6fa
+- id: md5:e6e38346900050e3619ef4d86ec20fb1
   file_type: pdf
   bank: 中国光大银行
-  account_type: 未知
+  account_type: 个人
   fingerprint:
     identity:
       any:
       - 中国光大银行账户明细查询清单
       - Transaction Statement of China Everbright Bank
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '客户账号[:：]\s*(\d{8,})'
     date_format:
       any:
       - yyyy-mm-dd
@@ -927,6 +932,15 @@
         Account Balance: null
         Payment Receipt Account Information: null
         Abstract: null
+  reader_options:
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^.*?(?<!\d)(\d{12,})(?!\d).*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '(?<!\d)\d{12,}(?!\d)'
+      replacement: ''
   reader_id: pdfplumber_table
 - id: md5:717bcba4db286d79f4050c5e736ab11e
   file_type: pdf
