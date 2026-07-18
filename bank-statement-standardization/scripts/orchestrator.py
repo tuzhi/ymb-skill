@@ -440,6 +440,8 @@ class Runner:
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
         self.receipt_sequence = 0
+        # 同一次 execute 中复用已经通过的阶段验证结果，避免重复读取大型 CSV/XLSX。
+        self.stage_validation_results = {}
         self.original_input_folder = os.path.abspath(args.folder)
         parent_context = load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None
         if parent_context and parent_context.get("parent_client"):
@@ -782,10 +784,14 @@ class Runner:
         if stage_id == "stage_2b_portfolio_balance":
             return V.validate_portfolio(work)
         if stage_id == "stage_3_tag":
-            integrated = V.validate_integrate(work)
+            integrated = self.stage_validation_results.get("stage_2_integrate")
+            if integrated is None:
+                integrated = V.validate_integrate(work)
             return V.validate_tag(work, integrated_rows=integrated["integrated_rows"])
         if stage_id == "stage_4_package":
-            tag = V.validate_tag(work)
+            tag = self.stage_validation_results.get("stage_3_tag")
+            if tag is None:
+                tag = V.validate_tag(work)
             return V.validate_final(self.out_dir, self.args.client, tagged_rows=tag["tagged_rows"])
         raise RuntimeError(f"未知阶段验证器：{stage_id}")
 
@@ -963,6 +969,7 @@ class Runner:
                     "result": script_result,
                 })
                 validate_result = self.validate_stage(stage_id)
+                self.stage_validation_results[stage_id] = validate_result
                 self.receipt(f"{stage_id}__validator", "ok", {
                     "validator": spec.get("validator", ""),
                     "result": validate_result,
@@ -977,9 +984,22 @@ class Runner:
         try:
             self.preflight()
             self.run_manifest_stages()
-            tag = V.validate_tag(self.work_dir())
-            final = V.validate_final(self.out_dir, self.args.client, tagged_rows=tag["tagged_rows"])
-            self.receipt("validate_final", "ok", final)
+            final = self.stage_validation_results.get("stage_4_package")
+            reused_stage_validator = final is not None
+            if final is None:
+                tag = self.stage_validation_results.get("stage_3_tag")
+                if tag is None:
+                    tag = V.validate_tag(self.work_dir())
+                final = V.validate_final(
+                    self.out_dir,
+                    self.args.client,
+                    tagged_rows=tag["tagged_rows"],
+                )
+            self.receipt(
+                "validate_final",
+                "ok",
+                {**final, "reused_stage_validator": reused_stage_validator},
+            )
             self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{final['deliverable']}")
             if self.warning_events:
                 bundle = self.bundle_path("WARNING")

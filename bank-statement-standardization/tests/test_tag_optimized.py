@@ -1,8 +1,10 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
+import tag as tag_module
 
 from tag import (
     _apply_alipay_order_reversals,
@@ -586,6 +588,26 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(summary["银行冲正"]["隐式冲正数"], 1)
         self.assertEqual(df["交易状态"].tolist(), ["被隐式冲正", "隐式冲正"])
         self.assertEqual(df["分析交易金额"].tolist(), [0, 0])
+
+    def test_transaction_relations_compute_alipay_mask_once_per_strategy(self):
+        common = {
+            "本方账户": "A100", "来源文件名": "银行流水.xls",
+            "交易时间": "2025-01-01 10:20:30", "对手名称": "张三", "对手账户": "B200",
+            "银行备注": "转账", "账户方附言": "", "一级标签": "其他类",
+            "二级标签": "其他", "三级标签": "其他",
+        }
+        df = pd.DataFrame([
+            {**common, "交易唯一编号": "TX-out", "来源行号": "10", "收入金额": "",
+             "支出金额": "2000", "账户余额": "178404.59"},
+            {**common, "交易唯一编号": "TX-back", "来源行号": "11", "收入金额": "2000",
+             "支出金额": "", "账户余额": "180404.59"},
+        ])
+
+        with patch("tag._is_alipay_rows", wraps=tag_module._is_alipay_rows) as is_alipay_rows:
+            _apply_transaction_relations(df)
+
+        # 支付宝订单策略一次、银行冲正策略一次；不再按相邻交易重复构造 DataFrame。
+        self.assertEqual(is_alipay_rows.call_count, 2)
 
     def test_bank_implicit_reversal_rejects_date_only_time(self):
         common = {

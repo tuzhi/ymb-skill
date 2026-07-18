@@ -226,64 +226,144 @@ def infer_identity_from_reciprocal_transfers(df):
     if not source_col:
         return result, report
 
+    identity_text_cache = {}
+    identity_bank_cache = {}
+
+    def cached_identity_text(value):
+        text = _clean_text(value)
+        if text not in identity_text_cache:
+            identity_text_cache[text] = _identity_text(text)
+        return identity_text_cache[text]
+
+    def cached_identity_bank(value):
+        text = _clean_text(value)
+        if text not in identity_bank_cache:
+            identity_bank_cache[text] = _identity_bank(text)
+        return identity_bank_cache[text]
+
+    source_keys = result[source_col].map(_clean_text)
+    self_accounts = result["本方账户"].map(_explicit_account)
+    opponent_accounts = result.get(
+        "对手账户", pd.Series("", index=result.index, dtype=object)
+    ).map(_explicit_account)
+    self_account_keys = self_accounts.map(
+        lambda value: "".join(char for char in value if char.isdigit()) if value else ""
+    )
+    opponent_account_keys = opponent_accounts.map(
+        lambda value: "".join(char for char in value if char.isdigit()) if value else ""
+    )
+    self_name_keys = result["本方名称"].map(cached_identity_text)
+    opponent_names = result.get(
+        "对手名称", pd.Series("", index=result.index, dtype=object)
+    ).map(_clean_text)
+    opponent_name_keys = opponent_names.map(cached_identity_text)
+    opponent_bank_texts = result.get(
+        "__对手开户行", pd.Series("", index=result.index, dtype=object)
+    ).map(_clean_text)
+    transaction_ids = result.get(
+        "交易唯一编号", pd.Series("", index=result.index, dtype=object)
+    ).map(_clean_text)
+    time_text = result["交易时间"].map(_clean_text)
+    time_precision = result.get(
+        "__time_precision", pd.Series("", index=result.index, dtype=object)
+    ).map(_clean_text)
+    income_amounts = result["收入金额"].map(_overlap_amount)
+    expense_amounts = result["支出金额"].map(_overlap_amount)
+    parsed_times = pd.to_datetime(time_text, errors="coerce", format="mixed")
+    time_seconds = pd.Series(index=result.index, dtype="Int64")
+    valid_times = parsed_times.notna()
+    time_seconds.loc[valid_times] = (
+        parsed_times.loc[valid_times].astype("int64") // 1_000_000_000
+    ).astype("int64")
+
+    exact_keys = {}
+    reverse_keys = {}
+    for index in result.index:
+        income = income_amounts.loc[index]
+        expense = expense_amounts.loc[index]
+        if time_precision.loc[index] != "second" or not time_text.loc[index] or bool(income) == bool(expense):
+            continue
+        direction = "收入" if income else "支出"
+        amount = income or expense
+        exact_keys[index] = (time_text.loc[index], direction, amount)
+        reverse_keys[index] = (
+            time_text.loc[index],
+            "支出" if direction == "收入" else "收入",
+            amount,
+        )
+
     evidence_by_key = defaultdict(list)
     evidence_by_window_key = defaultdict(list)
-    for index, row in result.iterrows():
-        self_account = _explicit_account(row.get("本方账户"))
-        opponent_account = _explicit_account(row.get("对手账户"))
-        key = _reciprocal_lookup_key(row, reverse=True)
+    for index in result.index:
+        self_account = self_accounts.loc[index]
+        opponent_account = opponent_accounts.loc[index]
+        key = reverse_keys.get(index)
         if self_account and opponent_account and key:
-            evidence_by_key[key].append((index, row))
-            second = _reciprocal_time_second(row)
-            if second is not None:
+            evidence_by_key[key].append(index)
+            second = time_seconds.loc[index]
+            if pd.notna(second):
                 _, direction, amount = key
-                evidence_by_window_key[(second, direction, amount)].append((index, row))
+                evidence_by_window_key[(int(second), direction, amount)].append(index)
 
     touched_sources = set()
-    for source, rows in result.groupby(result[source_col].map(_clean_text), sort=True, dropna=False):
+    for source, rows in result.groupby(source_keys, sort=True, dropna=False):
         exact_candidates = []
         tolerant_candidates = []
         tolerant_pairs = set()
-        for target_index, row in rows.iterrows():
-            key = _reciprocal_lookup_key(row)
+        for target_index in rows.index:
+            key = exact_keys.get(target_index)
             if not key:
                 continue
             evidence_matches = [
-                (evidence_index, evidence, "exact")
-                for evidence_index, evidence in evidence_by_key.get(key, [])
+                (evidence_index, "exact")
+                for evidence_index in evidence_by_key.get(key, [])
             ]
             exact_evidence_indices = {item[0] for item in evidence_matches}
-            for window_key in _reciprocal_window_keys(row):
+            second = time_seconds.loc[target_index]
+            window_keys = []
+            if pd.notna(second):
+                _, direction, amount = key
+                window_keys = [
+                    (int(second) + offset, direction, amount)
+                    for offset in range(
+                        -RECIPROCAL_TIME_TOLERANCE_SECONDS,
+                        RECIPROCAL_TIME_TOLERANCE_SECONDS + 1,
+                    )
+                ]
+            for window_key in window_keys:
                 evidence_matches.extend(
-                    (evidence_index, evidence, "tolerant")
-                    for evidence_index, evidence in evidence_by_window_key.get(window_key, [])
+                    (evidence_index, "tolerant")
+                    for evidence_index in evidence_by_window_key.get(window_key, [])
                     if evidence_index not in exact_evidence_indices
                 )
-            for evidence_index, evidence, match_mode in evidence_matches:
-                if _clean_text(evidence.get(source_col)) == source:
+            for evidence_index, match_mode in evidence_matches:
+                if source_keys.loc[evidence_index] == source:
                     continue
-                opponent_name = _identity_text(row.get("对手名称"))
-                evidence_name = _identity_text(evidence.get("本方名称"))
+                opponent_name = opponent_name_keys.loc[target_index]
+                evidence_name = self_name_keys.loc[evidence_index]
                 name_match = bool(opponent_name and evidence_name and opponent_name == evidence_name)
-                exact_account_match = _accounts_equal(row.get("对手账户"), evidence.get("本方账户"))
+                exact_account_match = bool(
+                    opponent_account_keys.loc[target_index]
+                    and opponent_account_keys.loc[target_index] == self_account_keys.loc[evidence_index]
+                )
                 identity_match = name_match or (
                     (not opponent_name or not evidence_name) and exact_account_match
                 )
                 if not identity_match:
                     continue
-                target_account = _explicit_account(evidence.get("对手账户"))
+                target_account = opponent_accounts.loc[evidence_index]
                 if not target_account:
                     continue
-                bank_text = _clean_text(evidence.get("__对手开户行"))
+                bank_text = opponent_bank_texts.loc[evidence_index]
                 canonical_bank = S.infer_bank(bank_text) if bank_text else ""
                 if canonical_bank in {"农村商业银行", "农村信用社", "村镇银行"}:
                     canonical_bank = ""
                 candidate = {
                     "account": target_account,
-                    "name": _clean_text(evidence.get("对手名称")),
+                    "name": opponent_names.loc[evidence_index],
                     "bank": canonical_bank,
-                    "evidence_id": _clean_text(evidence.get("交易唯一编号")),
-                    "target_date": _clean_text(row.get("交易时间"))[:10],
+                    "evidence_id": transaction_ids.loc[evidence_index],
+                    "target_date": time_text.loc[target_index][:10],
                     "match_mode": match_mode,
                 }
                 if match_mode == "exact":
@@ -303,8 +383,14 @@ def infer_identity_from_reciprocal_transfers(df):
             continue
         account = accounts[0]
         matched = [item for item in candidates if item["account"] == account]
-        names = {_identity_text(item["name"]): item["name"] for item in matched if _identity_text(item["name"])}
-        banks = {_identity_bank(item["bank"]): item["bank"] for item in matched if _identity_bank(item["bank"])}
+        names = {
+            cached_identity_text(item["name"]): item["name"]
+            for item in matched if cached_identity_text(item["name"])
+        }
+        banks = {
+            cached_identity_bank(item["bank"]): item["bank"]
+            for item in matched if cached_identity_bank(item["bank"])
+        }
         name = next(iter(names.values())) if len(names) == 1 else ""
         bank = next(iter(banks.values())) if len(banks) == 1 else ""
         indices = rows.index.tolist()
@@ -315,7 +401,7 @@ def infer_identity_from_reciprocal_transfers(df):
         if name and not any(_clean_text(value) for value in rows["本方名称"]):
             result.loc[indices, "本方名称"] = name
             changed_fields.append("本方名称")
-        if bank and not any(_identity_bank(value) for value in rows["开户行"]):
+        if bank and not any(cached_identity_bank(value) for value in rows["开户行"]):
             result.loc[indices, "开户行"] = bank
             changed_fields.append("开户行")
         if not changed_fields:
@@ -339,16 +425,22 @@ def infer_identity_from_reciprocal_transfers(df):
         })
 
     # 已确认账号还可从批次内其它流水的“对手账号/对手开户行”获得银行元数据。
-    verified_accounts = sorted({
-        _explicit_account(value) for value in result["本方账户"] if _explicit_account(value)
-    })
+    current_self_accounts = result["本方账户"].map(_explicit_account)
+    current_opponent_accounts = result.get(
+        "对手账户", pd.Series("", index=result.index, dtype=object)
+    ).map(_explicit_account)
+    current_opponent_account_keys = current_opponent_accounts.map(
+        lambda value: "".join(char for char in value if char.isdigit()) if value else ""
+    )
+    verified_accounts = sorted({value for value in current_self_accounts if value})
     for account in verified_accounts:
-        own_mask = result["本方账户"].map(_explicit_account) == account
-        counterpart = result[result["对手账户"].map(lambda value: _accounts_equal(value, account))]
+        account_key = "".join(char for char in account if char.isdigit())
+        own_mask = current_self_accounts == account
+        counterpart = result[current_opponent_account_keys == account_key]
         names = {
-            _identity_text(value): _clean_text(value)
+            cached_identity_text(value): _clean_text(value)
             for value in pd.concat([result.loc[own_mask, "本方名称"], counterpart["对手名称"]])
-            if _identity_text(value)
+            if cached_identity_text(value)
         }
         banks = {}
         for value in pd.concat([
@@ -357,7 +449,7 @@ def infer_identity_from_reciprocal_transfers(df):
         ]):
             canonical = S.infer_bank(_clean_text(value)) if _clean_text(value) else ""
             if canonical and canonical not in {"农村商业银行", "农村信用社", "村镇银行"}:
-                banks[_identity_bank(canonical)] = canonical
+                banks[cached_identity_bank(canonical)] = canonical
         name = next(iter(names.values())) if len(names) == 1 else ""
         bank = next(iter(banks.values())) if len(banks) == 1 else ""
         for source, rows in result[own_mask].groupby(
@@ -367,7 +459,7 @@ def infer_identity_from_reciprocal_transfers(df):
             if name and not any(_clean_text(value) for value in rows["本方名称"]):
                 result.loc[rows.index, "本方名称"] = name
                 fields.append("本方名称")
-            if bank and not any(_identity_bank(value) for value in rows["开户行"]):
+            if bank and not any(cached_identity_bank(value) for value in rows["开户行"]):
                 result.loc[rows.index, "开户行"] = bank
                 fields.append("开户行")
             if not fields:
@@ -387,20 +479,29 @@ def infer_identity_from_reciprocal_transfers(df):
 
     # 分月文件本身没有抬头账号时，用文件名中明确标注的末四位与本批次已验证账号做唯一匹配。
     profiles = {}
-    explicit = result[result["本方账户"].map(_explicit_account) != ""].copy()
-    explicit["__explicit_account"] = explicit["本方账户"].map(_explicit_account)
+    final_explicit_accounts = result["本方账户"].map(_explicit_account)
+    explicit = result[final_explicit_accounts != ""].copy()
+    explicit["__explicit_account"] = final_explicit_accounts.loc[explicit.index]
     for account, rows in explicit.groupby("__explicit_account", sort=True):
-        names = {_identity_text(value): _clean_text(value) for value in rows["本方名称"] if _identity_text(value)}
-        banks = {_identity_bank(value): _clean_text(value) for value in rows["开户行"] if _identity_bank(value)}
+        names = {
+            cached_identity_text(value): _clean_text(value)
+            for value in rows["本方名称"] if cached_identity_text(value)
+        }
+        banks = {
+            cached_identity_bank(value): _clean_text(value)
+            for value in rows["开户行"] if cached_identity_bank(value)
+        }
         if len(names) == 1 and len(banks) == 1:
             profiles[account] = (next(iter(names.values())), next(iter(banks.values())))
-    unknown = result[result["本方账户"].map(_is_unknown_account)]
-    for source, rows in unknown.groupby(unknown[source_col].map(_clean_text), sort=True, dropna=False):
+    profile_account_keys = {account: _account_key(account) for account in profiles}
+    unknown_mask = result["本方账户"].map(_is_unknown_account)
+    unknown = result[unknown_mask]
+    for source, rows in unknown.groupby(source_keys.loc[unknown.index], sort=True, dropna=False):
         source_text = " ".join({_clean_text(value) for value in rows["来源文件名"] if _clean_text(value)})
         matches = [
             account for account in profiles
-            if len(_account_key(account)) >= 4
-            and re.search(rf"(?<!\d){re.escape(_account_key(account)[-4:])}(?!\d)", source_text)
+            if len(profile_account_keys[account]) >= 4
+            and re.search(rf"(?<!\d){re.escape(profile_account_keys[account][-4:])}(?!\d)", source_text)
         ]
         if len(matches) != 1:
             continue
@@ -1619,17 +1720,55 @@ def detect_self_transfers(df, self_accounts):
     """自有账户互转候选：双向身份互证才给高置信，日期级记录只作低置信提示。"""
     out = df[df["支出金额_num"] > 0].copy()
     inn = df[df["收入金额_num"] > 0].copy()
+    # 收入候选按“分值金额”分桶，并为有效时间建立有序索引。
+    # 相邻分桶仍需做原有 abs(diff) < 0.01 复核，避免浮点边界改变旧语义。
+    window_ns = int(timedelta(days=3).total_seconds() * 1_000_000_000)
+    incoming_buckets = defaultdict(lambda: {"all": [], "timed": [], "times": []})
+    for order, (_, row) in enumerate(inn.iterrows()):
+        amount = float(row["收入金额_num"])
+        bucket = int(round(amount * 100))
+        entry = {"order": order, "amount": amount, "row": row}
+        incoming_buckets[bucket]["all"].append(entry)
+        timestamp = row["__t"]
+        if pd.notna(timestamp):
+            incoming_buckets[bucket]["timed"].append((int(pd.Timestamp(timestamp).value), order, entry))
+    for bucket in incoming_buckets.values():
+        bucket["timed"].sort(key=lambda item: (item[0], item[1]))
+        bucket["times"] = [item[0] for item in bucket["timed"]]
+
     pairs = []
     used_in = set()
     for _, o in out.iterrows():
-        amt = o["支出金额_num"]
+        amt = float(o["支出金额_num"])
         ot = o["__t"]
-        # 对手是本方名称/本方账户，优先视为内部互转线索
-        cand = inn[(inn["收入金额_num"].sub(amt).abs() < 0.01)]
+        amount_bucket = int(round(amt * 100))
+        candidates = []
+        for bucket_key in range(amount_bucket - 1, amount_bucket + 2):
+            bucket = incoming_buckets.get(bucket_key)
+            if not bucket:
+                continue
+            if pd.isna(ot):
+                candidates.extend(bucket["all"])
+                continue
+            center = int(pd.Timestamp(ot).value)
+            left = bisect_left(bucket["times"], center - window_ns)
+            right = bisect_right(bucket["times"], center + window_ns)
+            candidates.extend(item[2] for item in bucket["timed"][left:right])
+        # 多个相邻分桶合并后恢复原 DataFrame 顺序，保持同分候选的旧版优先级。
+        candidates.sort(key=lambda item: item["order"])
+
         if pd.notna(ot):
-            cand = cand[(cand["__t"] - ot).abs() <= timedelta(days=3)]
+            candidates = [
+                item for item in candidates
+                if abs(item["amount"] - amt) < 0.01
+                and abs(item["row"]["__t"] - ot) <= timedelta(days=3)
+            ]
+        else:
+            candidates = [item for item in candidates if abs(item["amount"] - amt) < 0.01]
+
         ranked = []
-        for _, i in cand.iterrows():
+        for item in candidates:
+            i = item["row"]
             if i["交易唯一编号"] in used_in:
                 continue
             if o["本方账户"] == i["本方账户"]:

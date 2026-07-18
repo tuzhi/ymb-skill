@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
@@ -243,9 +244,22 @@ def suggest_fingerprint(context, text):
     }
 
 
-def _load_yaml(name):
-    with (Path(__file__).resolve().parent / name).open("r", encoding="utf-8") as f:
+def _yaml_version(name):
+    """返回可用于进程内缓存失效的 YAML 文件版本。"""
+    path = Path(__file__).resolve().parent / name
+    stat = path.stat()
+    return str(path), stat.st_mtime_ns, stat.st_size
+
+
+@lru_cache(maxsize=8)
+def _load_yaml_versioned(path_text, _mtime_ns, _size):
+    """相同版本的 YAML 只解析一次；mtime 或大小变化后自动加载新版本。"""
+    with Path(path_text).open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or []
+
+
+def _load_yaml(name):
+    return _load_yaml_versioned(*_yaml_version(name))
 
 
 def _normalize_fingerprint(value):
@@ -583,7 +597,8 @@ def _extract_patterns(item):
     return normalized
 
 
-def load_pdf_route_rules():
+@lru_cache(maxsize=8)
+def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
     rules = []
     for item in _load_yaml("pdf_rules.yaml"):
         fingerprint = item.get("fingerprint", {})
@@ -619,10 +634,15 @@ def load_pdf_route_rules():
             require_monetary_value=_require_monetary_value(item),
             has_fingerprint=bool(fingerprint),
         ))
-    return rules
+    return tuple(rules)
 
 
-def load_excel_route_rules():
+def load_pdf_route_rules():
+    return _load_pdf_route_rules_versioned(*_yaml_version("pdf_rules.yaml"))
+
+
+@lru_cache(maxsize=8)
+def _load_excel_route_rules_versioned(_path_text, _mtime_ns, _size):
     rules = []
     for item in _load_yaml("excel_rules.yaml"):
         fingerprint = item.get("fingerprint", {})
@@ -657,4 +677,15 @@ def load_excel_route_rules():
             require_monetary_value=_require_monetary_value(item),
             has_fingerprint=bool(fingerprint),
         ))
-    return rules
+    return tuple(rules)
+
+
+def load_excel_route_rules():
+    return _load_excel_route_rules_versioned(*_yaml_version("excel_rules.yaml"))
+
+
+def clear_route_rule_cache():
+    """清理 Router 规则缓存，供测试和同进程内配置热更新显式调用。"""
+    _load_yaml_versioned.cache_clear()
+    _load_pdf_route_rules_versioned.cache_clear()
+    _load_excel_route_rules_versioned.cache_clear()

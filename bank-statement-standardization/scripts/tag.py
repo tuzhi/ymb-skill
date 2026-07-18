@@ -46,6 +46,9 @@ ALIPAY_ORDER_RE = re.compile(r"支付宝(?:商家|交易)订单号=[^；;]+")
 ALIPAY_STATUS_RE = re.compile(r"支付宝订单状态=[^；;]+")
 ALIPAY_MERCHANT_ORDER_RE = re.compile(r"支付宝商家订单号=([^；;]+)")
 ALIPAY_TRANSACTION_ORDER_RE = re.compile(r"支付宝交易订单号=([^；;]+)")
+PRECISE_TRANSACTION_TIME_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$"
+)
 
 
 def _compile_keyword_pattern(rules):
@@ -399,10 +402,13 @@ def _same_transaction_day(left, right):
 
 def _same_precise_transaction_time(left, right):
     """隐式冲正只接受两边都明确到秒（或更细）且时间完全一致。"""
-    pattern = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
     left_text = str(left or "").strip()
     right_text = str(right or "").strip()
-    return bool(pattern.fullmatch(left_text) and pattern.fullmatch(right_text) and left_text == right_text)
+    return bool(
+        PRECISE_TRANSACTION_TIME_RE.fullmatch(left_text)
+        and PRECISE_TRANSACTION_TIME_RE.fullmatch(right_text)
+        and left_text == right_text
+    )
 
 
 def _signed_transaction_amount(row):
@@ -499,6 +505,135 @@ def _is_local_bank_reversal_pair(original, reversal):
     return True
 
 
+def _relation_column(df, column):
+    values = df.get(column, pd.Series("", index=df.index, dtype=object))
+    return values.map(_relation_text)
+
+
+def _plain_text_column(df, column):
+    """只清理空值和首尾空白；交易时间等字段必须保留中间分隔空格。"""
+    values = df.get(column, pd.Series("", index=df.index, dtype=object))
+    text = values.fillna("").astype(str).str.strip()
+    return text.mask(text.str.casefold().isin({"nan", "none"}), "")
+
+
+def _build_transaction_relation_context(out_df):
+    """一次性计算冲正判断所需列，避免相邻记录循环内反复创建 Series/DataFrame。"""
+    time_text = _plain_text_column(out_df, "交易时间")
+    parsed_time = pd.to_datetime(time_text, errors="coerce", format="mixed")
+    parsed_day = parsed_time.dt.strftime("%Y-%m-%d")
+    day_key = parsed_day.where(parsed_time.notna(), time_text.str[:10])
+    income = _money_series(out_df, "收入金额")
+    expense = _money_series(out_df, "支出金额")
+    bank_memo = _relation_column(out_df, "银行备注")
+    return {
+        "is_alipay": _is_alipay_rows(out_df),
+        "source_row": pd.to_numeric(
+            out_df.get("来源行号", pd.Series(index=out_df.index, dtype=object)),
+            errors="coerce",
+        ),
+        "time_text": time_text,
+        "day_key": day_key,
+        "precise_time": time_text.str.fullmatch(PRECISE_TRANSACTION_TIME_RE, na=False),
+        "own_account": _relation_column(out_df, "本方账户").map(_relation_account),
+        "counterparty_account": _relation_column(out_df, "对手账户").map(_relation_account),
+        "counterparty_name": _relation_column(out_df, "对手名称"),
+        "bank_memo": bank_memo,
+        "account_memo": _relation_column(out_df, "账户方附言"),
+        "income": income,
+        "expense": expense,
+        "signed_amount": income - expense,
+        "balance": pd.to_numeric(
+            out_df.get("账户余额", pd.Series(index=out_df.index, dtype=object)),
+            errors="coerce",
+        ),
+        "reversal_type": bank_memo.map(_bank_reversal_type),
+    }
+
+
+def _is_local_bank_implicit_reversal_pair_at(context, original_idx, reversal_idx):
+    if context["reversal_type"].loc[original_idx] or context["reversal_type"].loc[reversal_idx]:
+        return False
+    original_time = context["time_text"].loc[original_idx]
+    reversal_time = context["time_text"].loc[reversal_idx]
+    if not (
+        context["precise_time"].loc[original_idx]
+        and context["precise_time"].loc[reversal_idx]
+        and original_time == reversal_time
+    ):
+        return False
+
+    own_account = context["own_account"].loc[original_idx]
+    if not own_account or own_account != context["own_account"].loc[reversal_idx]:
+        return False
+    original_name = context["counterparty_name"].loc[original_idx]
+    if not original_name or original_name != context["counterparty_name"].loc[reversal_idx]:
+        return False
+    original_account = context["counterparty_account"].loc[original_idx]
+    reversal_account = context["counterparty_account"].loc[reversal_idx]
+    if original_account and reversal_account and original_account != reversal_account:
+        return False
+
+    original_amount = float(context["signed_amount"].loc[original_idx])
+    reversal_amount = float(context["signed_amount"].loc[reversal_idx])
+    if original_amount == 0 or round(original_amount + reversal_amount, 2) != 0:
+        return False
+    original_balance = context["balance"].loc[original_idx]
+    reversal_balance = context["balance"].loc[reversal_idx]
+    if pd.isna(original_balance) or pd.isna(reversal_balance):
+        return False
+    return abs(float(original_balance) - original_amount - float(reversal_balance)) <= 0.005
+
+
+def _is_local_bank_reversal_pair_at(context, original_idx, reversal_idx):
+    reversal_type = context["reversal_type"].loc[reversal_idx]
+    if not reversal_type:
+        return False
+    if context["day_key"].loc[original_idx] != context["day_key"].loc[reversal_idx]:
+        return False
+    if context["own_account"].loc[original_idx] != context["own_account"].loc[reversal_idx]:
+        return False
+
+    original_name = context["counterparty_name"].loc[original_idx]
+    reversal_name = context["counterparty_name"].loc[reversal_idx]
+    original_account = context["counterparty_account"].loc[original_idx]
+    reversal_account = context["counterparty_account"].loc[reversal_idx]
+    placeholder_reversal = reversal_type == "冲销" and reversal_name in {"", "/", "-", "***", "***/"}
+    if placeholder_reversal:
+        if not original_name:
+            return False
+    else:
+        if not original_name or original_name != reversal_name:
+            return False
+        if not _explicit_reversal_accounts_compatible(original_account, reversal_account):
+            return False
+
+    original_amount = float(context["signed_amount"].loc[original_idx])
+    reversal_amount = float(context["signed_amount"].loc[reversal_idx])
+    if original_amount == 0:
+        return False
+    if reversal_type in {"冲正", "冲销"} and round(original_amount + reversal_amount, 2) != 0:
+        return False
+    original_balance = context["balance"].loc[original_idx]
+    reversal_balance = context["balance"].loc[reversal_idx]
+    if pd.isna(original_balance) or pd.isna(reversal_balance):
+        return False
+    if abs(float(original_balance) - original_amount - float(reversal_balance)) > 0.005:
+        return False
+
+    reversal_memo = context["account_memo"].loc[reversal_idx]
+    original_context = {
+        context["bank_memo"].loc[original_idx],
+        context["account_memo"].loc[original_idx],
+    }
+    explicit_original_reference = "冲正原交易" in reversal_memo or "原流水号" in reversal_memo
+    return not (
+        reversal_memo
+        and reversal_memo not in original_context
+        and not explicit_original_reference
+    )
+
+
 def _apply_bank_reversals(out_df):
     """只在同一来源文件内，将冲正/抹账行与物理相邻的有效交易作确定性配对。"""
     summary = {
@@ -513,19 +648,19 @@ def _apply_bank_reversals(out_df):
     if out_df.empty or not required.issubset(out_df.columns):
         return summary
 
-    reversal_types = out_df["银行备注"].map(_bank_reversal_type)
+    context = _build_transaction_relation_context(out_df)
+    reversal_types = context["reversal_type"]
     reversal_mask = reversal_types != ""
     unresolved = set(out_df.index[reversal_mask])
     source_names = out_df["来源文件名"].fillna("").astype(str)
     for _, source_idx in out_df.groupby(source_names, sort=False).groups.items():
         ordered = out_df.loc[list(source_idx)].copy()
-        ordered["__source_row"] = pd.to_numeric(ordered["来源行号"], errors="coerce")
+        ordered["__source_row"] = context["source_row"].loc[ordered.index]
         ordered = ordered[ordered["__source_row"].notna()].sort_values("__source_row", kind="mergesort")
         indices = ordered.index.tolist()
         for position, reversal_idx in enumerate(indices):
             if reversal_idx not in unresolved:
                 continue
-            reversal_row = out_df.loc[reversal_idx]
             reversal_source_row = float(ordered.loc[reversal_idx, "__source_row"])
             matches = []
             for neighbor_position in (position - 1, position + 1):
@@ -537,16 +672,14 @@ def _apply_bank_reversals(out_df):
                     continue
                 if str(out_df.loc[original_idx, "交易状态"]) != "正常":
                     continue
-                if _is_local_bank_reversal_pair(out_df.loc[original_idx], reversal_row):
+                if _is_local_bank_reversal_pair_at(context, original_idx, reversal_idx):
                     matches.append(original_idx)
             if not matches:
                 continue
             # 保留原有“优先上一来源行”的语义；仅当上一行不闭环时，才尝试倒序导出的下一来源行。
             original_idx = matches[0]
-            original_row = out_df.loc[original_idx]
-
-            original_id = str(original_row.get("交易唯一编号") or "")
-            reversal_id = str(reversal_row.get("交易唯一编号") or "")
+            original_id = str(out_df.loc[original_idx, "交易唯一编号"] or "")
+            reversal_id = str(out_df.loc[reversal_idx, "交易唯一编号"] or "")
             reversal_type = reversal_types.loc[reversal_idx]
             paired = [original_idx, reversal_idx]
             out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
@@ -575,19 +708,17 @@ def _apply_bank_reversals(out_df):
                 continue
             if str(out_df.loc[reversal_idx, "交易状态"]) != "正常":
                 continue
-            if bool(_is_alipay_rows(out_df.loc[[original_idx, reversal_idx]]).any()):
+            if bool(context["is_alipay"].loc[original_idx] or context["is_alipay"].loc[reversal_idx]):
                 continue
             original_source_row = float(ordered.loc[original_idx, "__source_row"])
             reversal_source_row = float(ordered.loc[reversal_idx, "__source_row"])
             if reversal_source_row - original_source_row != 1:
                 continue
-            original_row = out_df.loc[original_idx]
-            reversal_row = out_df.loc[reversal_idx]
-            if not _is_local_bank_implicit_reversal_pair(original_row, reversal_row):
+            if not _is_local_bank_implicit_reversal_pair_at(context, original_idx, reversal_idx):
                 continue
 
-            original_id = str(original_row.get("交易唯一编号") or "")
-            reversal_id = str(reversal_row.get("交易唯一编号") or "")
+            original_id = str(out_df.loc[original_idx, "交易唯一编号"] or "")
+            reversal_id = str(out_df.loc[reversal_idx, "交易唯一编号"] or "")
             paired = [original_idx, reversal_idx]
             out_df.loc[paired, ["分析收入金额", "分析支出金额", "分析交易金额"]] = 0
             out_df.loc[original_idx, "交易状态"] = "被隐式冲正"
