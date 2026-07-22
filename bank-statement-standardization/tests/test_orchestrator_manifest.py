@@ -75,7 +75,12 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
-            runner.manifest = {"skipped_inputs": [], "client": "测试客户"}
+            runner.run_dir = str(root)
+            runner.manifest = {
+                "skipped_inputs": [],
+                "client": "测试客户",
+                "stage_1_standardize": {"route_artifact": ""},
+            }
             runner.write_manifest = lambda: None
 
             result = runner.stage_1_standardize()
@@ -293,7 +298,12 @@ class OrchestratorManifestTest(unittest.TestCase):
                 client_explicit=False,
             )
             runner.out_dir = str(tmp_path / "artifacts")
-            runner.manifest = {"skipped_inputs": [], "client": "tokenized_batch_bundle"}
+            runner.run_dir = str(tmp_path)
+            runner.manifest = {
+                "skipped_inputs": [],
+                "client": "tokenized_batch_bundle",
+                "stage_1_standardize": {"route_artifact": ""},
+            }
             runner.write_manifest = lambda: None
             runner.emit = lambda *args, **kwargs: None
 
@@ -310,9 +320,14 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertTrue(result["upstream_manifest"]["archive_name_present"])
             self.assertTrue((work / "001_raw-a__standardized.csv").is_file())
             self.assertTrue((work / "002_raw-b__standardized.csv").is_file())
-            self.assertTrue((work / "001_raw-a__mapping.json").is_file())
-            self.assertTrue((work / "002_raw-b__mapping.json").is_file())
-            validation = orchestrator.V.validate_standardize(str(work))
+            self.assertFalse((work / "001_raw-a__mapping.json").exists())
+            self.assertFalse((work / "002_raw-b__mapping.json").exists())
+            self.assertNotIn("file_routes", runner.manifest["stage_1_standardize"])
+            route_artifact = runner.manifest["stage_1_standardize"]["route_artifact"]
+            routes = json.loads((tmp_path / route_artifact).read_text(encoding="utf-8"))
+            self.assertEqual(set(routes), {"001_raw-a__standardized.csv", "002_raw-b__standardized.csv"})
+            self.assertTrue(all(route["yaml_match_status"] == "unmatched" for route in routes.values()))
+            validation = orchestrator.V.validate_standardize(str(work), file_routes=routes)
             self.assertEqual(validation["standardized_files"], 2)
 
     def test_copy_stage_manifest_resets_runtime_fields(self):

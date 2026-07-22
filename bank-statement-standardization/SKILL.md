@@ -36,10 +36,12 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - `ai_fallback_used`：默认 `false`；当前阶段进入 AI 兜底时写为 `true`。
 - `ai_fallback_artifacts`：当前阶段 AI 兜底实际产生的脚本、补丁、参数文件清单。
 - `status`：只允许空字符串、`DONE`、`ERROR`。
+- `route_artifact`：仅阶段一使用；指向客户级 `stage_1_routes.json`，manifest 本身不承载逐文件路由明细。
 
 核心输出契约：
 
-- `runs/<run-id>/manifest.json` 是本次运行的唯一事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内记录程序路线、AI 兜底路线、状态和兜底产物；不承载字段映射结论、输入诊断正文或业务分析结果。
+- `runs/<run-id>/manifest.json` 是本次运行的唯一事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内记录程序路线、AI 兜底路线、状态和产物索引；不承载逐文件路由明细、字段映射正文、输入诊断正文或业务分析结果。
+- 阶段一主流程要求标准化 CSV 与 `route_artifact` 指向的客户级路由索引一一对应。索引以标准化 CSV 文件名为键，每个文件只保存 `fingerprint_id / series_family / router_bank / inferred_bank / yaml_match_status` 五项。单文件 `mapping.json` 降级为可选审计产物，不再作为阶段验收或阶段二输入。
 - `ai_fallback_info` 只说明当前阶段兜底关注点；具体判断不直接展开进 manifest 阶段状态。
 - `runs/<run-id>/receipts/*.json` 是每个确定性步骤的可复核回执，记录脚本、参数、校验和产物摘要。
 - `runs/<run-id>/fallback/<stage-id>/` 保存 AI 兜底的实际补丁、参数或临时脚本；只有产生可复用文件时，才把相对文件名追加到当前阶段 `ai_fallback_artifacts`。

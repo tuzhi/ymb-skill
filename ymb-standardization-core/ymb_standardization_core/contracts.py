@@ -70,3 +70,4 @@ class StandardizationContext:
     account_type: str | None = None
     header_row: int | None = None
     overrides: Mapping[str, str] = field(default_factory=dict)
+    write_mapping: bool = True

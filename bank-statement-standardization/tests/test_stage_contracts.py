@@ -15,7 +15,7 @@ for path in (str(CORE_ROOT), str(SCRIPTS)):
 
 from ymb_standardization_core.contracts import RouteDecision, StandardizationContext
 from ymb_standardization_core import core
-from stage_contracts import IntegrationContext, StageResult
+from stage_contracts import IntegrationContext, StageResult, yaml_route_summary
 
 
 def load_module(name, path):
@@ -66,7 +66,25 @@ class StageContractsTest(unittest.TestCase):
             account_type="对公",
             header_row=None,
             overrides={"账号": "本方账户"},
+            write_mapping=True,
         )
+
+    def test_yaml_route_summary_contains_only_stage_contract_fields(self):
+        summary = yaml_route_summary({"文件画像": {
+            "decision": "matched",
+            "fingerprint_id": "md5:abc",
+            "series_family": "family-v1",
+            "router_bank": "招商银行",
+            "inferred_bank": "",
+            "reader_id": "pdfplumber_table",
+        }})
+        self.assertEqual(summary, {
+            "fingerprint_id": "md5:abc",
+            "series_family": "family-v1",
+            "router_bank": "招商银行",
+            "inferred_bank": "",
+            "yaml_match_status": "matched",
+        })
 
     def test_integration_context_delegates_to_existing_business_function(self):
         context = IntegrationContext.create(
@@ -80,7 +98,7 @@ class StageContractsTest(unittest.TestCase):
             self.assertEqual(integrate.integrate_context(context), expected)
 
         legacy.assert_called_once_with(
-            "客户", ["work"], out_dir="output", self_accounts=["6217"]
+            "客户", ["work"], out_dir="output", self_accounts=["6217"], file_routes={}
         )
 
     def test_stage_result_remains_receipt_serializable(self):

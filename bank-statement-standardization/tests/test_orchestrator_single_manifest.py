@@ -219,7 +219,15 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     "TX-1,2026-01-01 00:00:00,62170001,1,,1,10,流水.csv,1\n",
                     encoding="utf-8",
                 )
-                (work / "流水__mapping.json").write_text("{}", encoding="utf-8")
+                child.write_stage_1_routes(str(work), {
+                    "流水__standardized.csv": {
+                        "fingerprint_id": "",
+                        "series_family": "",
+                        "router_bank": "未识别",
+                        "inferred_bank": "",
+                        "yaml_match_status": "unmatched",
+                    }
+                })
                 return {"standardized_files": 1}
 
             child.execute_stage_script = lambda stage_id: fixed_stage_1()

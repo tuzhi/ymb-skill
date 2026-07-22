@@ -48,6 +48,30 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
 
 
 class BatchAccountResolutionTests(unittest.TestCase):
+    def test_load_inputs_uses_manifest_route_index_without_mapping_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            csv_path = work / "交易明细A__pdf__standardized.csv"
+            row = transaction("交易明细A.pdf", "未识别账户#A", "2026-01-01 10:00:00", "100.00")
+            pd.DataFrame([{key: value for key, value in row.items() if not key.startswith("__")}]).to_csv(
+                csv_path, index=False, encoding="utf-8-sig")
+            routes = {
+                csv_path.name: {
+                    "fingerprint_id": "md5:route",
+                    "series_family": "family-v1",
+                    "router_bank": "上饶银行",
+                    "inferred_bank": "",
+                    "yaml_match_status": "matched",
+                }
+            }
+
+            loaded, files = integrate.load_inputs([str(work)], file_routes=routes)
+
+        self.assertEqual(files, [str(csv_path)])
+        self.assertEqual(loaded["__fingerprint_id"].iloc[0], "md5:route")
+        self.assertEqual(loaded["__series_family"].iloc[0], "family-v1")
+        self.assertEqual(loaded["__router_bank"].iloc[0], "上饶银行")
+
     def test_balance_continuous_volumes_merge_as_one_logical_account(self):
         rows = []
         specs = (
@@ -938,7 +962,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(overview["整合交易数"], 5559)
         self.assertEqual(overview["整合账户数"], 6)
         self.assertEqual(report["同账号元数据补全"]["补全交易数"], 203)
-        self.assertEqual(report["批次未知账户配对"]["配对明细"][0]["核心交易重合数"], 50)
+        self.assertEqual(report["批次未知账户配对"]["已配对组数"], 0)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import os
 import sys
 
 import pandas as pd
+from stage_contracts import YAML_ROUTE_FIELDS
 
 
 STD_REQUIRED = {
@@ -77,14 +78,12 @@ def _transaction_times(df, path):
         )
 
 
-def validate_standardize(work_dir, skipped_inputs=None):
+def validate_standardize(work_dir, skipped_inputs=None, file_routes=None):
     skipped_inputs = skipped_inputs or []
     csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
     reports = sorted(glob.glob(os.path.join(work_dir, "*__mapping.json")))
     if not csvs:
         raise ValidationError("阶段一未生成标准化 CSV")
-    if len(csvs) != len(reports):
-        raise ValidationError(f"阶段一 CSV 与映射报告数量不一致：{len(csvs)} != {len(reports)}")
     rows = 0
     for path in csvs:
         df = _load_csv(path)
@@ -92,8 +91,25 @@ def validate_standardize(work_dir, skipped_inputs=None):
         _traceability(df, path)
         _transaction_times(df, path)
         rows += len(df)
+    # mapping 已降级为可选的单文件审计报告；阶段间路由事实由客户级 route_artifact 承载。
     for path in reports:
         _load_json(path)
+    if file_routes is not None:
+        expected = {os.path.basename(path) for path in csvs}
+        actual = set(file_routes)
+        if expected != actual:
+            raise ValidationError(
+                f"阶段一 manifest 文件路由与标准化 CSV 不一致：{sorted(expected - actual)} / {sorted(actual - expected)}"
+            )
+        expected_fields = set(YAML_ROUTE_FIELDS)
+        for source, route in file_routes.items():
+            if not isinstance(route, dict) or set(route) != expected_fields:
+                raise ValidationError(f"阶段一文件路由字段不合法：{source}")
+            status = route.get("yaml_match_status")
+            if status not in {"matched", "unmatched", "ambiguous", "failed"}:
+                raise ValidationError(f"阶段一 YAML 命中状态不合法：{source}：{status}")
+            if status == "matched" and not str(route.get("fingerprint_id") or "").strip():
+                raise ValidationError(f"阶段一已命中 YAML 但缺少 fingerprint_id：{source}")
     return {
         "standardized_files": len(csvs),
         "standardized_rows": rows,

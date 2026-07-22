@@ -1218,7 +1218,9 @@ def order_accounts_for_continuity(df):
     return pd.concat(parts, ignore_index=True) if parts else df
 
 
-def load_inputs(paths):
+def load_inputs(paths, file_routes=None):
+    """加载标准化流水，并从阶段一 manifest 路由索引补充内部文件画像。"""
+    file_routes = file_routes or {}
     files = []
     for p in paths:
         if os.path.isdir(p):
@@ -1230,19 +1232,11 @@ def load_inputs(paths):
         df = pd.read_csv(f, dtype=str)
         df["__源标准化文件"] = os.path.basename(f)
         df["__源标准化文件路径"] = os.path.abspath(f)
-        mapping_path = f[:-len("__standardized.csv")] + "__mapping.json"
-        image = {}
-        if os.path.exists(mapping_path):
-            try:
-                with open(mapping_path, encoding="utf-8") as mapping_file:
-                    image = (json.load(mapping_file).get("文件画像") or {})
-            except (OSError, ValueError, TypeError):
-                image = {}
-        df["__router_bank"] = image.get("router_bank") or image.get("bank") or "未识别"
-        df["__inferred_bank"] = image.get("inferred_bank") or ""
-        df["__bank_source"] = image.get("bank_source") or image.get("开户行识别来源") or "unknown"
-        df["__fingerprint_id"] = image.get("fingerprint_id") or ""
-        df["__series_family"] = image.get("series_family") or ""
+        route = file_routes.get(os.path.basename(f)) or {}
+        df["__router_bank"] = route.get("router_bank") or "未识别"
+        df["__inferred_bank"] = route.get("inferred_bank") or ""
+        df["__fingerprint_id"] = route.get("fingerprint_id") or ""
+        df["__series_family"] = route.get("series_family") or ""
         # 时间精度来自每笔标准化时间文本：日期级记录保持 YYYY-MM-DD，不能因同文件
         # 其它行含秒而被整体提升为 second。文件画像仅保留汇总审计值，不参与逐笔运算。
         df["__time_precision"] = df["交易时间"].map(S.normalized_transaction_time_precision)
@@ -1882,8 +1876,8 @@ def account_index(df):
     return idx
 
 
-def integrate(customer, paths, out_dir=None, self_accounts=None):
-    df, files = load_inputs(paths)
+def integrate(customer, paths, out_dir=None, self_accounts=None, file_routes=None):
+    df, files = load_inputs(paths, file_routes=file_routes)
     self_accounts = self_accounts or []
     raw_count = int(len(df))
 
@@ -2074,6 +2068,7 @@ def integrate_context(context: IntegrationContext):
         list(context.inputs),
         out_dir=context.out_dir,
         self_accounts=list(context.self_accounts),
+        file_routes=context.file_routes,
     )
 
 

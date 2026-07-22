@@ -36,6 +36,7 @@ import standardize as S
 import integrate as I
 import tag as T
 import portfolio_balance as PB
+from stage_contracts import yaml_route_summary
 
 # 格式初筛 / 产物识别 / 非流水排除 统一由 standardize 提供（S.screen_files / S.NotABankStatement）。
 
@@ -294,11 +295,13 @@ def run(client, args):
 
     # 阶段一：逐文件标准化。本方名称只来自文件证据。
     n_files = 0
+    file_routes = {}
     for subj, files in subjects:
         for f, ctype in files:
             try:
-                csv_path, json_path, rep = S.standardize(
+                csv_path, _json_path, rep = S.standardize(
                     f, out_dir=work, account_type=ctype)
+                file_routes[os.path.basename(csv_path)] = yaml_route_summary(rep)
                 n_files += 1
                 st = rep["标准化统计"]
                 print(f"  [OK] [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")
@@ -319,7 +322,8 @@ def run(client, args):
         sys.exit(f"客户「{client}」无可处理的银行流水文件。已跳过：{detail}")
 
     # 阶段二：整合（全部主体/账户合并为一）
-    int_csv, int_json, irep = I.integrate(client, [work], out_dir=work)
+    int_csv, int_json, irep = I.integrate(
+        client, [work], out_dir=work, file_routes=file_routes)
     print(f"  整合：{irep['客户整合概览']['整合账户数']} 账户 / {irep['客户整合概览']['整合交易数']} 笔")
 
     # 阶段三：打标

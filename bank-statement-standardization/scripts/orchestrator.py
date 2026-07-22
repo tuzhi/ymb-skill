@@ -24,7 +24,7 @@ import portfolio_balance as PB
 import standardize as S
 import tag as T
 import validate_stage as V
-from stage_contracts import IntegrationContext, StageResult
+from stage_contracts import IntegrationContext, StageResult, yaml_route_summary
 
 
 IMPORTS = ("pandas", "openpyxl", "xlrd", "pdfplumber")
@@ -476,6 +476,9 @@ class Runner:
             spec["ai_fallback_used"] = False
             spec["ai_fallback_artifacts"] = []
             spec["status"] = ""
+            if stage_id == "stage_1_standardize":
+                spec["route_artifact"] = ""
+                spec.pop("file_routes", None)
             spec.pop("ai_fallback_dir", None)
             spec.pop("started_at", None)
             spec.pop("duration_seconds", None)
@@ -600,23 +603,47 @@ class Runner:
         with open(path, "r", encoding="utf-8-sig", newline="") as f:
             return sum(1 for _ in csv.DictReader(f))
 
-    def write_manifest_mapping(self, mapping_path, source_relpath, row_count):
-        # 现有阶段一 validator 要求每个标准化 CSV 有对应 mapping JSON。
-        # Token Vault 已完成标准化时，这里只补最小运行产物，供本次 orch 工作区验收使用。
-        mapping = {
-            "file_image": {
-                "matched_template": "manifest_declared_standardized_input",
-                "source": "token_vault_service",
-            },
-            "standardization_stats": {
-                "transaction_count": row_count,
-                "amount_structure": "already_standardized",
-            },
-            "source_manifest_output": normalize_relpath(str(source_relpath)),
-            "note": "由 Token Vault manifest 声明为已完成阶段一标准化，orchestrator 仅复制并补充最小映射报告。",
-        }
-        with open(mapping_path, "w", encoding="utf-8") as f:
-            json.dump(mapping, f, ensure_ascii=False, indent=2)
+    def write_stage_1_routes(self, work, file_routes):
+        """写客户级路由索引；manifest 只保存相对路径，不承载逐文件明细。"""
+        path = os.path.join(work, "stage_1_routes.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(file_routes, f, ensure_ascii=False, indent=2)
+        self.manifest["stage_1_standardize"]["route_artifact"] = normalize_relpath(
+            os.path.relpath(path, self.run_dir)
+        )
+        self.write_manifest()
+        return path
+
+    def load_stage_1_routes(self):
+        relpath = str(self.manifest["stage_1_standardize"].get("route_artifact") or "").strip()
+        if not relpath:
+            raise RuntimeError("阶段一 manifest 缺少 route_artifact")
+        run_dir = os.path.abspath(self.run_dir)
+        path = os.path.abspath(os.path.join(run_dir, relpath))
+        if os.path.commonpath([run_dir, path]) != run_dir:
+            raise RuntimeError(f"阶段一路由产物路径越界：{relpath}")
+        routes = read_json_if_exists(path, None)
+        if not isinstance(routes, dict):
+            raise RuntimeError(f"阶段一路由产物无效：{path}")
+        return routes
+
+    def declared_stage_1_file_routes(self, manifest, manifest_path):
+        stage_1 = self.declared_stage_1(manifest)
+        legacy_routes = stage_1.get("file_routes") if isinstance(stage_1, dict) else None
+        if isinstance(legacy_routes, dict):
+            return legacy_routes
+        relpath = str(stage_1.get("route_artifact") or "").strip() if isinstance(stage_1, dict) else ""
+        if not relpath:
+            return {}
+        base_dir = os.path.abspath(os.path.dirname(manifest_path))
+        bundle_dir = os.path.abspath(self.args.folder)
+        path = os.path.abspath(os.path.join(base_dir, relpath))
+        if os.path.commonpath([bundle_dir, path]) != bundle_dir:
+            raise RuntimeError(f"Token Vault manifest 路由产物路径越界：{relpath}")
+        routes = read_json_if_exists(path, None)
+        if not isinstance(routes, dict):
+            raise RuntimeError(f"Token Vault manifest 路由产物无效：{path}")
+        return routes
 
     def stage_1_from_declared_standardized_manifest(self, work):
         # 快速完成阶段一：消费上游 manifest 声明的标准化产物，
@@ -626,30 +653,36 @@ class Runner:
             return None
 
         processed = []
+        file_routes = {}
+        upstream_routes = self.declared_stage_1_file_routes(upstream_manifest, manifest_path)
         for relpath, source_path in self.resolve_declared_standardized_outputs(upstream_manifest, manifest_path):
             target_csv = os.path.join(work, os.path.basename(source_path))
             shutil.copy2(source_path, target_csv)
-            stem = os.path.splitext(os.path.basename(target_csv))[0]
-            if stem.endswith("__standardized"):
-                stem = stem[:-len("__standardized")]
-            target_mapping = os.path.join(work, f"{stem}__mapping.json")
             row_count = self.count_csv_rows(target_csv)
-            self.write_manifest_mapping(target_mapping, relpath, row_count)
+            route_key = os.path.basename(target_csv)
+            route = upstream_routes.get(route_key) or upstream_routes.get(str(relpath)) or {}
+            file_routes[route_key] = {
+                "fingerprint_id": str(route.get("fingerprint_id") or ""),
+                "series_family": str(route.get("series_family") or ""),
+                "router_bank": str(route.get("router_bank") or "未识别"),
+                "inferred_bank": str(route.get("inferred_bank") or ""),
+                "yaml_match_status": str(route.get("yaml_match_status") or "unmatched"),
+            }
             processed.append({
                 "input": source_path,
                 "csv": target_csv,
-                "mapping": target_mapping,
                 "rows": row_count,
             })
 
         self.manifest["skipped_inputs"] = []
+        route_artifact = self.write_stage_1_routes(work, file_routes)
         self.manifest["upstream_manifest"] = {
             "path": manifest_path,
             "schema_version": upstream_manifest.get("schema_version", ""),
             "producer": upstream_manifest.get("producer", ""),
             "archive_id": upstream_manifest.get("archive_id", ""),
             "archive_name_present": bool(str(upstream_manifest.get("archive_name") or "").strip()),
-            "stage_1_standardize": self.declared_stage_1(upstream_manifest),
+            "stage_1_status": self.declared_stage_1(upstream_manifest).get("status", ""),
         }
         self.write_manifest()
         return StageResult("stage_1_standardize", {
@@ -657,6 +690,7 @@ class Runner:
             "upstream_manifest": self.manifest["upstream_manifest"],
             "processed_files": len(processed),
             "standardized": processed,
+            "route_artifact": route_artifact,
         })
 
     def stage_1_standardize(self):
@@ -677,17 +711,20 @@ class Runner:
             raise RuntimeError(f"客户「{self.args.client}」无可处理的银行流水文件。已跳过：{detail}")
 
         processed = []
+        file_routes = {}
         for path in raw_files:
             try:
-                csv_path, json_path, report = S.standardize_file(S.StandardizationContext(
+                csv_path, _json_path, report = S.standardize_file(S.StandardizationContext(
                     path=path,
                     out_dir=work,
                     account_type=self.args.account_type,
+                    write_mapping=False,
                 ))
+                route_key = os.path.basename(csv_path)
+                file_routes[route_key] = yaml_route_summary(report)
                 processed.append({
                     "input": path,
                     "csv": csv_path,
-                    "mapping": json_path,
                     "rows": report["标准化统计"]["交易笔数"],
                 })
             except S.NotABankStatement as exc:
@@ -700,10 +737,10 @@ class Runner:
             raise RuntimeError(f"阶段一没有生成标准化产物：{detail}")
 
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
-        self.write_manifest()
+        route_artifact = self.write_stage_1_routes(work, file_routes)
         return StageResult(
             "stage_1_standardize",
-            {"processed_files": len(processed), "standardized": processed},
+            {"processed_files": len(processed), "standardized": processed, "route_artifact": route_artifact},
         )
 
     def stage_2_integrate(self):
@@ -711,6 +748,7 @@ class Runner:
             self.args.client,
             [self.work_dir()],
             out_dir=self.work_dir(),
+            file_routes=self.load_stage_1_routes(),
         ))
         overview = report["客户整合概览"]
         return StageResult("stage_2_integrate", {
@@ -785,7 +823,11 @@ class Runner:
     def validate_stage(self, stage_id):
         work = self.work_dir()
         if stage_id == "stage_1_standardize":
-            return V.validate_standardize(work, skipped_inputs=self.manifest.get("skipped_inputs", []))
+            return V.validate_standardize(
+                work,
+                skipped_inputs=self.manifest.get("skipped_inputs", []),
+                file_routes=self.load_stage_1_routes(),
+            )
         if stage_id == "stage_2_integrate":
             return V.validate_integrate(work)
         if stage_id == "stage_2b_portfolio_balance":

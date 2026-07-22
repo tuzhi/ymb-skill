@@ -9,7 +9,7 @@ ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流
   3. 处理三种金额结构（收入/支出分列、单列带符号金额、方向列+金额）；
   4. 合并拆分的日期/时间列、清洗千分位逗号；
   5. 生成 交易唯一编号、来源文件名、来源行号；
-  6. 输出标准化流水 CSV + 字段映射报告 JSON（对应 Prompt 1 的结构）。
+  6. 输出标准化流水 CSV；调用方需要单文件审计时可选输出字段映射报告 JSON。
 
 设计原则（与提示词附件一致）：
   - 不编造缺失字段：映射不到就留空并写入“人工复核事项”。
@@ -23,7 +23,7 @@ ymb_standardization_core.core — 单个银行流水原始文件 -> 标准化流
 
 输出（默认写到原始文件同目录的 standardized/ 下）：
   <stem>__<ext>__standardized.csv      标准化流水
-  <stem>__<ext>__mapping.json          字段映射报告（Prompt 1 结构）
+  <stem>__<ext>__mapping.json          可选字段映射报告（Prompt 1 结构）
 """
 import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
@@ -1235,8 +1235,8 @@ def _standardized_output_stem(path):
     return stem[:-len("__standardized")] if stem.endswith("__standardized") else stem
 
 
-def adopt_standardized_input(path, out_dir=None):
-    """接收已完成阶段一标准化的 CSV：复制到工作区，并生成最小 mapping 报告供状态机验收。"""
+def adopt_standardized_input(path, out_dir=None, write_mapping=True):
+    """接收已完成阶段一标准化的 CSV；mapping 仅在调用方需要审计报告时生成。"""
     fname = os.path.basename(path)
     if not is_standardized_input_name(path):
         raise NotABankStatement("文件名不是 <stem>__standardized.csv，不能按已标准化输入接收")
@@ -1281,18 +1281,21 @@ def adopt_standardized_input(path, out_dir=None):
                     "丢弃噪声行": 0, "行序整理策略": "保持已标准化输入原样"},
         "判断依据": "文件名匹配 <stem>__standardized.csv，阶段一视为已完成标准化。",
     }
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    if write_mapping:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    else:
+        json_path = ""
     return csv_path, json_path, report
 
 
 def standardize(path, out_dir=None, bank=None,
-                account_type=None, header_row=None, overrides=None):
+                account_type=None, header_row=None, overrides=None, write_mapping=True):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
     if is_standardized_input_name(path):
-        return adopt_standardized_input(path, out_dir=out_dir)
+        return adopt_standardized_input(path, out_dir=out_dir, write_mapping=write_mapping)
 
     file_kind, preamble, rows, route_info = read_rows(path)
     route_info = dict(route_info or {})
@@ -1860,8 +1863,11 @@ def standardize(path, out_dir=None, bank=None,
     json_path = os.path.join(out_dir, f"{artifact_stem}__mapping.json")
 
     pd.DataFrame(std_records, columns=OUTPUT_FIELDS).to_csv(csv_path, index=False, encoding="utf-8-sig")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
+    if write_mapping:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+    else:
+        json_path = ""
 
     return csv_path, json_path, report
 
@@ -1877,6 +1883,7 @@ def standardize_file(context: StandardizationContext):
         account_type=context.account_type,
         header_row=context.header_row,
         overrides=dict(context.overrides),
+        write_mapping=context.write_mapping,
     )
 
 
