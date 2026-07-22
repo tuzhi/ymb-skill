@@ -58,6 +58,17 @@ class NotABankStatement(Exception):
         self.reason = reason
 
 
+class SourceFormatQualityError(Exception):
+    """已识别银行流水模板，但原始导出缺少交付必需选项。"""
+
+    code = "MISSING_REQUIRED_EXPORT_COLUMNS"
+
+    def __init__(self, reason, route_info=None):
+        super().__init__(reason)
+        self.reason = reason
+        self.route_info = dict(route_info or {})
+
+
 def is_pipeline_product(path):
     base = os.path.basename(path)
     return any(base.endswith(s) for s in PRODUCT_SUFFIXES)
@@ -1300,6 +1311,29 @@ def standardize(path, out_dir=None, bank=None,
     file_kind, preamble, rows, route_info = read_rows(path)
     route_info = dict(route_info or {})
 
+    if route_info.get("decision") == "matched_incomplete":
+        missing = [
+            str(value).strip()
+            for value in route_info.get("missing_required_columns") or []
+            if str(value).strip()
+        ]
+        hints = [
+            str(value).strip()
+            for value in route_info.get("missing_hints") or []
+            if str(value).strip()
+        ]
+        bank_name = str(route_info.get("bank") or "已识别银行").strip()
+        account_type_name = str(route_info.get("account_type") or "").strip()
+        fingerprint_id = str(route_info.get("fingerprint_id") or "").strip()
+        identity = "".join(part for part in (bank_name, account_type_name) if part)
+        detail = "、".join(missing) or "未声明列"
+        hint = "；".join(hints) or f"请重新导出流水，并勾选：{detail}"
+        raise SourceFormatQualityError(
+            f"已识别为{identity}流水（fingerprint={fingerprint_id}），"
+            f"但原始导出缺少必需可选列：{detail}。{hint}",
+            route_info=route_info,
+        )
+
     # 空文件 / PDF 无可解析记录：区分“完全无文本”和“有文本但没有命中结构化/专属解析器”。
     if not rows or not any(any(c not in (None, "", "nan") for c in (r or [])) for r in rows):
         if file_kind == "pdf" and preamble:
@@ -1913,6 +1947,8 @@ def main():
             header_row=args.header_row,
             overrides=overrides,
         ))
+    except SourceFormatQualityError as e:
+        sys.exit(f"[QC ERROR] {os.path.basename(args.file)}：{e.reason}")
     except NotABankStatement as e:
         sys.exit(f"[SKIP] {os.path.basename(args.file)}：{e.reason}")
 

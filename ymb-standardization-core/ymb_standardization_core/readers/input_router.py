@@ -79,7 +79,7 @@ def _excel_candidate(rule, match):
         "id": rule.id,
         "fingerprint_id": rule.id,
         "reader_id": rule.reader_id,
-        "decision": "matched",
+        "decision": match["decision"],
         "file_type": rule.file_type,
         "bank": rule.bank,
         "account_type": rule.account_type,
@@ -96,6 +96,10 @@ def _excel_candidate(rule, match):
         "require_monetary_value": rule.require_monetary_value,
         "identity_evidence": match["identity_evidence"],
         "columns_evidence": match["columns_evidence"],
+        "required_columns_evidence": match.get("required_columns_evidence", []),
+        "optional_columns_evidence": match.get("optional_columns_evidence", []),
+        "missing_required_columns": match.get("missing_required_columns", []),
+        "missing_hints": match.get("missing_hints", []),
         "metadata_evidence": match.get("metadata_evidence", {}),
         "style_evidence": match.get("style_evidence", []),
         "date_format_evidence": match.get("date_format_evidence", []),
@@ -122,10 +126,11 @@ def _choose_specific_candidate(candidates):
         return None
     def score(item):
         return (
+            1 if item.get("decision") == "matched" else 0,
             len(item.get("columns_evidence", []))
             + len(item.get("metadata_evidence", {})) * 2
             + len(item.get("style_evidence", []))
-            + len(item.get("date_format_evidence", []))
+            + len(item.get("date_format_evidence", [])),
         )
 
     by_score = sorted(candidates, key=score, reverse=True)

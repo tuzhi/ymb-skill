@@ -723,6 +723,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "openhtmltopdf.com")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertIn("记账日期", result.route_info["columns_evidence"])
+        self.assertEqual(result.route_info["optional_columns_evidence"], ["对手信息"])
         self.assertEqual(len(result.rows) - 1, 176)
         self.assertEqual(result.rows[0], ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"])
         self.assertIn(
@@ -756,9 +757,31 @@ class InputRouterTests(unittest.TestCase):
                 self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
                 self.assertEqual(
                     result.route_info["fingerprint_id"],
-                    "md5:b3931dcff339eccaf63efd597d60132b",
+                    "md5:66e9c906a6c3c121ddce1ca9ecb8824d",
                 )
                 self.assertEqual(len(result.rows) - 1, expected_rows)
+
+    def test_cmb_pdf_without_counterparty_option_is_matched_but_qc_incomplete(self):
+        module = load_input_router()
+        pdf = (
+            ROOT.parent
+            / "bank-statement-standardization"
+            / "原始流水数据"
+            / "余宏坤"
+            / "招商银行交易流水(余宏坤-客户经理姚大发).pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供余宏坤招商五列 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+
+        self.assertEqual(result.route_info["decision"], "matched_incomplete")
+        self.assertEqual(result.route_info["fingerprint_id"], "md5:66e9c906a6c3c121ddce1ca9ecb8824d")
+        self.assertEqual(result.route_info["bank"], "招商银行")
+        self.assertEqual(result.route_info["account_type"], "个人")
+        self.assertEqual(result.route_info["missing_required_columns"], ["对手信息"])
+        self.assertIn("勾选“对手信息”", result.route_info["missing_hints"][0])
+        self.assertEqual(result.rows, [])
 
     def test_srbank_corporate_statement_merges_cross_page_transaction(self):
         module = load_input_router()

@@ -52,6 +52,8 @@ def main():
             nrev = len(rep["人工复核事项"])
             print(f"  [OK] {os.path.basename(f)} -> {st['交易笔数']} 笔"
                   f"（{st['金额结构']}）" + (f"，复核{nrev}项" if nrev else ""))
+        except S.SourceFormatQualityError as e:
+            sys.exit(f"阶段一 QC 未通过：{os.path.basename(f)}：{e.reason}")
         except S.NotABankStatement as e:
             skipped.append((os.path.basename(f), e.reason))
             print(f"  [SKIP] {os.path.basename(f)}：{e.reason}")

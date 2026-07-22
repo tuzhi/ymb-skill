@@ -224,7 +224,6 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                         "fingerprint_id": "",
                         "series_family": "",
                         "router_bank": "未识别",
-                        "inferred_bank": "",
                         "yaml_match_status": "unmatched",
                     }
                 })

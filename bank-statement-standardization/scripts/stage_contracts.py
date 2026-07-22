@@ -8,7 +8,6 @@ YAML_ROUTE_FIELDS = (
     "fingerprint_id",
     "series_family",
     "router_bank",
-    "inferred_bank",
     "yaml_match_status",
 )
 
@@ -24,7 +23,6 @@ def yaml_route_summary(report):
         "fingerprint_id": fingerprint_id,
         "series_family": str(image.get("series_family") or "").strip(),
         "router_bank": str(image.get("router_bank") or image.get("bank") or "未识别").strip(),
-        "inferred_bank": str(image.get("inferred_bank") or "").strip(),
         "yaml_match_status": decision,
     }
 

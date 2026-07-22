@@ -21,6 +21,7 @@ class RouteRule:
     metadata_all: dict
     style_all: list
     date_format_any: list
+    optional_columns: dict = field(default_factory=dict)
     series_family: str = ""
     text_table_layout: str = ""
     source_order: str = ""
@@ -47,13 +48,29 @@ class RouteRule:
         if not identity_hits:
             return None
 
-        column_hits = [marker for marker in self.column_markers if marker in text]
-        if len(column_hits) != len(self.column_markers):
+        required_hits = [marker for marker in self.column_markers if marker in text]
+        if len(required_hits) != len(self.column_markers):
             return None
+
+        optional_hits = [marker for marker in self.optional_columns if marker in text]
+        missing_required_columns = [
+            marker
+            for marker, config in self.optional_columns.items()
+            if config.get("qc") == "required" and marker not in optional_hits
+        ]
+        missing_hints = [
+            self.optional_columns[marker].get("missing_hint")
+            or f"请重新导出流水，并勾选“{marker}”"
+            for marker in missing_required_columns
+        ]
 
         return {
             "identity_evidence": identity_hits,
-            "columns_evidence": column_hits,
+            "columns_evidence": required_hits + optional_hits,
+            "required_columns_evidence": required_hits,
+            "optional_columns_evidence": optional_hits,
+            "missing_required_columns": missing_required_columns,
+            "missing_hints": missing_hints,
         }
 
     def match_text(self, text, context=None):
@@ -76,6 +93,11 @@ class RouteRule:
 
         return {
             **base_hits,
+            "decision": (
+                "matched_incomplete"
+                if base_hits["missing_required_columns"]
+                else "matched"
+            ),
             "metadata_evidence": metadata_hits,
             "style_evidence": style_hits,
             "date_format_evidence": date_hits,
@@ -87,7 +109,7 @@ class RouteRule:
             return None
         match = self.match_text(text or "", context=context)
         if match:
-            reason = "matched"
+            reason = match["decision"]
         elif not self.has_fingerprint:
             reason = "missing_yaml_fingerprint"
         else:
@@ -311,25 +333,68 @@ def _reader_id(item, default_file_type):
     return "none"
 
 
-def _columns_all(fingerprint):
+def _columns_required(fingerprint):
     columns = (fingerprint or {}).get("columns") or {}
-    all_columns = columns.get("all") or {}
-    if not isinstance(all_columns, dict):
-        raise ValueError("fingerprint.columns.all must be a dict")
-    return all_columns
+    has_all = "all" in columns
+    has_required = "required" in columns
+    if has_all and has_required:
+        raise ValueError("fingerprint.columns cannot contain both all and required")
+    required = columns.get("required") if has_required else columns.get("all")
+    required = required or {}
+    if not isinstance(required, dict):
+        raise ValueError("fingerprint.columns.required/all must be a dict")
+    return required
+
+
+def _columns_all(fingerprint):
+    """兼容历史内部调用；新规则优先使用 columns.required。"""
+    return _columns_required(fingerprint)
+
+
+def _optional_columns(fingerprint):
+    columns = (fingerprint or {}).get("columns") or {}
+    optional = columns.get("optional") or {}
+    if not isinstance(optional, dict):
+        raise ValueError("fingerprint.columns.optional must be a dict")
+    normalized = {}
+    for source, raw_config in optional.items():
+        source = str(source).strip()
+        if not source:
+            continue
+        if raw_config is None:
+            config = {}
+        elif isinstance(raw_config, str):
+            config = {"field": raw_config}
+        elif isinstance(raw_config, dict):
+            config = dict(raw_config)
+        else:
+            raise ValueError(f"fingerprint.columns.optional.{source} must be a dict or string")
+        qc = str(config.get("qc") or "optional").strip()
+        if qc not in {"optional", "required"}:
+            raise ValueError(
+                f"fingerprint.columns.optional.{source}.qc must be optional or required"
+            )
+        normalized[source] = {
+            "field": None if config.get("field") is None else str(config.get("field")).strip(),
+            "qc": qc,
+            "missing_hint": str(config.get("missing_hint") or "").strip(),
+        }
+    return normalized
 
 
 def _column_markers(fingerprint):
-    return [str(key).strip() for key in _columns_all(fingerprint).keys() if str(key).strip()]
+    return [str(key).strip() for key in _columns_required(fingerprint).keys() if str(key).strip()]
 
 
 def _column_mapping(fingerprint):
     mapping = {}
-    for key, value in _columns_all(fingerprint).items():
+    for key, value in _columns_required(fingerprint).items():
         source = str(key).strip()
         if not source:
             continue
         mapping[source] = None if value is None else str(value).strip()
+    for source, config in _optional_columns(fingerprint).items():
+        mapping[source] = config.get("field")
     if not isinstance(mapping, dict):
         raise ValueError("column_mapping must be a dict")
     return mapping
@@ -617,6 +682,7 @@ def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
+            optional_columns=_optional_columns(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
@@ -660,6 +726,7 @@ def _load_excel_route_rules_versioned(_path_text, _mtime_ns, _size):
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
+            optional_columns=_optional_columns(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),

@@ -17,6 +17,30 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_matched_incomplete_route_is_rejected_by_stage_one_qc(self):
+        function_globals = standardize.standardize.__globals__
+        original = function_globals["read_rows"]
+        route = {
+            "decision": "matched_incomplete",
+            "fingerprint_id": "md5:test-incomplete",
+            "bank": "招商银行",
+            "account_type": "个人",
+            "missing_required_columns": ["对手信息"],
+            "missing_hints": ["请重新导出招商银行交易流水，并勾选“对手信息”"],
+        }
+        try:
+            function_globals["read_rows"] = lambda _path: ("pdf", "招商银行交易流水", [], route)
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(standardize.SourceFormatQualityError) as raised:
+                    standardize.standardize("招商流水.pdf", out_dir=tmp)
+        finally:
+            function_globals["read_rows"] = original
+
+        self.assertEqual(raised.exception.code, "MISSING_REQUIRED_EXPORT_COLUMNS")
+        self.assertEqual(raised.exception.route_info["fingerprint_id"], "md5:test-incomplete")
+        self.assertIn("缺少必需可选列：对手信息", raised.exception.reason)
+        self.assertIn("勾选“对手信息”", raised.exception.reason)
+
     def test_icbc_personal_pdfium_extracts_owner_without_watermark_accounts(self):
         samples = (
             (

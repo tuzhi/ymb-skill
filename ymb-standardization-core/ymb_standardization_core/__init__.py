@@ -4,10 +4,11 @@
 """
 
 from .contracts import RouteDecision, StandardizationContext
-from .core import NotABankStatement, standardize, standardize_file
+from .core import NotABankStatement, SourceFormatQualityError, standardize, standardize_file
 
 __all__ = [
     "NotABankStatement",
+    "SourceFormatQualityError",
     "RouteDecision",
     "StandardizationContext",
     "standardize",

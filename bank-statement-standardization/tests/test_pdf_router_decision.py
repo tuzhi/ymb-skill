@@ -417,8 +417,16 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertNotIn("layout", fingerprint)
             self.assertNotIn("data", fingerprint)
             columns = fingerprint.get("columns") or {}
-            self.assertIsInstance(columns.get("all"), dict)
-            self.assertTrue(columns.get("all"))
+            self.assertFalse("all" in columns and "required" in columns)
+            required = columns.get("required") if "required" in columns else columns.get("all")
+            self.assertIsInstance(required, dict)
+            self.assertTrue(required)
+            optional = columns.get("optional") or {}
+            self.assertIsInstance(optional, dict)
+            for source, config in optional.items():
+                self.assertTrue(source)
+                self.assertIsInstance(config, dict)
+                self.assertIn(config.get("qc", "optional"), {"optional", "required"})
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
@@ -488,6 +496,51 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertNotIn("parser", result)
         self.assertEqual(result["decision"], "unmatched")
         self.assertEqual(result["reader_id"], "none")
+
+    def test_optional_qc_column_keeps_fingerprint_and_reports_incomplete_export(self):
+        original = router.load_pdf_route_rules
+        rule = PdfRouteRule(
+            id="md5:test-optional-qc",
+            reader_id="pdfplumber_coordinate_table",
+            file_type="pdf",
+            bank="测试银行",
+            account_type="个人",
+            column_mapping={"交易时间": "交易时间", "对手信息": "对手名称"},
+            identity_any=["测试银行交易流水"],
+            column_markers=["交易时间", "交易金额", "账户余额"],
+            optional_columns={
+                "对手信息": {
+                    "field": "对手名称",
+                    "qc": "required",
+                    "missing_hint": "请重新导出并勾选“对手信息”",
+                }
+            },
+            metadata_all={"Producer": "UnitTest"},
+            style_all=[],
+            date_format_any=[],
+            has_fingerprint=True,
+        )
+        context = {"metadata": {"Producer": "UnitTest"}}
+        try:
+            router.load_pdf_route_rules = lambda: [rule]
+
+            incomplete = router.route_pdf(
+                "测试银行交易流水 交易时间 交易金额 账户余额", 0, 1, context=context
+            )
+            complete = router.route_pdf(
+                "测试银行交易流水 交易时间 交易金额 账户余额 对手信息", 0, 1,
+                context=context,
+            )
+
+            self.assertEqual(incomplete["decision"], "matched_incomplete")
+            self.assertEqual(incomplete["fingerprint_id"], "md5:test-optional-qc")
+            self.assertEqual(incomplete["bank"], "测试银行")
+            self.assertEqual(incomplete["missing_required_columns"], ["对手信息"])
+            self.assertEqual(incomplete["missing_hints"], ["请重新导出并勾选“对手信息”"])
+            self.assertEqual(complete["decision"], "matched")
+            self.assertEqual(complete["optional_columns_evidence"], ["对手信息"])
+        finally:
+            router.load_pdf_route_rules = original
 
     def test_specialized_route_without_yaml_fingerprint_falls_back_to_generic(self):
         original = router.load_pdf_route_rules

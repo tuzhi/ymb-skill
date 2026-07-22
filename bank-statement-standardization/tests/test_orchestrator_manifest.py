@@ -91,6 +91,40 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(skipped["name"], "转换流水.xlsx")
             self.assertIn("Kingsoft PDF to WPS 120", skipped["reason"])
 
+    def test_stage_one_blocks_when_identified_export_lacks_required_optional_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            statement = source / "招商银行交易流水.pdf"
+            statement.write_bytes(b"%PDF-1.4\n")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
+            runner.out_dir = str(root / "output")
+            runner.run_dir = str(root)
+            runner.manifest = {
+                "skipped_inputs": [],
+                "client": "测试客户",
+                "stage_1_standardize": {"route_artifact": ""},
+            }
+            runner.write_manifest = lambda: None
+
+            original = orchestrator.S.standardize_file
+            try:
+                orchestrator.S.standardize_file = lambda _context: (_ for _ in ()).throw(
+                    orchestrator.S.SourceFormatQualityError(
+                        "已识别为招商银行个人流水，但原始导出缺少必需可选列：对手信息。"
+                        "请重新导出招商银行交易流水，并勾选“对手信息”"
+                    )
+                )
+                with self.assertRaisesRegex(RuntimeError, "阶段一 QC 未通过.*对手信息"):
+                    runner.stage_1_standardize()
+            finally:
+                orchestrator.S.standardize_file = original
+
+            self.assertEqual(runner.manifest["skipped_inputs"], [])
+
     def test_inventory_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

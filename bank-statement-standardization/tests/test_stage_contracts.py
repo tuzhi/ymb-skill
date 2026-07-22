@@ -75,14 +75,13 @@ class StageContractsTest(unittest.TestCase):
             "fingerprint_id": "md5:abc",
             "series_family": "family-v1",
             "router_bank": "招商银行",
-            "inferred_bank": "",
+            "inferred_bank": "内部弱推断银行",
             "reader_id": "pdfplumber_table",
         }})
         self.assertEqual(summary, {
             "fingerprint_id": "md5:abc",
             "series_family": "family-v1",
             "router_bank": "招商银行",
-            "inferred_bank": "",
             "yaml_match_status": "matched",
         })
 

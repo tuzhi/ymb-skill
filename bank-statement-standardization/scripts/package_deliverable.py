@@ -305,6 +305,10 @@ def run(client, args):
                 n_files += 1
                 st = rep["标准化统计"]
                 print(f"  [OK] [{subj}] {os.path.basename(f)} -> {st['交易笔数']} 笔（{st['金额结构']}）")
+            except S.SourceFormatQualityError as e:
+                raise RuntimeError(
+                    f"阶段一 QC 未通过：{os.path.basename(f)}：{e.reason}"
+                ) from e
             except S.NotABankStatement as e:
                 skipped.append((os.path.basename(f), e.reason))
                 print(f"  [SKIP] [{subj}] {os.path.basename(f)}：{e.reason}")

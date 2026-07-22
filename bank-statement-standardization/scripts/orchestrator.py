@@ -665,7 +665,6 @@ class Runner:
                 "fingerprint_id": str(route.get("fingerprint_id") or ""),
                 "series_family": str(route.get("series_family") or ""),
                 "router_bank": str(route.get("router_bank") or "未识别"),
-                "inferred_bank": str(route.get("inferred_bank") or ""),
                 "yaml_match_status": str(route.get("yaml_match_status") or "unmatched"),
             }
             processed.append({
@@ -727,6 +726,10 @@ class Runner:
                     "csv": csv_path,
                     "rows": report["标准化统计"]["交易笔数"],
                 })
+            except S.SourceFormatQualityError as exc:
+                raise RuntimeError(
+                    f"阶段一 QC 未通过：{os.path.basename(path)}：{exc.reason}"
+                ) from exc
             except S.NotABankStatement as exc:
                 skipped.append((os.path.basename(path), exc.reason))
             except Exception as exc:

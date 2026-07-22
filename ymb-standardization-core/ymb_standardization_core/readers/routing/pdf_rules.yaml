@@ -727,7 +727,7 @@
         对方机构: null
         备注: 银行备注
   reader_id: pdfplumber_coordinate_table
-- id: md5:b3931dcff339eccaf63efd597d60132b
+- id: md5:66e9c906a6c3c121ddce1ca9ecb8824d
   file_type: pdf
   bank: 招商银行
   account_type: 个人
@@ -746,7 +746,7 @@
     - field: 本方账户
       pattern: '账号[:：]\s*([0-9*]+)'
     columns:
-      all:
+      required:
         户 名: 本方名称
         账号: 本方账户
         记账日期: 交易日期
@@ -754,7 +754,11 @@
         交易金额: 交易金额
         联机余额: 账户余额
         交易摘要: 银行备注
-        对手信息: 对手名称
+      optional:
+        对手信息:
+          field: 对手名称
+          qc: required
+          missing_hint: 请重新导出招商银行交易流水，并勾选“对手信息”
   reader_options:
     row_transforms:
       anchor_column: 记账日期

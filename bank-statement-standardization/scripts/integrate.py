@@ -630,17 +630,12 @@ def _source_bank_judgment(rows):
         _clean_text(value) for value in rows.get("__router_bank", pd.Series(dtype=str))
         if _identity_bank(value)
     }
-    inferred_values = {
-        _clean_text(value) for value in rows.get("__inferred_bank", pd.Series(dtype=str))
-        if _identity_bank(value)
-    }
     current_values = {
         _clean_text(value) for value in rows.get("开户行", pd.Series(dtype=str))
         if _identity_bank(value)
     }
     return {
         "router_bank": next(iter(router_values)) if len(router_values) == 1 else "未识别",
-        "inferred_bank": next(iter(inferred_values)) if len(inferred_values) == 1 else "",
         "current_bank": next(iter(current_values)) if len(current_values) == 1 else "",
     }
 
@@ -701,7 +696,7 @@ def pair_unknown_account_sources(df, min_overlap=3, min_ratio=0.9):
         bank_values = {
             _identity_bank(value): value
             for judgment in judgments.values()
-            for value in (judgment["router_bank"], judgment["inferred_bank"], judgment["current_bank"])
+            for value in (judgment["router_bank"], judgment["current_bank"])
             if _identity_bank(value)
         }
         if len(bank_values) > 1:
@@ -1234,7 +1229,6 @@ def load_inputs(paths, file_routes=None):
         df["__源标准化文件路径"] = os.path.abspath(f)
         route = file_routes.get(os.path.basename(f)) or {}
         df["__router_bank"] = route.get("router_bank") or "未识别"
-        df["__inferred_bank"] = route.get("inferred_bank") or ""
         df["__fingerprint_id"] = route.get("fingerprint_id") or ""
         df["__series_family"] = route.get("series_family") or ""
         # 时间精度来自每笔标准化时间文本：日期级记录保持 YYYY-MM-DD，不能因同文件

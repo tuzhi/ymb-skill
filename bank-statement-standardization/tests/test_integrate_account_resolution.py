@@ -60,7 +60,6 @@ class BatchAccountResolutionTests(unittest.TestCase):
                     "fingerprint_id": "md5:route",
                     "series_family": "family-v1",
                     "router_bank": "上饶银行",
-                    "inferred_bank": "",
                     "yaml_match_status": "matched",
                 }
             }
@@ -619,7 +618,6 @@ class BatchAccountResolutionTests(unittest.TestCase):
             xls["本方名称"] = ""
             xls["开户行"] = "上饶银行"
             xls["__router_bank"] = "上饶银行"
-            xls["__inferred_bank"] = ""
             pdf = transaction(
                 "srbank.pdf", "未识别账户#pdf", f"2025-01-0{idx} 10:00:00", balance,
                 f"对手{idx}", f"1000{idx}",
@@ -627,7 +625,6 @@ class BatchAccountResolutionTests(unittest.TestCase):
             pdf["本方名称"] = ""
             pdf["开户行"] = "上饶银行"
             pdf["__router_bank"] = "未识别"
-            pdf["__inferred_bank"] = "上饶银行"
             rows.extend([xls, pdf])
 
         paired, report = integrate.pair_unknown_account_sources(pd.DataFrame(rows))
@@ -641,7 +638,7 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(detail["核心交易重合数"], 3)
         self.assertEqual(detail["核心交易重合率"], 1.0)
         self.assertEqual(detail["来源判断"]["srbank.pdf"]["router_bank"], "未识别")
-        self.assertEqual(detail["来源判断"]["srbank.pdf"]["inferred_bank"], "上饶银行")
+        self.assertEqual(detail["来源判断"]["srbank.pdf"]["current_bank"], "上饶银行")
 
     def test_unknown_pair_overlap_counts_duplicate_core_transactions(self):
         rows = []

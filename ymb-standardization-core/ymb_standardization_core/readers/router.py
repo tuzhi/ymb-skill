@@ -4,18 +4,25 @@ from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_
 
 
 def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
-                   identity_evidence, columns_evidence, route_evidence=None):
+                   identity_evidence, columns_evidence, route_evidence=None,
+                   decision="matched", required_columns_evidence=None,
+                   optional_columns_evidence=None, missing_required_columns=None,
+                   missing_hints=None):
     return {
         "id": id,
         "fingerprint_id": id,
         "reader_id": reader_id,
-        "decision": "matched",
+        "decision": decision,
         "file_type": file_type,
         "bank": bank,
         "account_type": account_type,
         "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
+        "required_columns_evidence": required_columns_evidence or [],
+        "optional_columns_evidence": optional_columns_evidence or [],
+        "missing_required_columns": missing_required_columns or [],
+        "missing_hints": missing_hints or [],
         "word_filters": route_evidence.get("word_filters", {}) if route_evidence else {},
         "direction_from_column": route_evidence.get("direction_from_column", {}) if route_evidence else {},
         "drop_rows": route_evidence.get("drop_rows", []) if route_evidence else [],
@@ -56,10 +63,11 @@ def _choose_specific_candidate(candidates):
         return None
     def score(item):
         return (
+            1 if item.get("decision") == "matched" else 0,
             len(item.get("columns_evidence", []))
             + len(item.get("metadata_evidence", {})) * 2
             + len(item.get("style_evidence", []))
-            + len(item.get("date_format_evidence", []))
+            + len(item.get("date_format_evidence", [])),
         )
 
     by_score = sorted(candidates, key=score, reverse=True)
@@ -122,8 +130,13 @@ def route_pdf(text, table_row_count, page_count, context=None):
             column_mapping=rule.column_mapping,
             identity_evidence=match["identity_evidence"],
             columns_evidence=match["columns_evidence"],
+            decision=match["decision"],
+            required_columns_evidence=match.get("required_columns_evidence"),
+            optional_columns_evidence=match.get("optional_columns_evidence"),
+            missing_required_columns=match.get("missing_required_columns"),
+            missing_hints=match.get("missing_hints"),
             route_evidence={
-                "reader_header_candidates": rule.column_markers,
+                "reader_header_candidates": rule.column_markers + list(rule.optional_columns),
                 "word_filters": rule.word_filters,
                 "direction_from_column": rule.direction_from_column,
                 "drop_rows": rule.drop_rows,
@@ -1484,6 +1497,11 @@ def read_pdf_rows(path, open_password=None):
         preamble = pdf.pages[0].extract_text() if pdf.pages else ""
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
+
+        # fingerprint 已定位但银行导出选项不完整时，保留路由证据交给阶段一 QC；
+        # 不继续执行 Reader，避免将不完整格式误当成普通解析失败或可交付流水。
+        if route_info.get("decision") == "matched_incomplete":
+            return preamble or "", [], route_info
 
         table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
         table_rows = _annotate_payment_order_state(table_rows)
