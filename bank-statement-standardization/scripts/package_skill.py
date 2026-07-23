@@ -22,6 +22,7 @@ def _is_excluded(relative_path):
         return True
     if any(
         part in {
+            ".DS_Store",
             "dist",
             "testdata",
             "testoutput",

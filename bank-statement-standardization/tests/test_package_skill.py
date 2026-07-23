@@ -39,6 +39,7 @@ class PackageSkillTest(unittest.TestCase):
         package_skill = self.load_package_module()
 
         for path in (
+            ".DS_Store",
             "testdata/sample.xlsx",
             "testoutput/run/final.xlsx",
             "runs/run-id/manifest.json",
