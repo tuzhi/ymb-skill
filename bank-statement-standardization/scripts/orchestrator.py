@@ -7,7 +7,6 @@ import glob
 import hashlib
 import json
 import os
-import platform
 import re
 import shutil
 import sys
@@ -26,7 +25,6 @@ import validate_stage as V
 from stage_contracts import IntegrationContext, StageResult, yaml_route_summary
 
 
-IMPORTS = ("pandas", "openpyxl", "xlrd", "pdfplumber")
 DONE = "DONE"
 ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
@@ -375,7 +373,7 @@ class Runner:
                     f"父运行客户名称不一致：父运行={parent_client}，本次显式参数={args.client}"
                 )
             args.client = parent_client
-        self.input_dir, self.input_snapshot_details = prepare_input_snapshot(self.original_input_folder, self.run_dir)
+        self.input_dir, _ = prepare_input_snapshot(self.original_input_folder, self.run_dir)
         self.args.folder = self.input_dir
         self.copy_stage_manifest()
         self.manifest["client"] = args.client
@@ -779,38 +777,6 @@ class Runner:
             )
         raise RuntimeError(f"未知阶段验证器：{stage_id}")
 
-    def preflight(self):
-        model = os.environ.get("SKILL_ACTIVE_MODEL", "")
-        if self.args.require_model:
-            if not model:
-                raise RuntimeError(
-                    f"宿主未提供 SKILL_ACTIVE_MODEL，无法核验当前模型是否为 {self.args.require_model}")
-            if model.lower() != self.args.require_model.lower():
-                raise RuntimeError(f"模型不符合要求：期望 {self.args.require_model}，当前 {model}")
-        missing = []
-        for name in IMPORTS:
-            try:
-                __import__(name)
-            except ImportError:
-                missing.append(name)
-        if missing:
-            raise RuntimeError(
-                "缺少 Python 依赖："
-                + ", ".join(missing)
-                + "；请先执行 python -m pip install -r requirements.txt 后重试。"
-                  "该文件使用兼容范围约束，适配 Python 3.11+ / 3.13。"
-            )
-        probe = os.path.join(self.run_dir, ".write-probe")
-        with open(probe, "w", encoding="utf-8") as f:
-            f.write(self.run_id)
-        os.remove(probe)
-        self.receipt("preflight", "ok", {
-            "python": platform.python_version(),
-            "imports": list(IMPORTS),
-            "script_execution_challenge": self.run_id,
-            "input_snapshot": self.input_snapshot_details,
-        })
-
     def bundle(self, level):
         bundle = self.bundle_path(level)
         with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -928,7 +894,6 @@ class Runner:
 
     def execute(self):
         try:
-            self.preflight()
             self.run_manifest_stages()
             final = self.final_validation_result
             if final is None:
@@ -962,8 +927,6 @@ def main():
     ap.add_argument("--folder", required=True)
     ap.add_argument("--run-root", help="每次运行的独立归档目录，默认 ./runs")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
-    ap.add_argument("--require-model",
-                    help="可选：要求宿主通过 SKILL_ACTIVE_MODEL 提供并匹配模型 ID")
     ap.add_argument("--parent-run-id",
                     help="可选：AI 兜底修复后重跑时，记录关联的上一轮失败 run_id")
     ap.add_argument("--rerun-reason",

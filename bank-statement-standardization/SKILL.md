@@ -20,7 +20,7 @@ description: >-
 ```powershell
 python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件夹>" --run-root ".\runs"
 ```
-- `--folder` 可以传客户流水文件夹，也可以直接传单个 `.zip`。zip 会在 `preflight` 阶段确定性解包到本次 `runs/<run-id>/input`，自动处理 GBK/GB18030 中文文件名、目录项和单一嵌套父目录，并把解包清单写入 `receipts/01-preflight.json`。
+- `--folder` 可以传客户流水文件夹，也可以直接传单个 `.zip`。zip 会确定性解包到本次 `runs/<run-id>/input`，自动处理 GBK/GB18030 中文文件名、目录项和单一嵌套父目录。
 - Excel 必须是银行或支付平台的原始导出文件。检测到 `Kingsoft PDF to WPS` 元数据的“PDF 转 Excel”文件会直接跳过并写入 `manifest.skipped_inputs`，不参与 fingerprint、标准化、分卷归并或支持矩阵统计；应改交原始 Excel，或直接提交可抽取文本的原始 PDF。不得为这类转换文件新增专用 fingerprint/reader 兼容逻辑。
 
 ## 状态机

@@ -23,7 +23,6 @@ def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_r
         error_bundle_mode="full",
         parent_run_id=parent_run_id,
         rerun_reason="ai_fallback_after_stage_failure" if parent_run_id else "",
-        require_model="",
         account_type=None,
     )
 
@@ -299,7 +298,6 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "sheets": ["整合打标流水"],
             }
             runner.warning_events = []
-            runner.preflight = Mock()
             runner.run_manifest_stages = Mock()
             runner.receipt = Mock()
             runner.emit = Mock()

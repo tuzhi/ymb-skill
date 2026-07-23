@@ -55,7 +55,7 @@ python -m pip install -r requirements.txt
 
 # ★ 正式生产：只执行一次主入口。默认不传 --client 时使用原始输入文件夹名称
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹"
-# 也可以直接传单个 zip；preflight 会解包到本次 runs/<run-id>/input 并记录解包清单
+# 也可以直接传单个 zip；程序会解包到本次 runs/<run-id>/input
 python scripts/orchestrator.py run --folder "/path/to/客户流水.zip"
 
 # 显式客户名称同时作为交付物归档名；后续不会被上游别名或本方名称覆盖

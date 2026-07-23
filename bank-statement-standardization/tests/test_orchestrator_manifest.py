@@ -187,7 +187,7 @@ class OrchestratorManifestTest(unittest.TestCase):
 
             self.assertFalse((root / "escape.csv").exists())
 
-    def test_preflight_receipt_records_zip_snapshot_details(self):
+    def test_runner_uses_extracted_zip_snapshot_as_input(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             zip_path = root / "客户.zip"
@@ -203,18 +203,14 @@ class OrchestratorManifestTest(unittest.TestCase):
                 error_bundle_mode="full",
                 parent_run_id="",
                 rerun_reason="",
-                require_model="",
             )
             runner = orchestrator.Runner(args)
 
-            runner.preflight()
-
-            receipt_path = Path(runner.receipt_dir) / "01-preflight.json"
-            data = json.loads(receipt_path.read_text(encoding="utf-8"))
-            snapshot = data["details"]["input_snapshot"]
-            self.assertEqual(snapshot["input_kind"], "zip")
-            self.assertEqual(snapshot["common_root_stripped"], "客户")
-            self.assertEqual(snapshot["extracted_files"][0]["output_path"], "流水.csv")
+            self.assertEqual(Path(runner.args.folder), Path(runner.run_dir) / "input")
+            self.assertEqual(
+                (Path(runner.args.folder) / "流水.csv").read_text(encoding="utf-8"),
+                "raw",
+            )
 
     def test_error_bundle_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
