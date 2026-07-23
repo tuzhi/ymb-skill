@@ -406,6 +406,8 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertNotIn("ai_fallback_dir", stage)
             self.assertNotIn("started_at", stage)
             self.assertNotIn("duration_seconds", stage)
+            self.assertNotIn("script", stage)
+            self.assertNotIn("validator", stage)
             self.assertEqual(stage["status"], "")
             self.assertEqual(stage["ai_fallback_info"], "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。")
 
@@ -454,6 +456,8 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(inherited["stage"], "stage_1_standardize")
             self.assertEqual(inherited["parent_status"], "ERROR")
             self.assertEqual(inherited["parent_fallback_artifacts"], ["fallback_request.json", "patch_header_nan_fix.py"])
+            self.assertNotIn("script", inherited)
+            self.assertNotIn("validator", inherited)
 
     def test_load_parent_run_context_rejects_missing_parent(self):
         with tempfile.TemporaryDirectory() as tmp:

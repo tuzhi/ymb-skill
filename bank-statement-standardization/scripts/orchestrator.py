@@ -186,8 +186,6 @@ def load_parent_run_context(run_root, parent_run_id):
         inherited_fallbacks.append({
             "stage": stage_id,
             "name": spec.get("name", ""),
-            "script": spec.get("script", ""),
-            "validator": spec.get("validator", ""),
             "parent_status": status,
             "parent_fallback_dir": fallback_dir,
             "parent_fallback_artifacts": spec.get("ai_fallback_artifacts", []),
@@ -440,8 +438,10 @@ class Runner:
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
         self.receipt_sequence = 0
-        # 同一次 execute 中复用已经通过的阶段验证结果，避免重复读取大型 CSV/XLSX。
+        # 阶段一校验结果仅用于本次执行内的回执和兜底判断。
         self.stage_validation_results = {}
+        # 最终交付验收在 stage_4_package 内完成，execute 复用结果，避免重复打开 XLSX。
+        self.final_validation_result = None
         self.original_input_folder = os.path.abspath(args.folder)
         parent_context = load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None
         if parent_context and parent_context.get("parent_client"):
@@ -473,10 +473,12 @@ class Runner:
         for stage_id, spec in data.items():
             if not str(stage_id).startswith("stage_"):
                 continue
-            spec["ai_fallback_used"] = False
-            spec["ai_fallback_artifacts"] = []
+            spec.pop("script", None)
+            spec.pop("validator", None)
             spec["status"] = ""
             if stage_id == "stage_1_standardize":
+                spec["ai_fallback_used"] = False
+                spec["ai_fallback_artifacts"] = []
                 spec["route_artifact"] = ""
                 spec.pop("file_routes", None)
             spec.pop("ai_fallback_dir", None)
@@ -647,7 +649,7 @@ class Runner:
 
     def stage_1_from_declared_standardized_manifest(self, work):
         # 快速完成阶段一：消费上游 manifest 声明的标准化产物，
-        # 然后让原状态机按 receipt/validator/DONE 的路径继续进入阶段二。
+        # 然后按阶段一 receipt/validate_standardize/DONE 的路径继续进入阶段二。
         upstream_manifest, manifest_path = self.load_declared_standardized_manifest()
         if not upstream_manifest:
             return None
@@ -747,6 +749,7 @@ class Runner:
         )
 
     def stage_2_integrate(self):
+        import pandas as pd
         int_csv, int_json, report = I.integrate_context(IntegrationContext.create(
             self.args.client,
             [self.work_dir()],
@@ -754,10 +757,15 @@ class Runner:
             file_routes=self.load_stage_1_routes(),
         ))
         overview = report["客户整合概览"]
+        integrated_rows = len(pd.read_csv(int_csv, dtype=str))
+        if integrated_rows != int(overview["整合交易数"]):
+            raise RuntimeError(
+                f"阶段二整合交易数不一致：报告 {overview['整合交易数']}，CSV {integrated_rows}"
+            )
         return StageResult("stage_2_integrate", {
             "integrated_csv": int_csv,
             "integrated_report": int_json,
-            "integrated_rows": overview["整合交易数"],
+            "integrated_rows": integrated_rows,
             "accounts": overview["整合账户数"],
         })
 
@@ -772,14 +780,23 @@ class Runner:
         })
 
     def stage_3_tag(self):
+        import pandas as pd
         int_csv = self.latest_artifact("*__整合流水.csv")
         rules = os.path.join(self.skill_dir, "assets", "tag_rules.csv")
         tag_csv, tag_json, report = T.tag(int_csv, rules, out_dir=self.work_dir())
         summary = report["标签梳理概览"]
+        integrated_rows = len(pd.read_csv(int_csv, dtype=str))
+        tagged = pd.read_csv(tag_csv, dtype=str)
+        if len(tagged) != integrated_rows:
+            raise RuntimeError(f"阶段三打标前后交易数不一致：{integrated_rows} != {len(tagged)}")
+        required_tags = {"收支方向", "一级标签", "二级标签", "三级标签", "标签来源"}
+        missing = sorted(required_tags - set(tagged.columns))
+        if missing:
+            raise RuntimeError(f"阶段三打标产物缺少必需字段：{', '.join(missing)}")
         return StageResult("stage_3_tag", {
             "tagged_csv": tag_csv,
             "tag_report": tag_json,
-            "tagged_rows": summary["交易总数"],
+            "tagged_rows": len(tagged),
             "rule_hit_rate": summary["规则命中率"],
         })
 
@@ -806,7 +823,12 @@ class Runner:
             self.out_dir,
             skipped,
         )
-        return StageResult("stage_4_package", {"deliverable": deliverable})
+        self.final_validation_result = V.validate_final(
+            self.out_dir,
+            self.args.client,
+            tagged_rows=len(tagged),
+        )
+        return StageResult("stage_4_package", self.final_validation_result)
 
     def execute_stage_script(self, stage_id):
         handlers = {
@@ -831,20 +853,6 @@ class Runner:
                 skipped_inputs=self.manifest.get("skipped_inputs", []),
                 file_routes=self.load_stage_1_routes(),
             )
-        if stage_id == "stage_2_integrate":
-            return V.validate_integrate(work)
-        if stage_id == "stage_2b_portfolio_balance":
-            return V.validate_portfolio(work)
-        if stage_id == "stage_3_tag":
-            integrated = self.stage_validation_results.get("stage_2_integrate")
-            if integrated is None:
-                integrated = V.validate_integrate(work)
-            return V.validate_tag(work, integrated_rows=integrated["integrated_rows"])
-        if stage_id == "stage_4_package":
-            tag = self.stage_validation_results.get("stage_3_tag")
-            if tag is None:
-                tag = V.validate_tag(work)
-            return V.validate_final(self.out_dir, self.args.client, tagged_rows=tag["tagged_rows"])
         raise RuntimeError(f"未知阶段验证器：{stage_id}")
 
     def preflight(self):
@@ -908,14 +916,27 @@ class Runner:
         return os.path.join(self.run_dir, f"{self.run_id}__{level}__{self.args.error_bundle_mode}.zip")
 
     def handle_stage_failure(self, stage_id, spec, exc):
+        if stage_id != "stage_1_standardize":
+            self.emit(
+                "ERROR",
+                "STAGE_ERROR",
+                f"阶段 {stage_id} 执行失败，确定性流水线已中止",
+                stage=stage_id,
+                error=str(exc),
+            )
+            self.update_stage_status(stage_id, ERROR)
+            self.receipt(stage_id, "error", {
+                "orchestrator_handler": self.stage_handler_name(stage_id),
+                "error": str(exc),
+            })
+            return
+
         fallback_dir = self.fallback_dir(stage_id)
         os.makedirs(fallback_dir, exist_ok=True)
         fallback_request = {
             "client": self.args.client,
             "stage": stage_id,
             "name": spec.get("name", ""),
-            "script": spec.get("script", ""),
-            "validator": spec.get("validator", ""),
             "ai_fallback_refs": spec.get("ai_fallback_refs", []),
             "error": str(exc),
             "created_at": now(),
@@ -938,9 +959,7 @@ class Runner:
         self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
         self.update_stage_status(stage_id, ERROR)
         self.receipt(stage_id, "error", {
-            "script": spec.get("script", ""),
             "orchestrator_handler": self.stage_handler_name(stage_id),
-            "validator": spec.get("validator", ""),
             "ai_fallback_refs": spec.get("ai_fallback_refs", []),
             "ai_fallback_used": True,
             "ai_fallback_artifacts": fallback_artifacts,
@@ -958,25 +977,27 @@ class Runner:
                 f"开始阶段 {stage_id}：{spec.get('name', '')}",
                 stage=stage_id,
                 name=spec.get("name", ""),
-                script=spec.get("script", ""),
-                validator=spec.get("validator", ""),
                 status=spec.get("status", ""),
             )
             try:
                 script_result = self.execute_stage_script(stage_id)
                 self.receipt(stage_id, "script_ok", {
-                    "script": spec.get("script", ""),
                     "orchestrator_handler": self.stage_handler_name(stage_id),
                     "result": script_result,
                 })
-                validate_result = self.validate_stage(stage_id)
-                self.stage_validation_results[stage_id] = validate_result
-                self.receipt(f"{stage_id}__validator", "ok", {
-                    "validator": spec.get("validator", ""),
-                    "result": validate_result,
-                })
+                if stage_id == "stage_1_standardize":
+                    validate_result = self.validate_stage(stage_id)
+                    self.stage_validation_results[stage_id] = validate_result
+                    self.receipt(f"{stage_id}__validator", "ok", {
+                        "result": validate_result,
+                    })
                 self.update_stage_status(stage_id, DONE)
-                self.emit("INFO", "STAGE_DONE", f"阶段 {stage_id} 已通过脚本和检测", stage=stage_id)
+                message = (
+                    f"阶段 {stage_id} 已通过脚本和检测"
+                    if stage_id == "stage_1_standardize"
+                    else f"阶段 {stage_id} 程序执行完成"
+                )
+                self.emit("INFO", "STAGE_DONE", message, stage=stage_id)
             except Exception as exc:
                 self.handle_stage_failure(stage_id, spec, exc)
                 raise
@@ -985,21 +1006,13 @@ class Runner:
         try:
             self.preflight()
             self.run_manifest_stages()
-            final = self.stage_validation_results.get("stage_4_package")
-            reused_stage_validator = final is not None
+            final = self.final_validation_result
             if final is None:
-                tag = self.stage_validation_results.get("stage_3_tag")
-                if tag is None:
-                    tag = V.validate_tag(self.work_dir())
-                final = V.validate_final(
-                    self.out_dir,
-                    self.args.client,
-                    tagged_rows=tag["tagged_rows"],
-                )
+                raise RuntimeError("最终交付物未执行验收")
             self.receipt(
                 "validate_final",
                 "ok",
-                {**final, "reused_stage_validator": reused_stage_validator},
+                final,
             )
             self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{final['deliverable']}")
             if self.warning_events:

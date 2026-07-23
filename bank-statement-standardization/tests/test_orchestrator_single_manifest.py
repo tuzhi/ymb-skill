@@ -50,6 +50,12 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 self.assertNotIn("ai_fallback_dir", stage)
                 self.assertNotIn("started_at", stage)
                 self.assertNotIn("duration_seconds", stage)
+                self.assertNotIn("script", stage)
+                self.assertNotIn("validator", stage)
+                if stage_id != "stage_1_standardize":
+                    self.assertNotIn("ai_fallback_refs", stage)
+                    self.assertNotIn("ai_fallback_used", stage)
+                    self.assertNotIn("ai_fallback_artifacts", stage)
 
     def test_parent_context_reads_client_and_error_from_single_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,7 +149,31 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     )
                 )
 
-    def test_every_stage_can_record_ai_fallback_in_single_manifest(self):
+    def test_stage_1_failure_records_ai_fallback_in_single_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+
+            runner = orchestrator.Runner(
+                runner_args(root / "runs-stage-1", source, client="斑马商业")
+            )
+            stage_id = "stage_1_standardize"
+            runner.handle_stage_failure(stage_id, runner.manifest[stage_id], RuntimeError("阶段一测试失败"))
+
+            manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest[stage_id]["status"], "ERROR")
+            self.assertTrue(manifest[stage_id]["ai_fallback_used"])
+            self.assertEqual(manifest[stage_id]["ai_fallback_artifacts"], ["fallback_request.json"])
+            request_path = Path(runner.fallback_dir(stage_id)) / "fallback_request.json"
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+            self.assertEqual(request["error"], "阶段一测试失败")
+            self.assertEqual(request["client"], "斑马商业")
+            self.assertNotIn("script", request)
+            self.assertNotIn("validator", request)
+
+    def test_downstream_failure_does_not_record_ai_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
@@ -151,7 +181,6 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             (source / "流水.csv").write_text("raw", encoding="utf-8")
 
             for stage_id in (
-                "stage_1_standardize",
                 "stage_2_integrate",
                 "stage_2b_portfolio_balance",
                 "stage_3_tag",
@@ -164,12 +193,13 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
 
                 manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
                 self.assertEqual(manifest[stage_id]["status"], "ERROR")
-                self.assertTrue(manifest[stage_id]["ai_fallback_used"])
-                self.assertEqual(manifest[stage_id]["ai_fallback_artifacts"], ["fallback_request.json"])
-                request_path = Path(runner.fallback_dir(stage_id)) / "fallback_request.json"
-                request = json.loads(request_path.read_text(encoding="utf-8"))
-                self.assertEqual(request["error"], f"{stage_id}-测试失败")
-                self.assertEqual(request["client"], "斑马商业")
+                self.assertNotIn("ai_fallback_refs", manifest[stage_id])
+                self.assertNotIn("ai_fallback_used", manifest[stage_id])
+                self.assertNotIn("ai_fallback_artifacts", manifest[stage_id])
+                self.assertFalse(Path(runner.fallback_dir(stage_id)).exists())
+                events = Path(runner.event_path).read_text(encoding="utf-8")
+                self.assertIn('"code": "STAGE_ERROR"', events)
+                self.assertNotIn('"code": "AI_FALLBACK_REQUIRED"', events)
 
     def test_ai_fallback_fix_can_create_child_run_and_pass_same_validator(self):
         """锁定失败请求、确定性修复、关联 run 和原 validator 的兼容链条。"""
@@ -237,16 +267,36 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertEqual(child.manifest["stage_1_standardize"]["status"], "DONE")
             self.assertEqual(child.stage_validation_results["stage_1_standardize"]["standardized_rows"], 1)
 
-    def test_execute_reuses_stage_4_validation_result(self):
+    def test_downstream_stage_does_not_call_stage_validator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            runner = orchestrator.Runner(runner_args(root / "runs", source, client="斑马商业"))
+            for stage_id, stage in runner.manifest.items():
+                if stage_id.startswith("stage_"):
+                    stage["status"] = "DONE"
+            runner.manifest["stage_2_integrate"]["status"] = ""
+            runner.write_manifest()
+            runner.execute_stage_script = Mock(return_value={"integrated_rows": 1})
+            runner.validate_stage = Mock(side_effect=AssertionError("下游不应调用 stage validator"))
+
+            runner.run_manifest_stages()
+
+            self.assertEqual(runner.manifest["stage_2_integrate"]["status"], "DONE")
+            runner.validate_stage.assert_not_called()
+            receipts = [path.name for path in Path(runner.receipt_dir).glob("*.json")]
+            self.assertFalse(any("stage_2_integrate__validator" in name for name in receipts))
+
+    def test_execute_reuses_final_delivery_validation_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.run_dir = tmp
-            runner.stage_validation_results = {
-                "stage_4_package": {
-                    "deliverable": str(Path(tmp) / "客户_已清洗_待分析.xlsx"),
-                    "deliverable_rows": 1,
-                    "sheets": ["整合打标流水"],
-                }
+            runner.final_validation_result = {
+                "deliverable": str(Path(tmp) / "客户_已清洗_待分析.xlsx"),
+                "deliverable_rows": 1,
+                "sheets": ["整合打标流水"],
             }
             runner.warning_events = []
             runner.preflight = Mock()
@@ -260,7 +310,86 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertEqual(status, 0)
             validate_final.assert_not_called()
             details = runner.receipt.call_args.args[2]
-            self.assertTrue(details["reused_stage_validator"])
+            self.assertEqual(details, runner.final_validation_result)
+
+    def test_stage_4_runs_final_delivery_validation_inside_program(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            work = root / "work"
+            out = root / "artifacts"
+            work.mkdir()
+            out.mkdir()
+            (work / "客户__整合流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
+            (work / "客户__整合报告.json").write_text("{}", encoding="utf-8")
+            (work / "客户__打标流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
+            (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(client="客户")
+            runner.out_dir = str(out)
+            runner.manifest = {"skipped_inputs": []}
+            runner.final_validation_result = None
+            runner.work_dir = lambda: str(work)
+            final = {
+                "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
+                "deliverable_rows": 1,
+                "sheets": ["整合打标流水"],
+            }
+
+            with (
+                patch.object(orchestrator.P, "finalize_deliverable", return_value=final["deliverable"]),
+                patch.object(orchestrator.V, "validate_final", return_value=final) as validate_final,
+            ):
+                result = runner.stage_4_package()
+
+            validate_final.assert_called_once_with(str(out), "客户", tagged_rows=1)
+            self.assertEqual(result, final)
+            self.assertEqual(runner.final_validation_result, final)
+
+    def test_stage_2_checks_report_and_csv_row_count_inside_program(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            integrated = work / "客户__整合流水.csv"
+            integrated.write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
+            report_path = work / "客户__整合报告.json"
+            report_path.write_text("{}", encoding="utf-8")
+            report = {"客户整合概览": {"整合交易数": 2, "整合账户数": 1}}
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(client="客户")
+            runner.work_dir = lambda: str(work)
+            runner.load_stage_1_routes = lambda: {}
+
+            with patch.object(
+                orchestrator.I,
+                "integrate_context",
+                return_value=(str(integrated), str(report_path), report),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "阶段二整合交易数不一致"):
+                    runner.stage_2_integrate()
+
+    def test_stage_3_checks_input_output_row_count_inside_program(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            integrated = work / "客户__整合流水.csv"
+            integrated.write_text("交易唯一编号\nTX-1\nTX-2\n", encoding="utf-8")
+            tagged = work / "客户__打标流水.csv"
+            tagged.write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
+            report_path = work / "客户__标签报告.json"
+            report_path.write_text("{}", encoding="utf-8")
+            report = {"标签梳理概览": {"交易总数": 2, "规则命中率": 1.0}}
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.skill_dir = str(SKILL_ROOT)
+            runner.work_dir = lambda: str(work)
+
+            with patch.object(
+                orchestrator.T,
+                "tag",
+                return_value=(str(tagged), str(report_path), report),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "阶段三打标前后交易数不一致"):
+                    runner.stage_3_tag()
 
 
 if __name__ == "__main__":
