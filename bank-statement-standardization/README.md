@@ -26,7 +26,6 @@ bank-statement-standardization/
 │   ├── standardize.py       # stage_1_standardize：兼容旧命令的 CLI 薄入口
 │   ├── integrate.py         # stage_2_integrate：单客户多文件整合与验证
 │   ├── tag.py               # stage_3_tag：交易打标与规则沉淀
-│   ├── multi_customer.py    # 扩展阶段：多客户批量整合与验证（含整合后余额校验）
 │   ├── portfolio_balance.py # stage_2b_portfolio_balance：组合(虚拟账户)余额时间序列 + 余额校验
 │   ├── orchestrator.py      # ★ 正式生产主入口：检查、留痕、验收、告警/错误打包
 │   ├── validate_stage.py    # 每阶段产物检测
@@ -70,10 +69,6 @@ python scripts/package_deliverable.py --client "客户名" \
 # 或：单客户一键中间产物（标准化→整合→组合余额→打标，输出 CSV/JSON）
 python scripts/run_pipeline.py "客户名" "/path/to/客户文件夹" --account-type 对公
 
-# 多客户批量底表
-python scripts/multi_customer.py --batch "批次名" \
-  --client "客户A:/path/A/_标准化产物:C001" \
-  --client "客户B:/path/B/_标准化产物:C002"
 ```
 
 逐阶段单独调用见 `SKILL.md`。
