@@ -167,14 +167,6 @@ def route_pdf(text, table_row_count, page_count, context=None):
     )
 
 
-def _extract_pdf_tables(pdf):
-    """通用 PDF 表格抽取，只处理 pdfplumber 能识别出的结构化表格。"""
-    rows = _extract_pdf_tables_default(pdf)
-    if rows:
-        return rows
-    return _extract_pdf_tables_from_horizontal_lines(pdf)
-
-
 def _drop_configured_rows(rows, rules):
     if not rows or not rules:
         return rows

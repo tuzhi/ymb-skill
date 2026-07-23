@@ -9,7 +9,6 @@ import argparse
 import csv
 import hashlib
 import json
-import os
 import platform
 import re
 import shutil
@@ -21,7 +20,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 import yaml
@@ -355,41 +353,6 @@ def support_matrix_fingerprint_id(fingerprint_id):
     if rule_fingerprint_id != expected:
         raise ValueError(f"fingerprint id mismatch: {rule_fingerprint_id} != {expected}")
     return rule_fingerprint_id
-
-
-def load_support_matrix_rows(matrix_path):
-    """读取 support_matrix.xlsx，作为已支持样本与指纹归属的事实源。"""
-    wb = load_workbook(matrix_path, read_only=True, data_only=True)
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        return []
-    header = [str(value or "").strip() for value in rows[0]]
-    records = []
-    for values in rows[1:]:
-        record = {}
-        for idx, col in enumerate(header):
-            if not col:
-                continue
-            record[col] = "" if idx >= len(values) or values[idx] is None else str(values[idx]).strip()
-        if any(record.values()):
-            records.append(record)
-    return records
-
-
-def support_matrix_files_for_fingerprint(matrix_path, fingerprint_id):
-    rows = load_support_matrix_rows(matrix_path)
-    files = []
-    for row in rows:
-        row_fingerprint_id = row.get("router类", "")
-        if row_fingerprint_id != fingerprint_id:
-            continue
-        if row.get("测试结果") != "PASS":
-            continue
-        if not row.get("YAML指纹") or row.get("YAML指纹") == "无 YAML 指纹":
-            continue
-        files.append(row.get("文件路径", ""))
-    return [path for path in files if path]
 
 
 def read_csv_summary(csv_path):

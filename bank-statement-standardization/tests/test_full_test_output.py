@@ -45,42 +45,6 @@ class FullTestOutputTests(unittest.TestCase):
 
         self.assertEqual(clients, ["客户A", "客户B"])
 
-    def test_run_support_matrix_writes_into_run_dir(self):
-        module = load_module()
-        calls = []
-
-        def fake_build_outputs(testdata_root, output_dir, write_baseline, sleep_seconds):
-            calls.append((Path(testdata_root), Path(output_dir), write_baseline, sleep_seconds))
-            return Path(output_dir) / "support_matrix.xlsx", Path(output_dir) / "baseline_summary.json"
-
-        original = module.audit.build_outputs
-        try:
-            module.audit.build_outputs = fake_build_outputs
-            support, baseline = module.run_support_matrix(Path("testdata"), Path("testoutput/20260630203045"))
-        finally:
-            module.audit.build_outputs = original
-
-        self.assertEqual(calls, [(Path("testdata"), Path("testoutput/20260630203045"), True, 0.5)])
-        self.assertEqual(support, Path("testoutput/20260630203045/support_matrix.xlsx"))
-        self.assertEqual(baseline, Path("testoutput/20260630203045/baseline_summary.json"))
-
-    def test_run_support_matrix_allows_custom_sleep_seconds(self):
-        module = load_module()
-        calls = []
-
-        def fake_build_outputs(testdata_root, output_dir, write_baseline, sleep_seconds):
-            calls.append(sleep_seconds)
-            return Path(output_dir) / "support_matrix.xlsx", Path(output_dir) / "baseline_summary.json"
-
-        original = module.audit.build_outputs
-        try:
-            module.audit.build_outputs = fake_build_outputs
-            module.run_support_matrix(Path("testdata"), Path("testoutput/20260630203045"), sleep_seconds=1.5)
-        finally:
-            module.audit.build_outputs = original
-
-        self.assertEqual(calls, [1.5])
-
     def test_main_packages_deliverables_before_support_matrix(self):
         module = load_module()
         calls = []
@@ -161,15 +125,15 @@ class FullTestOutputTests(unittest.TestCase):
         def fail_if_called(*args, **kwargs):
             raise AssertionError("full test should not run when CLI parsing fails")
 
-        original_support = module.run_support_matrix
+        original_support = module.run_support_matrix_from_package_work
         original_package = module.run_package_deliverables
         try:
-            module.run_support_matrix = fail_if_called
+            module.run_support_matrix_from_package_work = fail_if_called
             module.run_package_deliverables = fail_if_called
             with self.assertRaises(SystemExit):
                 module.main(["--skip-package"])
         finally:
-            module.run_support_matrix = original_support
+            module.run_support_matrix_from_package_work = original_support
             module.run_package_deliverables = original_package
 
     def test_write_summary_csv_lives_in_run_dir(self):

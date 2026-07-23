@@ -23,7 +23,7 @@ integrate.py — 单客户多流水文件整合与验证（阶段二，对应 Pr
 import argparse, glob, hashlib, json, os, re, sys, unicodedata
 from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from itertools import combinations
 
@@ -169,45 +169,9 @@ def _accounts_equal(left, right):
     return bool(a and b and a == b)
 
 
-def _reciprocal_lookup_key(row, reverse=False):
-    if _clean_text(row.get("__time_precision")) != "second":
-        return None
-    time = _clean_text(row.get("交易时间"))
-    income = _overlap_amount(row.get("收入金额"))
-    expense = _overlap_amount(row.get("支出金额"))
-    if not time or bool(income) == bool(expense):
-        return None
-    direction = "收入" if income else "支出"
-    if reverse:
-        direction = "支出" if direction == "收入" else "收入"
-    return time, direction, income or expense
-
-
 RECIPROCAL_TIME_TOLERANCE_SECONDS = 5
 RECIPROCAL_TOLERANT_MIN_MATCHES = 3
 RECIPROCAL_TOLERANT_MIN_DATES = 3
-
-
-def _reciprocal_time_second(row):
-    """把标准交易时间转成秒级时间轴；无法解析时只参与原有精确匹配。"""
-    value = pd.to_datetime(_clean_text(row.get("交易时间")), errors="coerce", format="mixed")
-    if pd.isna(value):
-        return None
-    return int(value.value // 1_000_000_000)
-
-
-def _reciprocal_window_keys(row, reverse=False):
-    """返回同方向同金额、允许跨行记账秒差的有限候选键。"""
-    exact = _reciprocal_lookup_key(row, reverse=reverse)
-    second = _reciprocal_time_second(row)
-    if exact is None or second is None:
-        return []
-    _, direction, amount = exact
-    return [
-        (second + offset, direction, amount)
-        for offset in range(-RECIPROCAL_TIME_TOLERANCE_SECONDS,
-                            RECIPROCAL_TIME_TOLERANCE_SECONDS + 1)
-    ]
 
 
 def infer_identity_from_reciprocal_transfers(df):

@@ -16,7 +16,7 @@ build_rules_from_xlsx.py — 从《流水标签规则文档》生成 assets/tag_
 用法：
   python build_rules_from_xlsx.py [--xlsx references/流水标签规则文档v20220517.xlsx] [--out assets/tag_rules.csv]
 """
-import argparse, csv, os, sys, re
+import argparse, csv, os, sys
 
 try:
     import pandas as pd

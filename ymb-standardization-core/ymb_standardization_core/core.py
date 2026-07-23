@@ -29,7 +29,7 @@ import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from ymb_standardization_core.contracts import RouteDecision, StandardizationContext
+from ymb_standardization_core.contracts import StandardizationContext
 
 try:
     import pandas as pd
@@ -767,13 +767,6 @@ def read_rows_csv(path):
     for r in reader:
         out.append([c.strip().strip("\t") if c is not None else None for c in r])
     return "\n".join(preamble), out
-
-
-def read_rows_pdf(path):
-    """用标准化输入路由读取 PDF，命中专属模板时交给对应 reader。"""
-    from ymb_standardization_core.readers.router import read_pdf_rows
-
-    return read_pdf_rows(path)
 
 
 def read_rows(path):

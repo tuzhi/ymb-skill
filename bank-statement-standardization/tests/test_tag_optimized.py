@@ -9,7 +9,6 @@ import tag as tag_module
 from tag import (
     _apply_alipay_order_reversals,
     _apply_transaction_relations,
-    direction_of,
     direction_series,
     load_rules,
     match,
@@ -30,7 +29,7 @@ class TagOptimizedTest(unittest.TestCase):
             ]
         )
 
-        expected = [direction_of(row) for _, row in df.iterrows()]
+        expected = ["收入", "支出", "收入", "未知"]
 
         self.assertEqual(direction_series(df).tolist(), expected)
 

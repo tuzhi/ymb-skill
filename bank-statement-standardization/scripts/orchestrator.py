@@ -10,7 +10,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import sys
 import traceback
 import uuid
@@ -32,10 +31,6 @@ DONE = "DONE"
 ERROR = "ERROR"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
-SOURCE_SNAPSHOT_EXCLUDE_DIRS = {".git", ".claude", "__pycache__", "dist", "runs", "testdata", "tests", "build"}
-SOURCE_SNAPSHOT_EXTS = {".py", ".md", ".json", ".csv", ".txt"}
-DEFAULT_SKILL_NAME = "bank-statement-standardization"
-DEFAULT_SKILL_VERSION = "0.0.0"
 TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
 MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
 
@@ -73,17 +68,6 @@ def manifest_template_path(skill_dir):
     return os.path.join(skill_dir, MANIFEST_TEMPLATE_RELATIVE_PATH)
 
 
-def load_skill_metadata(skill_dir):
-    data = read_json_if_exists(manifest_template_path(skill_dir), {})
-    skill = data.get("skill") if isinstance(data, dict) else {}
-    if not isinstance(skill, dict):
-        skill = {}
-    return {
-        "name": str(skill.get("name") or DEFAULT_SKILL_NAME),
-        "version": str(skill.get("version") or DEFAULT_SKILL_VERSION),
-    }
-
-
 def resolve_run_root(explicit_run_root, cwd=None):
     if explicit_run_root:
         return os.path.abspath(explicit_run_root)
@@ -99,62 +83,6 @@ def is_token_vault_secret_artifact(path):
     if name in TOKEN_VAULT_SECRET_FILENAMES:
         return True
     return name.endswith("_token_vault.json") and not name.endswith("_token_vault_ref.json")
-
-
-def run_git_capture(args, cwd):
-    try:
-        cp = subprocess.run(
-            ["git"] + args,
-            cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-    except Exception:
-        return ""
-    if cp.returncode:
-        return ""
-    return cp.stdout.strip()
-
-
-def collect_skill_source_snapshot(skill_dir):
-    skill_dir = os.path.abspath(skill_dir)
-    file_sha256 = {}
-    for root, dirs, files in os.walk(skill_dir):
-        dirs[:] = [
-            d for d in dirs
-            if d not in SOURCE_SNAPSHOT_EXCLUDE_DIRS and not d.endswith(".egg-info")
-        ]
-        for filename in files:
-            ext = os.path.splitext(filename)[1].lower()
-            if ext not in SOURCE_SNAPSHOT_EXTS:
-                continue
-            path = os.path.join(root, filename)
-            rel = normalize_relpath(os.path.relpath(path, skill_dir))
-            file_sha256[rel] = sha256(path)
-
-    status = run_git_capture(["status", "--short", "--", skill_dir], skill_dir)
-    modified_files = []
-    for line in status.splitlines():
-        if not line.strip():
-            continue
-        rel = normalize_relpath(line[3:].strip().strip('"'))
-        marker = "bank-statement-standardization/"
-        if marker in rel:
-            rel = rel.split(marker, 1)[1]
-        if rel.split("/", 1)[0] in SOURCE_SNAPSHOT_EXCLUDE_DIRS:
-            continue
-        modified_files.append(rel)
-
-    return {
-        "git_commit": run_git_capture(["rev-parse", "HEAD"], skill_dir),
-        "dirty": bool(modified_files),
-        "modified_files": modified_files,
-        "file_sha256": dict(sorted(file_sha256.items())),
-    }
 
 
 def load_parent_run_context(run_root, parent_run_id):
@@ -422,18 +350,14 @@ class Runner:
         self.args = args
         self.skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.template_manifest_path = manifest_template_path(self.skill_dir)
-        self.skill_metadata = load_skill_metadata(self.skill_dir)
         stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
         self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
         root = resolve_run_root(args.run_root)
-        self.run_root = root
         self.run_dir = os.path.join(root, self.run_id)
         self.out_dir = os.path.join(self.run_dir, "artifacts")
         self.receipt_dir = os.path.join(self.run_dir, "receipts")
         self.event_path = os.path.join(self.run_dir, "events.jsonl")
         self.manifest_path = os.path.join(self.run_dir, "manifest.json")
-        # 兼容少量内部/测试调用；两者现在指向同一份事实来源。
-        self.stage_manifest_path = self.manifest_path
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
@@ -813,7 +737,7 @@ class Runner:
             srep = json.load(f)
         tagged = pd.read_csv(tag_csv, dtype=str)
         skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
-        deliverable = P.finalize_deliverable(
+        P.finalize_deliverable(
             self.args.client,
             int_csv,
             tagged,

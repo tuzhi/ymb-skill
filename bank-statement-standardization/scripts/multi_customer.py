@@ -23,7 +23,6 @@ multi_customer.py — 多客户标准化流水整合与验证（阶段四，对�
   <批次名>__多客户报告.json   Prompt 4 结构
 """
 import argparse, glob, json, os, sys
-from collections import defaultdict
 
 try:
     import pandas as pd

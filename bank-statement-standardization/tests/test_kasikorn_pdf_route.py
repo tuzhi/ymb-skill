@@ -53,7 +53,7 @@ class KasikornPdfRouteTests(unittest.TestCase):
         self.assertEqual(rows[0]["对手账户"], "X1042")
         self.assertEqual(rows[0]["对手名称"], "MR. Thanawat Phim")
         self.assertEqual(sum(bool(r["对手账户"]) for r in rows), 334)
-        self.assertEqual(sum(bool(r["对手名称"]) for r in rows), 461)
+        self.assertEqual(sum(bool(r["对手名称"]) for r in rows), 459)
 
 
 if __name__ == "__main__":

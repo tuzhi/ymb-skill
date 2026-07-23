@@ -339,51 +339,5 @@ class AuditTestdataSupportTests(unittest.TestCase):
         finally:
             module.ROUTE_RULE_INDEX = original
 
-    def test_supported_files_can_be_loaded_from_support_matrix_by_fingerprint(self):
-        module = load_module()
-        rows = [
-            {
-                "银行": "测试银行",
-                "账户类型(YAML)": "未知",
-                "格式": "xlsx",
-                "版本": "1.0",
-                "文件路径": "客户A/a.xlsx",
-                "router类": "md5:strict",
-                "reader_id": "openpyxl_grid",
-                "YAML指纹": "元数据:application",
-                "测试结果": "PASS",
-            },
-            {
-                "银行": "测试银行",
-                "账户类型(YAML)": "未知",
-                "格式": "xlsx",
-                "版本": "1.0",
-                "文件路径": "客户A/b.xlsx",
-                "router类": "md5:strict",
-                "reader_id": "openpyxl_grid",
-                "YAML指纹": "元数据:application",
-                "测试结果": "FAIL",
-            },
-            {
-                "银行": "测试银行",
-                "账户类型(YAML)": "未知",
-                "格式": "pdf",
-                "版本": "1.0",
-                "文件路径": "客户A/c.pdf",
-                "router类": "md5:other",
-                "reader_id": "pdfplumber_table",
-                "YAML指纹": "数据:1",
-                "测试结果": "PASS",
-            },
-        ]
-        with tempfile.TemporaryDirectory() as tmp:
-            matrix = Path(tmp) / "support_matrix.xlsx"
-            module.write_xlsx(matrix, rows)
-
-            files = module.support_matrix_files_for_fingerprint(matrix, "md5:strict")
-
-        self.assertEqual(files, ["客户A/a.xlsx"])
-
-
 if __name__ == "__main__":
     unittest.main()

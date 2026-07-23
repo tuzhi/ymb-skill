@@ -346,11 +346,6 @@ def _columns_required(fingerprint):
     return required
 
 
-def _columns_all(fingerprint):
-    """兼容历史内部调用；新规则优先使用 columns.required。"""
-    return _columns_required(fingerprint)
-
-
 def _optional_columns(fingerprint):
     columns = (fingerprint or {}).get("columns") or {}
     optional = columns.get("optional") or {}

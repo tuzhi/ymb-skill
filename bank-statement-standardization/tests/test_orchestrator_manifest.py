@@ -31,30 +31,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             writer.writeheader()
             writer.writerow(row)
 
-    def test_skill_metadata_reads_name_and_version_from_manifest(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            skill = Path(tmp) / "skill"
-            template_dir = skill / "assets"
-            template_dir.mkdir(parents=True)
-            (template_dir / "manifest.template.json").write_text(
-                json.dumps(
-                    {
-                        "skill": {
-                            "name": "bank-statement-standardization",
-                            "version": "1.2.6",
-                        },
-                        "stage_1_standardize": {},
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-
-            metadata = orchestrator.load_skill_metadata(str(skill))
-
-            self.assertEqual(metadata["name"], "bank-statement-standardization")
-            self.assertEqual(metadata["version"], "1.2.6")
-
     def test_stage_one_records_wps_pdf_to_excel_as_skipped_input(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -283,7 +259,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             )
 
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
-            runner.stage_manifest_path = str(runtime)
             runner.manifest_path = str(runtime)
             runner.manifest = json.loads(runtime.read_text(encoding="utf-8"))
 
@@ -394,7 +369,6 @@ class OrchestratorManifestTest(unittest.TestCase):
 
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.template_manifest_path = str(template)
-            runner.stage_manifest_path = str(runtime)
             runner.manifest_path = str(runtime)
 
             runner.copy_stage_manifest()
@@ -463,38 +437,6 @@ class OrchestratorManifestTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(RuntimeError, "parent run 不存在"):
                 orchestrator.load_parent_run_context(str(Path(tmp) / "runs"), "missing-run")
-
-    def test_collect_skill_source_snapshot_hashes_source_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            skill = Path(tmp) / "skill"
-            (skill / "scripts").mkdir(parents=True)
-            (skill / "assets").mkdir()
-            (skill / "dist").mkdir()
-            (skill / "testdata").mkdir()
-            (skill / "build").mkdir()
-            (skill / "demo.egg-info").mkdir()
-            (skill / "SKILL.md").write_text("# skill\n", encoding="utf-8")
-            (skill / "assets" / "manifest.template.json").write_text("{}\n", encoding="utf-8")
-            (skill / "scripts" / "standardize.py").write_text("print('ok')\n", encoding="utf-8")
-            (skill / "dist" / "bundle.zip").write_text("ignore\n", encoding="utf-8")
-            (skill / "testdata" / "raw.csv").write_text("ignore\n", encoding="utf-8")
-            (skill / "build" / "generated.py").write_text("ignore\n", encoding="utf-8")
-            (skill / "demo.egg-info" / "SOURCES.txt").write_text("ignore\n", encoding="utf-8")
-
-            snapshot = orchestrator.collect_skill_source_snapshot(str(skill))
-
-            self.assertIn("git_commit", snapshot)
-            self.assertIn("dirty", snapshot)
-            self.assertIn("modified_files", snapshot)
-            self.assertIn("file_sha256", snapshot)
-            self.assertIn("SKILL.md", snapshot["file_sha256"])
-            self.assertIn("assets/manifest.template.json", snapshot["file_sha256"])
-            self.assertIn("scripts/standardize.py", snapshot["file_sha256"])
-            self.assertNotIn("dist/bundle.zip", snapshot["file_sha256"])
-            self.assertNotIn("testdata/raw.csv", snapshot["file_sha256"])
-            self.assertNotIn("build/generated.py", snapshot["file_sha256"])
-            self.assertNotIn("demo.egg-info/SOURCES.txt", snapshot["file_sha256"])
-
 
 if __name__ == "__main__":
     unittest.main()

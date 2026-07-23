@@ -60,10 +60,6 @@ def iter_client_dirs(testdata_root):
     return sorted(clients, key=lambda p: p.name)
 
 
-def run_support_matrix(testdata_root, run_dir, sleep_seconds=0.5):
-    return audit.build_outputs(testdata_root, run_dir, write_baseline=True, sleep_seconds=sleep_seconds)
-
-
 def run_support_matrix_from_package_work(testdata_root, run_dir, package_work_root):
     return audit.build_outputs_from_standardized_artifacts(
         testdata_root,

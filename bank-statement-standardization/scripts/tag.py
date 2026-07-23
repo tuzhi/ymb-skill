@@ -121,18 +121,6 @@ def load_rules(path):
     return buckets
 
 
-def direction_of(row):
-    inc = pd.to_numeric(pd.Series([row.get("收入金额")]), errors="coerce").iloc[0]
-    exp = pd.to_numeric(pd.Series([row.get("支出金额")]), errors="coerce").iloc[0]
-    if pd.notna(inc) and (pd.isna(exp) or exp == 0) and inc > 0:
-        return "收入"
-    if pd.notna(exp) and (pd.isna(inc) or inc == 0) and exp > 0:
-        return "支出"
-    if pd.notna(inc) and pd.notna(exp):
-        return "收入" if (inc or 0) >= (exp or 0) else "支出"
-    return "未知"
-
-
 def direction_series(df):
     inc = pd.to_numeric(df.get("收入金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
     exp = pd.to_numeric(df.get("支出金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
@@ -391,118 +379,6 @@ def _bank_reversal_type(value):
     if "冲销" in text:
         return "冲销"
     return ""
-
-
-def _same_transaction_day(left, right):
-    values = pd.to_datetime(pd.Series([left, right]), errors="coerce", format="mixed")
-    if values.notna().all():
-        return values.iloc[0].date() == values.iloc[1].date()
-    return _relation_text(left)[:10] == _relation_text(right)[:10]
-
-
-def _same_precise_transaction_time(left, right):
-    """隐式冲正只接受两边都明确到秒（或更细）且时间完全一致。"""
-    left_text = str(left or "").strip()
-    right_text = str(right or "").strip()
-    return bool(
-        PRECISE_TRANSACTION_TIME_RE.fullmatch(left_text)
-        and PRECISE_TRANSACTION_TIME_RE.fullmatch(right_text)
-        and left_text == right_text
-    )
-
-
-def _signed_transaction_amount(row):
-    income = pd.to_numeric(pd.Series([row.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
-    expense = pd.to_numeric(pd.Series([row.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
-    return float(income - expense)
-
-
-def _is_local_bank_implicit_reversal_pair(original, reversal):
-    """无冲正字样时，仅用秒级同刻、反向等额和余额闭环识别隐式冲正。"""
-    if _bank_reversal_type(original.get("银行备注")) or _bank_reversal_type(reversal.get("银行备注")):
-        return False
-    if not _same_precise_transaction_time(original.get("交易时间"), reversal.get("交易时间")):
-        return False
-    own_account = _relation_account(original.get("本方账户"))
-    if not own_account or own_account != _relation_account(reversal.get("本方账户")):
-        return False
-
-    original_name = _relation_text(original.get("对手名称"))
-    reversal_name = _relation_text(reversal.get("对手名称"))
-    if not original_name or original_name != reversal_name:
-        return False
-    original_account = _relation_account(original.get("对手账户"))
-    reversal_account = _relation_account(reversal.get("对手账户"))
-    if original_account and reversal_account and original_account != reversal_account:
-        return False
-
-    original_amount = _signed_transaction_amount(original)
-    reversal_amount = _signed_transaction_amount(reversal)
-    if original_amount == 0 or round(original_amount + reversal_amount, 2) != 0:
-        return False
-
-    original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]
-    reversal_balance = pd.to_numeric(pd.Series([reversal.get("账户余额")]), errors="coerce").iloc[0]
-    if pd.isna(original_balance) or pd.isna(reversal_balance):
-        return False
-    balance_before_original = float(original_balance) - original_amount
-    return abs(balance_before_original - float(reversal_balance)) <= 0.005
-
-
-def _is_local_bank_reversal_pair(original, reversal):
-    """严格判断原文件内相邻两笔是否构成银行冲正或抹账。"""
-    reversal_type = _bank_reversal_type(reversal.get("银行备注"))
-    if not reversal_type:
-        return False
-    if not _same_transaction_day(original.get("交易时间"), reversal.get("交易时间")):
-        return False
-    if _relation_account(original.get("本方账户")) != _relation_account(reversal.get("本方账户")):
-        return False
-
-    original_name = _relation_text(original.get("对手名称"))
-    reversal_name = _relation_text(reversal.get("对手名称"))
-    original_account = _relation_account(original.get("对手账户"))
-    reversal_account = _relation_account(reversal.get("对手账户"))
-    placeholder_reversal = reversal_type == "冲销" and reversal_name in {"", "/", "-", "***", "***/"}
-    if placeholder_reversal:
-        if not original_name:
-            return False
-    else:
-        if not original_name or original_name != reversal_name:
-            return False
-        if not _explicit_reversal_accounts_compatible(original_account, reversal_account):
-            return False
-
-    original_inc = pd.to_numeric(pd.Series([original.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
-    original_exp = pd.to_numeric(pd.Series([original.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
-    reversal_inc = pd.to_numeric(pd.Series([reversal.get("收入金额")]), errors="coerce").fillna(0).iloc[0]
-    reversal_exp = pd.to_numeric(pd.Series([reversal.get("支出金额")]), errors="coerce").fillna(0).iloc[0]
-    original_amount = float(original_inc - original_exp)
-    reversal_amount = float(reversal_inc - reversal_exp)
-    if original_amount == 0:
-        return False
-    # 部分银行的“抹账”行仍沿用原交易借贷方向，金额列本身不反向，
-    # 但交易后余额会恢复至原交易发生前。冲正仍要求金额明确反向。
-    if reversal_type in {"冲正", "冲销"} and round(original_amount + reversal_amount, 2) != 0:
-        return False
-
-    original_balance = pd.to_numeric(pd.Series([original.get("账户余额")]), errors="coerce").iloc[0]
-    reversal_balance = pd.to_numeric(pd.Series([reversal.get("账户余额")]), errors="coerce").iloc[0]
-    if pd.isna(original_balance) or pd.isna(reversal_balance):
-        return False
-    balance_before_original = float(original_balance) - original_amount
-    if abs(balance_before_original - float(reversal_balance)) > 0.005:
-        return False
-
-    reversal_memo = _relation_text(reversal.get("账户方附言"))
-    original_context = {
-        _relation_text(original.get("银行备注")),
-        _relation_text(original.get("账户方附言")),
-    }
-    explicit_original_reference = "冲正原交易" in reversal_memo or "原流水号" in reversal_memo
-    if reversal_memo and reversal_memo not in original_context and not explicit_original_reference:
-        return False
-    return True
 
 
 def _relation_column(df, column):
