@@ -2,6 +2,7 @@ import csv
 import importlib.util
 import json
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,11 @@ from openpyxl import Workbook
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+SKILL_ROOT = REPO_ROOT / "bank-statement-standardization"
+QA_DIR = SKILL_ROOT / "tools" / "qa"
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+from _paths import TESTDATA_ROOT  # noqa: E402
 STANDARDIZE_PATH = REPO_ROOT / "bank-statement-standardization" / "scripts" / "standardize.py"
 spec = importlib.util.spec_from_file_location("standardize", STANDARDIZE_PATH)
 standardize = importlib.util.module_from_spec(spec)
@@ -49,7 +55,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             ),
         )
         for folder, filename, expected_name, expected_account, expected_fp, expected_rows in samples:
-            source = REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename
+            source = TESTDATA_ROOT / folder / filename
             if not source.exists():
                 self.skipTest(f"本地未提供工行个人 PDF 样本：{filename}")
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
@@ -66,7 +72,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
     def test_alipay_pdf_extracts_owner_and_account_from_preamble(self):
         source = (
-            REPO_ROOT / "bank-statement-standardization" / "testdata" / "徐育发"
+            TESTDATA_ROOT / "徐育发"
             / "支付宝交易明细(20250501-20260430).pdf"
         )
         if not source.exists():
@@ -135,7 +141,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(sum(len(row["交易时间"]) == 10 for row in rows), 20)
 
     def test_nanjing_statement_reports_source_time_precision_and_series_family(self):
-        root = REPO_ROOT / "bank-statement-standardization" / "testdata" / "金鼎"
+        root = TESTDATA_ROOT / "金鼎"
         samples = (
             ("金鼎南京2022年10月对账明细.xls", "date"),
             ("金鼎南京2023年1月对账明细.xls", "second"),
@@ -183,7 +189,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             ("江西赣驰2026年流水(2).xls", 718, "2026年4-5月!"),
         ]
         for filename, expected_rows, expected_last_sheet in samples:
-            excel = REPO_ROOT / "bank-statement-standardization" / "testdata" / "江西赣驰" / filename
+            excel = TESTDATA_ROOT / "江西赣驰" / filename
             if not excel.exists():
                 self.skipTest(f"本地未提供多 Sheet 样本：{filename}")
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as tmp:
@@ -415,7 +421,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             ("宁聚&付亮亮&徐美琴", "付亮亮建行3763.pdf_2"),
         )
         paths = [
-            str(REPO_ROOT / "bank-statement-standardization" / "testdata" / folder / filename)
+            str(TESTDATA_ROOT / folder / filename)
             for folder, filename in samples
         ]
 
@@ -566,7 +572,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(short_identifier, {})
 
     def test_dai_jinwang_pdfs_extract_owner_and_real_accounts(self):
-        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "戴金旺"
+        folder = TESTDATA_ROOT / "戴金旺"
         samples = [
             (
                 folder / "微信支付交易明细证明(20250520-20260519)_20260520094427.pdf",
@@ -607,7 +613,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
     def test_zeng_xiaoyuan_cmb_pdf_extracts_owner_account_and_counterparty_account(self):
         pdf = (
-            REPO_ROOT / "bank-statement-standardization" / "testdata" / "曾小园"
+            TESTDATA_ROOT / "曾小园"
             / "招商银行交易流水(申请时间2026年06月05日13时47分40秒).pdf"
         )
         if not pdf.exists():
@@ -632,7 +638,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(report["文件画像"]["extract_mapping"][0]["field"], "对手账户")
 
     def test_zeng_xiaoyuan_ccb_excels_split_counterparty_account_and_name(self):
-        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曾小园"
+        folder = TESTDATA_ROOT / "曾小园"
         samples = [
             (folder / "hqmx_20260605134404.xls", 3315, "曾小园", "6217002020025481698"),
             (folder / "hqmx_20260605135123.xls", 1036, "宋志鹏", "6227002022070397612"),
@@ -655,7 +661,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
     def test_zeng_yao_xia_weipeng_owner_and_counterparty_fields(self):
         folder = (
-            REPO_ROOT / "bank-statement-standardization" / "testdata"
+            TESTDATA_ROOT
             / "曾耀夏伟鹏个人流水"
         )
         samples = [
@@ -723,7 +729,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(report["文件画像"]["本方账户"], "14-081501040001694")
 
     def test_changhao_bank_owner_account_and_counterparty_fields(self):
-        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "昌浩公司流水"
+        folder = TESTDATA_ROOT / "昌浩公司流水"
         samples = [
             (
                 "北京银行2025.4.1-2026.3.31号流水.xlsx", 490,
@@ -764,7 +770,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                     self.assertTrue(all(row["对手账户"] for row in rows), name)
 
     def test_cao_jian_pdfs_extract_owner_and_split_ccb_counterparty(self):
-        folder = REPO_ROOT / "bank-statement-standardization" / "testdata" / "曹吉安"
+        folder = TESTDATA_ROOT / "曹吉安"
         abc = folder / "26060309491107220299.pdf"
         ccb = folder / "hqmx_20260603095339(9).pdf"
         if not abc.exists() or not ccb.exists():
@@ -1084,7 +1090,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             self.assertEqual(report["文件画像"]["counterparty_profile"]["valid_counterparty_count"], 20)
 
     def test_wechat_yaml_direction_mapping_restores_other_amounts(self):
-        pdf = REPO_ROOT / "bank-statement-standardization" / "testdata" / "邓子威" / "邓微信.pdf"
+        pdf = TESTDATA_ROOT / "邓子威" / "邓微信.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供邓子威微信流水样本")
 
@@ -1109,7 +1115,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
 
     def test_wechat_pdf_removes_wrap_space_before_private_use_nickname_symbol(self):
         pdf = (
-            REPO_ROOT / "bank-statement-standardization" / "testdata" / "熊全子"
+            TESTDATA_ROOT / "熊全子"
             / "微信支付交易明细证明(20250101-20251231)_20260606101535.pdf"
         )
         if not pdf.exists():

@@ -18,12 +18,17 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+
 import audit_testdata_support as audit
+from _paths import TESTDATA_ROOT
 
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TESTDATA = ROOT / "testdata"
-PACKAGE_SCRIPT = ROOT / "scripts" / "package_deliverable.py"
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_TESTDATA = TESTDATA_ROOT
+ORCHESTRATOR_SCRIPT = ROOT / "scripts" / "orchestrator.py"
 
 SKIP_CLIENT_DIRS = {
     ".git",
@@ -72,7 +77,7 @@ def run_support_matrix_from_package_work(testdata_root, run_dir, package_work_ro
 def _copy_deliverables(work_dir, run_dir, index):
     """把产品级交付物归档到本次 testoutput run 目录。"""
     copied = []
-    for item in sorted(work_dir.glob("*_已清洗_待分析.xlsx")):
+    for item in sorted(work_dir.glob("runs/*/artifacts/*_已清洗_待分析.xlsx")):
         target = run_dir / item.name
         if target.exists():
             target = run_dir / f"{index:03d}_{item.name}"
@@ -81,7 +86,7 @@ def _copy_deliverables(work_dir, run_dir, index):
     return copied
 
 
-def package_one_client(index, client_dir, run_dir, temp_root, sleep_seconds=0):
+def package_one_client(index, client_dir, run_dir, temp_root):
     client = client_dir.name
     logs_dir = run_dir / "_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -91,15 +96,14 @@ def package_one_client(index, client_dir, run_dir, temp_root, sleep_seconds=0):
 
     cmd = [
         sys.executable,
-        str(PACKAGE_SCRIPT),
+        str(ORCHESTRATOR_SCRIPT),
+        "run",
         "--client",
         client,
         "--folder",
         str(client_dir),
-        "--out-dir",
-        str(work_dir),
-        "--sleep-seconds",
-        str(sleep_seconds),
+        "--run-root",
+        str(work_dir / "runs"),
     ]
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log_path.write_text(proc.stdout, encoding="utf-8")
@@ -126,13 +130,13 @@ def write_summary_csv(run_dir, rows):
     return summary
 
 
-def run_package_deliverables(testdata_root, run_dir, temp_root=None, sleep_seconds=0.5):
+def run_package_deliverables(testdata_root, run_dir, temp_root=None):
     temp_root = Path(temp_root) if temp_root else run_dir / "_package_work"
     temp_root.mkdir(parents=True, exist_ok=True)
     rows = []
     clients = iter_client_dirs(testdata_root)
     for index, client_dir in enumerate(clients, 1):
-        row = package_one_client(index, client_dir, run_dir, temp_root, sleep_seconds)
+        row = package_one_client(index, client_dir, run_dir, temp_root)
         rows.append(row)
         print(f"{index:03d} {row['client']} {row['status']} {row['file_count']}", flush=True)
     return write_summary_csv(run_dir, rows), rows
@@ -145,15 +149,13 @@ def main(argv=None):
     parser.add_argument("--testdata-root", default=str(DEFAULT_TESTDATA))
     parser.add_argument("--output-root", help="默认是 testdata 同级 testoutput")
     parser.add_argument("--run-id", help="默认使用 YYYYMMDDHHMMSS")
-    parser.add_argument("--sleep-seconds", type=float, default=0.5,
-                        help="每处理完一个候选流水文件后的暂停秒数，默认 0.5 秒")
     args = parser.parse_args(argv)
 
     testdata_root = Path(args.testdata_root)
     run_dir = create_run_dir(testdata_root, run_id=args.run_id, output_root=args.output_root)
     print(f"run_dir={run_dir}")
 
-    summary_csv, rows = run_package_deliverables(testdata_root, run_dir, sleep_seconds=args.sleep_seconds)
+    summary_csv, rows = run_package_deliverables(testdata_root, run_dir)
     support_xlsx, baseline_json = run_support_matrix_from_package_work(
         testdata_root,
         run_dir,

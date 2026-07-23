@@ -1,5 +1,6 @@
 """流水线阶段间的轻量公开契约。"""
 
+
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 

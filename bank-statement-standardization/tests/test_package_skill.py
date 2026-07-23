@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_SCRIPT = SKILL_ROOT / "scripts" / "package_skill.py"
+PACKAGE_SCRIPT = SKILL_ROOT / "tools" / "release" / "package_skill.py"
 
 
 class PackageSkillTest(unittest.TestCase):
@@ -48,6 +48,14 @@ class PackageSkillTest(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertTrue(package_skill._is_excluded(Path(path)))
+
+    def test_package_uses_runtime_allowlist(self):
+        package_skill = self.load_package_module()
+
+        self.assertTrue(package_skill._is_included(Path("scripts/orchestrator.py")))
+        self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
+        self.assertFalse(package_skill._is_included(Path("tools/qa/run_full_test.py")))
+        self.assertFalse(package_skill._is_included(Path("AGENTS.md")))
 
 
 if __name__ == "__main__":

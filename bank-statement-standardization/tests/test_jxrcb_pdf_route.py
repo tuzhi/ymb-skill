@@ -11,10 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+QA_DIR = ROOT / "tools" / "qa"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
+from _paths import TESTDATA_ROOT  # noqa: E402
 SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / "standardize.py")
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
@@ -28,7 +32,7 @@ ROUTER_SPEC.loader.exec_module(router)
 
 class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
     def test_matched_jxrcb_fingerprint_is_authoritative_for_standardized_bank(self):
-        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
+        path = TESTDATA_ROOT / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
         with tempfile.TemporaryDirectory() as tmp:
             csv_path, _json_path, report = standardize.standardize(str(path), out_dir=tmp)
@@ -72,7 +76,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(result["reader_id"], "none")
 
     def test_watermarked_pdf_uses_coordinate_reader(self):
-        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
+        path = TESTDATA_ROOT / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
         preamble, rows, route_info = router.read_pdf_rows(str(path))
 

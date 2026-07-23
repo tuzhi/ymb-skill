@@ -1,5 +1,4 @@
 import csv
-import importlib.util
 import json
 import sys
 import tempfile
@@ -8,11 +7,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "scripts") not in sys.path:
-    sys.path.insert(0, str(ROOT / "scripts"))
-SPEC = importlib.util.spec_from_file_location("validate_stage", ROOT / "scripts" / "validate_stage.py")
-validate_stage = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(validate_stage)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from runtime import validators as validate_stage
 
 
 class ValidateStageTests(unittest.TestCase):

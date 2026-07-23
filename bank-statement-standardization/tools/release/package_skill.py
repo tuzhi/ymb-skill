@@ -11,9 +11,22 @@ import zipfile
 from pathlib import Path
 
 
-PACKAGER_RELATIVE = Path("scripts") / "package_skill.py"
+PACKAGER_RELATIVE = Path("tools") / "release" / "package_skill.py"
 CORE_PACKAGE_SOURCE_RELATIVE = Path("ymb-standardization-core")
 CORE_PACKAGE_ARCHIVE_RELATIVE = Path("packages") / "ymb_standardization_core"
+INCLUDED_TOP_LEVEL_FILES = {
+    "SKILL.md",
+    "README.md",
+    "requirements.txt",
+    "版本说明.md",
+    "测试验证报告.md",
+}
+INCLUDED_TOP_LEVEL_DIRS = {
+    "assets",
+    "references",
+    "runtime",
+    "scripts",
+}
 
 
 def _is_excluded(relative_path):
@@ -44,6 +57,16 @@ def _is_excluded(relative_path):
     return False
 
 
+def _is_included(relative_path):
+    """发布包只允许进入明确声明的运行时文件和目录。"""
+    parts = relative_path.parts
+    if not parts or _is_excluded(relative_path):
+        return False
+    if len(parts) == 1 and parts[0] in INCLUDED_TOP_LEVEL_FILES:
+        return True
+    return parts[0] in INCLUDED_TOP_LEVEL_DIRS
+
+
 def package_skill(skill_dir, output=None):
     root = Path(skill_dir).resolve()
     if not root.is_dir():
@@ -61,10 +84,10 @@ def package_skill(skill_dir, output=None):
         for current, dirs, files in os.walk(root):
             current_path = Path(current)
             rel_dir = current_path.relative_to(root)
-            dirs[:] = sorted(d for d in dirs if not _is_excluded(rel_dir / d))
+            dirs[:] = sorted(d for d in dirs if _is_included(rel_dir / d))
             for filename in sorted(files):
                 rel_file = rel_dir / filename
-                if _is_excluded(rel_file):
+                if not _is_included(rel_file):
                     continue
                 zf.write(current_path / filename, Path(top) / rel_file)
         repo_root = root.parent
@@ -88,7 +111,7 @@ def package_skill(skill_dir, output=None):
 
 
 def main():
-    default_root = Path(__file__).resolve().parents[1]
+    default_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description="把 Codex/WorkBuddy skill 打包到 dist/*.zip")
     parser.add_argument("skill_dir", nargs="?", default=str(default_root),
                         help="skill directory to package; defaults to this skill directory")

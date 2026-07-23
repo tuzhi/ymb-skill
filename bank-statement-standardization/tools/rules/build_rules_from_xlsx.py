@@ -121,7 +121,7 @@ def build(xlsx, out):
 
 
 def main():
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     ap = argparse.ArgumentParser()
     ap.add_argument("--xlsx", default=os.path.join(here, "references", "流水标签规则文档v20220517.xlsx"))
     ap.add_argument("--out", default=os.path.join(here, "assets", "tag_rules.csv"))

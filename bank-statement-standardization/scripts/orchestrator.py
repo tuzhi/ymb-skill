@@ -15,14 +15,19 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import integrate as I
-import package_deliverable as P
-import portfolio_balance as PB
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SKILL_DIR = os.path.dirname(SCRIPT_DIR)
+for path in (SCRIPT_DIR, SKILL_DIR):
+    if path not in sys.path:
+        sys.path.insert(0, path)
+
 import standardize as S
-import tag as T
-import validate_stage as V
-from stage_contracts import IntegrationContext, StageResult, yaml_route_summary
+from runtime import deliverable as P
+from runtime import integrate as I
+from runtime import portfolio_balance as PB
+from runtime import tag as T
+from runtime import validators as V
+from runtime.contracts import IntegrationContext, StageResult, yaml_route_summary
 
 
 DONE = "DONE"
@@ -724,24 +729,27 @@ class Runner:
 
     def stage_4_package(self):
         import pandas as pd
-        work = self.work_dir()
-        int_csv = self.latest_artifact("*__整合流水.csv")
         int_json = self.latest_artifact("*__整合报告.json")
         tag_csv = self.latest_artifact("*__打标流水.csv")
         tag_json = self.latest_artifact("*__标签报告.json")
+        daily_csv = self.latest_artifact("*__组合日余额.csv")
+        balance_json = self.latest_artifact("*__余额校验.json")
         with open(int_json, encoding="utf-8") as f:
             irep = json.load(f)
         with open(tag_json, encoding="utf-8") as f:
             srep = json.load(f)
+        with open(balance_json, encoding="utf-8") as f:
+            pbrep = json.load(f)
         tagged = pd.read_csv(tag_csv, dtype=str)
+        daily = pd.read_csv(daily_csv)
         skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
         P.finalize_deliverable(
             self.args.client,
-            int_csv,
             tagged,
+            daily,
             irep,
             srep,
-            work,
+            pbrep,
             self.out_dir,
             skipped,
         )

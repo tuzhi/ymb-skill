@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "audit_testdata_support.py"
+SCRIPT = ROOT / "tools" / "qa" / "audit_testdata_support.py"
 
 
 def load_module():

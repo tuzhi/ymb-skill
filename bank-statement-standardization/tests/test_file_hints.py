@@ -137,7 +137,7 @@ class FileHintsTests(unittest.TestCase):
     def _load_audit_module():
         spec = importlib.util.spec_from_file_location(
             "audit_testdata_support",
-            ROOT / "scripts" / "audit_testdata_support.py",
+            ROOT / "tools" / "qa" / "audit_testdata_support.py",
         )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

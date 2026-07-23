@@ -9,9 +9,13 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+QA_DIR = ROOT / "tools" / "qa"
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
+from _paths import RAW_STATEMENT_ROOT, TESTDATA_ROOT  # noqa: E402
 from ymb_standardization_core import core  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import ExcelRouteRule  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
@@ -40,7 +44,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_excel_input_uses_specialized_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "丰城市利华金属制品有限公司" / "2025.5.1-2025.5.31农行.xlsx"
+        excel = TESTDATA_ROOT / "丰城市利华金属制品有限公司" / "2025.5.1-2025.5.31农行.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供 Excel 样本")
 
@@ -65,7 +69,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_legacy_abc_xls_uses_specialized_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "丰城市利华金属制品有限公司" / "2025.1.1-2025.1.31农行.xls"
+        excel = TESTDATA_ROOT / "丰城市利华金属制品有限公司" / "2025.1.1-2025.1.31农行.xls"
         if not excel.exists():
             self.skipTest("本地未提供农行旧版 XLS 样本")
 
@@ -80,7 +84,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_account_detail_income_expense_usage_excel_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "江西轩宇塑业有限公司" / "农行01-07.xls"
+        excel = TESTDATA_ROOT / "江西轩宇塑业有限公司" / "农行01-07.xls"
         if not excel.exists():
             self.skipTest("本地未提供账户明细收入支出用途 Excel 样本")
 
@@ -96,7 +100,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_hunan_sanxiang_bank_account_detail_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "河南路诚机电制造有限公司" / "三湘2022-01-01-2022-12-31流水.xls"
+        excel = TESTDATA_ROOT / "河南路诚机电制造有限公司" / "三湘2022-01-01-2022-12-31流水.xls"
         if not excel.exists():
             self.skipTest("本地未提供湖南三湘银行账户明细样本")
 
@@ -112,7 +116,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_detail_download_debit_credit_counterparty_excel_routes_to_bank_of_beijing(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "北京银行2025.4.1-2026.3.31号流水.xlsx"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "北京银行2025.4.1-2026.3.31号流水.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供明细下载借贷发生额 Excel 样本")
 
@@ -128,7 +132,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_current_account_detail_query_excel_routes_to_changsha_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "湖南新普翔供应链-银行流水" / "普翔长沙银行对公.xlsx"
+        excel = TESTDATA_ROOT / "湖南新普翔供应链-银行流水" / "普翔长沙银行对公.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供活期账户明细查询 Excel 样本")
 
@@ -144,7 +148,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_debit_card_date_range_detail_excel_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "湖南新普翔供应链-银行流水" / "浦发银行对私.xls"
+        excel = TESTDATA_ROOT / "湖南新普翔供应链-银行流水" / "浦发银行对私.xls"
         if not excel.exists():
             self.skipTest("本地未提供借记卡日期范围明细 Excel 样本")
 
@@ -160,7 +164,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_mybank_corporate_transaction_detail_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "程旭" / "江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.xlsx"
+        excel = TESTDATA_ROOT / "程旭" / "江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供浙江网商银行企业账户交易明细样本")
 
@@ -176,7 +180,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_historydetail_debit_credit_excel_route_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "万建平" / "historydetail375.xlsx"
+        excel = TESTDATA_ROOT / "万建平" / "historydetail375.xlsx"
 
         result = module.read_rows(str(excel))
 
@@ -189,7 +193,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_historydetail_transfer_amount_excel_route_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "共青极兔" / "2025年10月.xlsx"
+        excel = TESTDATA_ROOT / "共青极兔" / "2025年10月.xlsx"
 
         result = module.read_rows(str(excel))
 
@@ -202,7 +206,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_historydetail_transfer_in_out_excel_route_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "河南路诚机电制造有限公司" / "工行2022年1月-6月流水.xlsx"
+        excel = TESTDATA_ROOT / "河南路诚机电制造有限公司" / "工行2022年1月-6月流水.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供 HISTORYDETAIL 转入转出 Excel 样本")
 
@@ -238,7 +242,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_account_transaction_detail_export_excel_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "奥特联盈" / "2022.08.01-2023.08.01.xls"
+        excel = TESTDATA_ROOT / "奥特联盈" / "2022.08.01-2023.08.01.xls"
 
         result = module.read_rows(str(excel))
 
@@ -269,7 +273,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_ccb_flat_xls_has_single_specialized_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "张运贞" / "25年1-5月.xls"
+        excel = TESTDATA_ROOT / "张运贞" / "25年1-5月.xls"
         if not excel.exists():
             self.skipTest("本地未提供建行扁平对公 XLS 样本")
 
@@ -302,7 +306,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_ccb_detail_query_download_xls_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "潘荣平消防设备" / "温州总公司" / "2025年1-3月.xls"
+        excel = TESTDATA_ROOT / "潘荣平消防设备" / "温州总公司" / "2025年1-3月.xls"
         if not excel.exists():
             self.skipTest("本地未提供建行明细查询结果下载 XLS 样本")
 
@@ -324,7 +328,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_ccb_personal_pdf_joins_multiline_counterparty_name(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "涂志" / "hqmx_20260604142056.pdf"
+        pdf = TESTDATA_ROOT / "涂志" / "hqmx_20260604142056.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供建行个人活期 PDF 样本")
 
@@ -349,7 +353,7 @@ class InputRouterTests(unittest.TestCase):
     def test_icbc_corporate_online_pdf_extracts_identity_and_drops_quarter_totals(self):
         module = load_input_router()
         pdf = (
-            ROOT / "testdata" / "潘荣平消防设备" / "新余分公司"
+            TESTDATA_ROOT / "潘荣平消防设备" / "新余分公司"
             / "2025年10-12月-8.pdf"
         )
         if not pdf.exists():
@@ -375,7 +379,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_bank_of_nanjing_transaction_detail_xls_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "金鼎" / "金鼎南京2022年10月对账明细.xls"
+        excel = TESTDATA_ROOT / "金鼎" / "金鼎南京2022年10月对账明细.xls"
         if not excel.exists():
             self.skipTest("本地未提供南京银行交易明细 XLS 样本")
 
@@ -390,7 +394,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_bank_of_jiangsu_corporate_statement_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "金鼎" / "金鼎江苏2022年10月份对账明细.xls"
+        excel = TESTDATA_ROOT / "金鼎" / "金鼎江苏2022年10月份对账明细.xls"
         if not excel.exists():
             self.skipTest("本地未提供江苏银行对公帐户对帐单样本")
 
@@ -406,7 +410,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_jiangxi_bank_account_serial_income_expense_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "顺民制衣" / "江西银行(1).xls"
+        excel = TESTDATA_ROOT / "顺民制衣" / "江西银行(1).xls"
         if not excel.exists():
             self.skipTest("本地未提供账户号交易流水号收支 Excel 样本")
 
@@ -422,7 +426,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_jiujiang_bank_corporate_detail_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚九江银行一般户4212.xlsx"
+        excel = TESTDATA_ROOT / "宁聚&付亮亮&徐美琴" / "宁聚九江银行一般户4212.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供九江银行对公交易明细 Excel 样本")
 
@@ -438,7 +442,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_srbank_personal_history_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "付亮亮上饶银行5813.xlsx"
+        excel = TESTDATA_ROOT / "宁聚&付亮亮&徐美琴" / "付亮亮上饶银行5813.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供上饶银行个人历史流水 Excel 样本")
 
@@ -454,7 +458,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_srbank_corporate_online_detail_excel_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "斑马商业对公流水" / "斑马商业上饶一般户（南昌县支行）-8259流水............xls"
+        excel = TESTDATA_ROOT / "斑马商业对公流水" / "斑马商业上饶一般户（南昌县支行）-8259流水............xls"
         if not excel.exists():
             self.skipTest("本地未提供上饶银行企业网银交易明细 Excel 样本")
 
@@ -470,7 +474,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_corporate_query_account_summary_excel_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "斑马商业对公流水" / "10.17-1.15斑马商业九江银行7553（赣江新区分行营业部)流水.xlsx"
+        excel = TESTDATA_ROOT / "斑马商业对公流水" / "10.17-1.15斑马商业九江银行7553（赣江新区分行营业部)流水.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供查询账号汇总交易明细 Excel 样本")
 
@@ -486,7 +490,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_account_history_detail_excel_routes_to_abc(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "农行2025.4.1-10.31号流水.xlsx"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "农行2025.4.1-10.31号流水.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供账户历史明细 Excel 样本")
 
@@ -502,7 +506,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_counterparty_wide_debit_credit_excel_routes_to_bank_of_beijing(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "北京银行流水明细2025.5-2026.4.xlsx"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "北京银行流水明细2025.5-2026.4.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供对手方宽表借贷明细 Excel 样本")
 
@@ -519,17 +523,17 @@ class InputRouterTests(unittest.TestCase):
     def test_rural_account_query_header_variants_share_series_family(self):
         module = load_input_router()
         samples = (
-            (ROOT / "testdata" / "广源流水" / "农商流水1.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "广源流水" / "农商流水4.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
-            (ROOT / "testdata" / "秦国有" / "20260604.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "秦国有" / "20260604 (2).xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "袁军" / "1-3.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "江西赣驰" / "江西赣驰2025年流水(1).xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "江西轩宇塑业有限公司" / "农商202501-03.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
-            (ROOT / "testdata" / "江西轩宇塑业有限公司" / "农商2601-03.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
+            (TESTDATA_ROOT / "广源流水" / "农商流水1.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "广源流水" / "农商流水4.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
+            (TESTDATA_ROOT / "秦国有" / "20260604.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "秦国有" / "20260604 (2).xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "袁军" / "1-3.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "江西赣驰" / "江西赣驰2025年流水(1).xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "江西轩宇塑业有限公司" / "农商202501-03.xls", "md5:5ee6d3955fa1cca84bd4bed11ae23c6f"),
+            (TESTDATA_ROOT / "江西轩宇塑业有限公司" / "农商2601-03.xls", "md5:94ff523d47e25a05d64e18944ecb9bf4"),
         )
         for excel, fingerprint_id in samples:
-            with self.subTest(filename=str(excel.relative_to(ROOT / "testdata"))):
+            with self.subTest(filename=str(excel.relative_to(TESTDATA_ROOT))):
                 result = module.read_rows(str(excel))
                 route = result.route_info
 
@@ -620,7 +624,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_headerless_excel_transfer_detail_route(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "杨德嘎" / "20260611105021.xlsx"
+        excel = TESTDATA_ROOT / "杨德嘎" / "20260611105021.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供无抬头 Excel 样本")
 
@@ -637,7 +641,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_rural_commercial_administrator_account_query_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "2025年4月份农商行（7738）网银流水 - 副本.xls"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "2025年4月份农商行（7738）网银流水 - 副本.xls"
         if not excel.exists():
             self.skipTest("本地未提供 Administrator 农商账户明细样本")
 
@@ -653,7 +657,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_rural_commercial_administrator_no_range_excel_does_not_infer_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "农商银行流水明细2025.5-2026.4.xls"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "农商银行流水明细2025.5-2026.4.xls"
         if not excel.exists():
             self.skipTest("本地未提供无起止日期 Administrator 农商账户明细样本")
 
@@ -669,7 +673,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_rural_commercial_expedited_transfer_excel_routes_to_jiangxi_rural_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "永瑞制衣-周康" / "20260413.xls"
+        excel = TESTDATA_ROOT / "永瑞制衣-周康" / "20260413.xls"
         if not excel.exists():
             self.skipTest("本地未提供农商加急汇账户明细样本")
 
@@ -685,7 +689,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_pdf_input_keeps_existing_pdf_router(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
+        pdf = TESTDATA_ROOT / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
 
@@ -752,7 +756,7 @@ class InputRouterTests(unittest.TestCase):
 
         for folder, filename, expected_rows in cases:
             with self.subTest(folder=folder):
-                result = module.read_rows(str(ROOT / "testdata" / folder / filename))
+                result = module.read_rows(str(TESTDATA_ROOT / folder / filename))
 
                 self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
                 self.assertEqual(
@@ -763,13 +767,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_cmb_pdf_without_counterparty_option_is_matched_but_qc_incomplete(self):
         module = load_input_router()
-        pdf = (
-            ROOT.parent
-            / "bank-statement-standardization"
-            / "原始流水数据"
-            / "余宏坤"
-            / "招商银行交易流水(余宏坤-客户经理姚大发).pdf"
-        )
+        pdf = RAW_STATEMENT_ROOT / "余宏坤" / "招商银行交易流水(余宏坤-客户经理姚大发).pdf"
         if not pdf.exists():
             self.skipTest("本地未提供余宏坤招商五列 PDF 样本")
 
@@ -785,7 +783,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_srbank_corporate_statement_merges_cross_page_transaction(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "皓景-顾利斌" / "皓景近1年交易流水-上饶银行.pdf"
+        pdf = TESTDATA_ROOT / "皓景-顾利斌" / "皓景近1年交易流水-上饶银行.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供皓景上饶银行对公 PDF 样本")
 
@@ -817,7 +815,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_boc_personal_statement_extracts_customer_name_from_preamble(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "郭金伟" / "1.pdf"
+        pdf = TESTDATA_ROOT / "郭金伟" / "1.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供郭金伟中国银行个人流水 PDF 样本")
 
@@ -839,7 +837,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_boc_personal_statement_joins_multiline_counterparty_fields(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "王超" / "KA0200035ff72ed91cf0001.pdf"
+        pdf = TESTDATA_ROOT / "王超" / "KA0200035ff72ed91cf0001.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供王超中国银行个人流水 PDF 样本")
 
@@ -909,7 +907,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_cmb_corporate_account_statement_pdf_route_uses_confirmed_bank(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
+        pdf = TESTDATA_ROOT / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.pdf"
 
         result = module.read_rows(str(pdf))
 
@@ -937,7 +935,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_corporate_account_statement_excel_route_matches_openpyxl_sample(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.xlsx"
+        excel = TESTDATA_ROOT / "宁聚&付亮亮&徐美琴" / "宁聚招商银行基本户1245.xlsx"
 
         result = module.read_rows(str(excel))
 
@@ -980,7 +978,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_jiujiang_bank_wide_transaction_export_routes_to_jiujiang_bank(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "昌浩公司流水" / "九江银行流水明细2025.5-2026.4.xlsx"
+        excel = TESTDATA_ROOT / "昌浩公司流水" / "九江银行流水明细2025.5-2026.4.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供九江银行宽表交易明细样本")
 
@@ -996,7 +994,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_alipay_proof_pdf_route_matches_real_statement(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "徐育发" / "支付宝交易明细(20250501-20260430).pdf"
+        pdf = TESTDATA_ROOT / "徐育发" / "支付宝交易明细(20250501-20260430).pdf"
 
         result = module.read_rows(str(pdf))
         route = result.route_info
@@ -1016,7 +1014,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_alipay_coordinate_reader_continues_pages_without_repeated_header(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "吕建光" / "支付宝交易明细(20250701-20260630).pdf"
+        pdf = TESTDATA_ROOT / "吕建光" / "支付宝交易明细(20250701-20260630).pdf"
 
         result = module.read_rows(str(pdf))
 
@@ -1025,7 +1023,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_jiangxi_rural_commercial_pdf_route_matches_watermarked_export(self):
         module = load_input_router()
-        pdf = ROOT / "testdata" / "张华峰" / "江西·农商银行(2026年03月04日09时54分56秒).pdf"
+        pdf = TESTDATA_ROOT / "张华峰" / "江西·农商银行(2026年03月04日09时54分56秒).pdf"
 
         result = module.read_rows(str(pdf))
         route = result.route_info
@@ -1041,7 +1039,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_jiangxi_rural_commercial_watermarked_excel_does_not_match_from_transaction_values(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "张华峰" / "江西·农商银行(2026年03月04日09时54分56秒).xlsx"
+        excel = TESTDATA_ROOT / "张华峰" / "江西·农商银行(2026年03月04日09时54分56秒).xlsx"
         if not excel.exists():
             self.skipTest("本地未提供张华峰江西农商 xlsx 样本")
 
@@ -1058,7 +1056,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_wechat_pay_proof_pdf_to_wps_excel_is_not_supported(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "赵景楚" / "微信支付交易明细证明(20250521-20260521)——【解压密码可在微信支付公众号查看】(1).xlsx"
+        excel = TESTDATA_ROOT / "赵景楚" / "微信支付交易明细证明(20250521-20260521)——【解压密码可在微信支付公众号查看】(1).xlsx"
         if not excel.exists():
             self.skipTest("本地未提供带异常数字单元格的微信支付交易明细证明 Excel 样本")
 
@@ -1070,7 +1068,7 @@ class InputRouterTests(unittest.TestCase):
 
     def test_native_wechat_excel_remains_supported(self):
         module = load_input_router()
-        excel = ROOT / "testdata" / "赵景楚" / "微信支付账单流水文件(20250521-20260521)——【解压密码可在微信支付公众号查看】.xlsx"
+        excel = TESTDATA_ROOT / "赵景楚" / "微信支付账单流水文件(20250521-20260521)——【解压密码可在微信支付公众号查看】.xlsx"
         if not excel.exists():
             self.skipTest("本地未提供微信官方 Excel 账单样本")
 

@@ -1,4 +1,4 @@
-import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
@@ -6,9 +6,10 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("integrate_quality", ROOT / "scripts" / "integrate.py")
-integrate = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(integrate)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from runtime import integrate
 
 
 def transfer(tx_id, own_name, own_account, opponent_name, opponent_account,

@@ -1,22 +1,23 @@
 import tempfile
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
-import tag as tag_module
 
-from tag import (
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from runtime import tag as tag_module
+from runtime.tag import (
     _apply_alipay_order_reversals,
     _apply_transaction_relations,
     direction_series,
     load_rules,
     match,
 )
-
-
-ROOT = Path(__file__).resolve().parents[1]
-
 
 class TagOptimizedTest(unittest.TestCase):
     def test_direction_series_matches_row_direction_logic(self):

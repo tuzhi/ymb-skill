@@ -108,4 +108,4 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - 源码仓库以根目录 `pyproject.toml` 的 `standardization` 可选依赖组作为依赖事实源。
 - Skill 分发包保留 `requirements.txt` 作为客户端部署兼容清单；内容应从 `pyproject.toml` 同步，不手工分叉维护。
 - 缺少依赖时，源码态优先执行：`python -m pip install -e ".[standardization]"`；仅安装 Skill 分发包时执行：`python -m pip install -r requirements.txt`。
-- 重新打包：`python scripts/package_skill.py --output dist/bank-statement-standardization_v<version>.zip`。
+- 重新打包：`python tools/release/package_skill.py --output dist/bank-statement-standardization_v<version>.zip`。

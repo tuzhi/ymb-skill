@@ -1,5 +1,4 @@
-import importlib.util
-from types import SimpleNamespace
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,44 +8,13 @@ import pandas as pd
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-PACKAGE_DELIVERABLE = SKILL_ROOT / "scripts" / "package_deliverable.py"
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
 
-
-def load_module(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-package_deliverable = load_module("package_deliverable", PACKAGE_DELIVERABLE)
+from runtime import deliverable as package_deliverable
 
 
 class PackageDeliverableWorkbookTest(unittest.TestCase):
-    def test_folder_mode_recursively_collects_candidate_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            branch = root / "新余分公司"
-            branch.mkdir()
-            pdf = branch / "2025年10-12月-2.pdf"
-            pdf.write_bytes(b"%PDF-1.4\n")
-            ignored = branch / "说明.docx"
-            ignored.write_bytes(b"not a statement")
-
-            args = SimpleNamespace(
-                subject=None,
-                folder=str(root),
-                client="潘荣平消防设备",
-                account_type=None,
-            )
-
-            subjects, skipped = package_deliverable.gather_subjects(args)
-
-            self.assertEqual(subjects[0][0], "潘荣平消防设备")
-            self.assertEqual(subjects[0][1], [(str(pdf), None)])
-            self.assertEqual(len(skipped), 1)
-            self.assertEqual(skipped[0][0], "说明.docx")
-
     def test_build_workbook_styles_without_reloading_saved_xlsx(self):
         tagged = pd.DataFrame([{
             "交易唯一编号": "tx-1",

@@ -8,14 +8,15 @@ from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = REPO_ROOT / "ymb-standardization-core"
-SCRIPTS = REPO_ROOT / "bank-statement-standardization" / "scripts"
-for path in (str(CORE_ROOT), str(SCRIPTS)):
+SKILL_ROOT = REPO_ROOT / "bank-statement-standardization"
+SCRIPTS = SKILL_ROOT / "scripts"
+for path in (str(CORE_ROOT), str(SKILL_ROOT), str(SCRIPTS)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
 from ymb_standardization_core.contracts import RouteDecision, StandardizationContext
 from ymb_standardization_core import core
-from stage_contracts import IntegrationContext, StageResult, yaml_route_summary
+from runtime.contracts import IntegrationContext, StageResult, yaml_route_summary
 
 
 def load_module(name, path):
@@ -25,8 +26,9 @@ def load_module(name, path):
     return module
 
 
-integrate = load_module("integrate_contract_test", SCRIPTS / "integrate.py")
-package_deliverable = load_module("package_contract_test", SCRIPTS / "package_deliverable.py")
+from runtime import deliverable as package_deliverable
+from runtime import integrate
+
 orchestrator = load_module("orchestrator_contract_test", SCRIPTS / "orchestrator.py")
 
 

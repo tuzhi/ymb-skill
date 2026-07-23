@@ -321,6 +321,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             (work / "客户__整合报告.json").write_text("{}", encoding="utf-8")
             (work / "客户__打标流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
             (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
+            (work / "客户__组合日余额.csv").write_text(
+                "日期,账户,日终余额\n2026-01-01,A-1,1.00\n",
+                encoding="utf-8",
+            )
+            (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
 
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.args = SimpleNamespace(client="客户")

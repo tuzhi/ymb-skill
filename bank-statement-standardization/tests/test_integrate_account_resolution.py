@@ -1,20 +1,16 @@
-import importlib.util
-import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("integrate_account_resolution", ROOT / "scripts" / "integrate.py")
-integrate = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(integrate)
-PACKAGE_SPEC = importlib.util.spec_from_file_location("package_deliverable_account_resolution", ROOT / "scripts" / "package_deliverable.py")
-package_deliverable = importlib.util.module_from_spec(PACKAGE_SPEC)
-PACKAGE_SPEC.loader.exec_module(package_deliverable)
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from runtime import integrate
 
 
 NAME = "斑马（南昌）商业有限公司"
@@ -935,32 +931,6 @@ class BatchAccountResolutionTests(unittest.TestCase):
         self.assertEqual(report["批次未知账户配对"]["已配对组数"], 1)
         self.assertEqual(report["客户整合概览"]["跨文件去重笔数"], 3)
         self.assertTrue({"router_bank", "inferred_bank", "batch_pair", "bank_source"}.isdisjoint(output.columns))
-
-    def test_zebra_batch_finishes_with_expected_accounts_and_transactions(self):
-        folder = ROOT / "testdata" / "斑马商业对公流水"
-        if not folder.exists():
-            self.skipTest("本地未提供斑马商业对公流水样本")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            args = SimpleNamespace(
-                client="斑马商业对公流水",
-                folder=str(folder),
-                subject=None,
-                account_type="对公",
-                out_dir=tmp,
-            )
-            package_deliverable.run(args.client, args)
-            report_path = Path(tmp) / "_工作区" / args.client / f"{args.client}__整合报告.json"
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-
-        overview = report["客户整合概览"]
-        self.assertEqual(overview["原始交易数"], 11107)
-        self.assertEqual(overview["跨文件去重笔数"], 5548)
-        self.assertEqual(overview["整合交易数"], 5559)
-        self.assertEqual(overview["整合账户数"], 6)
-        self.assertEqual(report["同账号元数据补全"]["补全交易数"], 203)
-        self.assertEqual(report["批次未知账户配对"]["已配对组数"], 0)
-
 
 if __name__ == "__main__":
     unittest.main()

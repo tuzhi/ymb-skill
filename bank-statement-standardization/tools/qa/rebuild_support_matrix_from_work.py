@@ -13,14 +13,19 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+from _paths import TESTDATA_ROOT, TESTOUTPUT_ROOT  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = ROOT.parent
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
-AUDIT_SCRIPT = ROOT / "scripts" / "audit_testdata_support.py"
+AUDIT_SCRIPT = ROOT / "tools" / "qa" / "audit_testdata_support.py"
 spec = importlib.util.spec_from_file_location("audit_testdata_support", AUDIT_SCRIPT)
 audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)
@@ -124,9 +129,9 @@ def rebuild(testdata_root, work_root, output_dir):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="从 _support_matrix_work 重建 support_matrix.xlsx")
-    parser.add_argument("--testdata-root", default=str(ROOT / "testdata"))
+    parser.add_argument("--testdata-root", default=str(TESTDATA_ROOT))
     parser.add_argument("--work-root", required=True)
-    parser.add_argument("--output-dir", default=str(ROOT / "testdata"))
+    parser.add_argument("--output-dir", default=str(TESTOUTPUT_ROOT))
     args = parser.parse_args(argv)
     support_xlsx, baseline_json, records, rechecked = rebuild(args.testdata_root, args.work_root, args.output_dir)
     print(f"support_matrix_xlsx={support_xlsx}")

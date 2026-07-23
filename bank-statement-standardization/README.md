@@ -9,7 +9,7 @@
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
-| A. 脚本自动执行 | Claude / 任意有 Python 的环境 | `scripts/`（确定性、可复算、最稳） |
+| A. 脚本自动执行 | Claude / 任意有 Python 的环境 | `scripts/orchestrator.py` + `runtime/`（确定性、可复算） |
 | B. 纯提示词 | 任意大模型（GPT、Gemini、文心、通义、Kimi、DeepSeek…） | `references/` 四份提示词 + 三份附件，复制即用 |
 
 两种方式产出的字段口径完全一致，可混用。
@@ -23,25 +23,33 @@ bank-statement-standardization/
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
-│   ├── standardize.py       # stage_1_standardize：兼容旧命令的 CLI 薄入口
-│   ├── integrate.py         # stage_2_integrate：单客户多文件整合与验证
-│   ├── tag.py               # stage_3_tag：交易打标与规则沉淀
-│   ├── portfolio_balance.py # stage_2b_portfolio_balance：组合(虚拟账户)余额时间序列 + 余额校验
-│   ├── orchestrator.py      # ★ 正式生产主入口：检查、留痕、验收、告警/错误打包
-│   ├── validate_stage.py    # 每阶段产物检测
-│   ├── package_deliverable.py # stage_4_package：单文件交付物 <客户名>_已清洗_待分析.xlsx
-│   ├── run_pipeline.py      # 一键跑单客户（stage_1_standardize → stage_3_tag + 组合余额）
-│   └── build_rules_from_xlsx.py  # 从规则文档生成 tag_rules.csv
+│   ├── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
+│   └── standardize.py       # stage_1_standardize 兼容 CLI 薄入口
+├── runtime/                 # 确定性业务实现，不作为独立生产入口
+│   ├── integrate.py         # stage_2_integrate
+│   ├── portfolio_balance.py # stage_2b_portfolio_balance
+│   ├── tag.py               # stage_3_tag
+│   ├── deliverable.py       # stage_4_package，仅组装上游既有产物
+│   ├── validators.py        # 阶段一与最终交付验收
+│   └── contracts.py         # 跨阶段公开契约
+├── tools/                   # 仓库维护工具，不进入 Skill 分发包
+│   ├── qa/                  # 支持矩阵、基准与全量测试工具
+│   ├── rules/               # tag_rules.csv 生成工具
+│   └── release/             # Skill 发布打包工具
 ├── references/              # 可移植提示词包（任意大模型可用）
 │   ├── prompt-1a-输入读取与文件识别.md、prompt-1-字段映射.md ~ prompt-5-交付物组装.md
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
-    ├── manifest.template.json # 单一运行事实源模板：client / parent run / script / validator / AI fallback / status
+    ├── manifest.template.json # 单一运行事实源模板：client / parent run / 阶段状态 / stage1 AI fallback
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
-源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `scripts/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
+开发用大体积数据与源码分离，默认放在仓库同级的
+`../ymb-skill-data/{testdata,testoutput,原始流水数据}`。如需使用其他位置，设置
+`YMB_STANDARDIZATION_DATA_ROOT`；QA 工具和真实样本测试会从该根目录读取。
+
+源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `tools/release/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
 
 ## 快速开始（方式 A · 脚本）
 
@@ -60,18 +68,9 @@ python scripts/orchestrator.py run --folder "/path/to/客户流水.zip"
 # 显式客户名称同时作为交付物归档名；后续不会被上游别名或本方名称覆盖
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "客户名"
 
-# 调试时才直接调用内部业务入口
-python scripts/package_deliverable.py --client "客户名" --folder "/path/to/客户文件夹" --account-type 对公
-#   多主体（企业+关联个人，各主体可多账户多文件）：
-python scripts/package_deliverable.py --client "客户名" \
-  --subject "甲公司:/path/甲:对公" --subject "张三:/path/张三:个人"
-
-# 或：单客户一键中间产物（标准化→整合→组合余额→打标，输出 CSV/JSON）
-python scripts/run_pipeline.py "客户名" "/path/to/客户文件夹" --account-type 对公
-
 ```
 
-逐阶段单独调用见 `SKILL.md`。
+生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
 ## 快速开始（方式 B · 任意大模型）
 
@@ -140,8 +139,8 @@ mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skil
 unzip bank-statement-standardization.zip -d ~/.kimi/skills/
 ```
 - 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：在本目录运行 `python scripts/package_skill.py`，产物写入 `dist/bank-statement-standardization.zip`。
-  归档会自动排除 `dist/` 和 `scripts/package_skill.py` 本身。
+- 重新打包（改动后）：在本目录运行 `python tools/release/package_skill.py`，产物写入 `dist/bank-statement-standardization.zip`。
+  归档使用运行时白名单，只包含正式入口、`runtime/`、资源、参考资料和共享 core。
 
 ### 安装自检（任意客户端通用）
 ```bash

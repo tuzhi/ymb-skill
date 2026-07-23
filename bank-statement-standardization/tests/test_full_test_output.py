@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "run_full_test.py"
+SCRIPT = ROOT / "tools" / "qa" / "run_full_test.py"
 
 
 def load_module():
@@ -62,8 +62,8 @@ class FullTestOutputTests(unittest.TestCase):
             ))
             return Path(run_dir) / "support_matrix.xlsx", Path(run_dir) / "baseline_summary.json"
 
-        def fake_run_package_deliverables(testdata_root, run_dir, sleep_seconds=0.5):
-            calls.append(("run_package_deliverables", Path(testdata_root), Path(run_dir), sleep_seconds))
+        def fake_run_package_deliverables(testdata_root, run_dir):
+            calls.append(("run_package_deliverables", Path(testdata_root), Path(run_dir)))
             return Path(run_dir) / "_summary.csv", [{"status": "PASS"}]
 
         original_create = module.create_run_dir
@@ -81,7 +81,7 @@ class FullTestOutputTests(unittest.TestCase):
 
         self.assertEqual(calls, [
             ("create_run_dir", Path("testdata"), "20260630203045", None),
-            ("run_package_deliverables", Path("testdata"), Path("testoutput/20260630203045"), 0.5),
+            ("run_package_deliverables", Path("testdata"), Path("testoutput/20260630203045")),
             (
                 "run_support_matrix_from_package_work",
                 Path("testdata"),
@@ -89,35 +89,6 @@ class FullTestOutputTests(unittest.TestCase):
                 Path("testoutput/20260630203045/_package_work"),
             ),
         ])
-
-    def test_main_passes_custom_sleep_seconds_to_package_stage(self):
-        module = load_module()
-        calls = []
-
-        def fake_create_run_dir(testdata_root, run_id=None, output_root=None):
-            return Path("testoutput/20260630203045")
-
-        def fake_run_package_deliverables(testdata_root, run_dir, sleep_seconds=0.5):
-            calls.append(sleep_seconds)
-            return Path(run_dir) / "_summary.csv", [{"status": "PASS"}]
-
-        def fake_run_support_matrix_from_package_work(testdata_root, run_dir, package_work_root):
-            return Path(run_dir) / "support_matrix.xlsx", Path(run_dir) / "baseline_summary.json"
-
-        original_create = module.create_run_dir
-        original_package = module.run_package_deliverables
-        original_support = module.run_support_matrix_from_package_work
-        try:
-            module.create_run_dir = fake_create_run_dir
-            module.run_package_deliverables = fake_run_package_deliverables
-            module.run_support_matrix_from_package_work = fake_run_support_matrix_from_package_work
-            module.main(["--testdata-root", "testdata", "--sleep-seconds", "1.5"])
-        finally:
-            module.create_run_dir = original_create
-            module.run_package_deliverables = original_package
-            module.run_support_matrix_from_package_work = original_support
-
-        self.assertEqual(calls, [1.5])
 
     def test_skip_package_argument_is_not_supported(self):
         module = load_module()
@@ -157,9 +128,10 @@ class FullTestOutputTests(unittest.TestCase):
             root = Path(tmp)
             work_dir = root / "work"
             run_dir = root / "testoutput" / "20260630203045"
-            work_dir.mkdir(parents=True)
+            artifacts = work_dir / "runs" / "run-1" / "artifacts"
+            artifacts.mkdir(parents=True)
             run_dir.mkdir(parents=True)
-            deliverable = work_dir / "客户A_已清洗_待分析.xlsx"
+            deliverable = artifacts / "客户A_已清洗_待分析.xlsx"
             deliverable.write_text("xlsx", encoding="utf-8")
 
             copied = module._copy_deliverables(work_dir, run_dir, 1)

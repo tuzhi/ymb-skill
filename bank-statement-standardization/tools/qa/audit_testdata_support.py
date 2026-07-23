@@ -24,8 +24,13 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 import yaml
 
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+from _paths import TESTDATA_ROOT, TESTOUTPUT_ROOT  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = ROOT.parent
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
 if str(CORE_PACKAGE) not in sys.path:
@@ -674,8 +679,8 @@ def build_outputs_from_standardized_artifacts(testdata_root, package_work_root, 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="生成 testdata 支持矩阵")
-    parser.add_argument("--testdata-root", default=str(ROOT / "testdata"))
-    parser.add_argument("--output-dir", default=str(ROOT / "testdata"))
+    parser.add_argument("--testdata-root", default=str(TESTDATA_ROOT))
+    parser.add_argument("--output-dir", default=str(TESTOUTPUT_ROOT))
     parser.add_argument("--write-baseline", action="store_true", help="同时生成 baseline_summary.json 回归基准")
     parser.add_argument("--sleep-seconds", type=float, default=0.5, help="每处理完一个文件后的暂停秒数，默认 0.5 秒用于降低持续发热")
     args = parser.parse_args(argv)

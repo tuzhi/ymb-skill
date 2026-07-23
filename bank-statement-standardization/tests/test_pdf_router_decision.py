@@ -9,9 +9,13 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+QA_DIR = ROOT / "tools" / "qa"
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
+from _paths import TESTDATA_ROOT  # noqa: E402
 ROUTER_SPEC = importlib.util.spec_from_file_location(
     "router",
     CORE_PACKAGE / "ymb_standardization_core" / "readers" / "router.py")
@@ -110,7 +114,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_pdfplumber_table_rows_can_use_pdfplumber_line_table_reader(self):
         path = (
-            ROOT / "testdata" / "斑马商业对公流水"
+            TESTDATA_ROOT / "斑马商业对公流水"
             / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
         )
 
@@ -141,7 +145,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_pdfplumber_line_table_reader_does_not_call_default_extract_tables(self):
         path = (
-            ROOT / "testdata" / "斑马商业对公流水"
+            TESTDATA_ROOT / "斑马商业对公流水"
             / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
         )
         original = router._extract_pdf_tables_default
@@ -159,7 +163,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_pdfplumber_coordinate_table_reader_groups_separator_rows(self):
         path = (
-            ROOT / "testdata" / "罗美英"
+            TESTDATA_ROOT / "罗美英"
             / "交易明细记录SHLSMX20260602415882_1.pdf"
         )
 
@@ -229,7 +233,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         for relative_path, expected_rows, expected_prefix in cases:
             with self.subTest(relative_path=relative_path):
-                path = ROOT / "testdata" / relative_path
+                path = TESTDATA_ROOT / relative_path
 
                 _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
@@ -254,7 +258,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 self.assertEqual(rows[1][:3], expected_prefix)
 
     def test_pdfplumber_coordinate_table_reader_uses_composite_header_from_columns(self):
-        path = ROOT / "testdata" / "陈国付103135" / "26060214275857136186.pdf"
+        path = TESTDATA_ROOT / "陈国付103135" / "26060214275857136186.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
@@ -288,7 +292,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[51][8], "网商银行转账")
 
     def test_jiangxi_yumin_pdf_uses_coordinate_table_reader(self):
-        path = ROOT / "testdata" / "陈国付103135" / "APPLY2026060214573700135618149968_trade_history_sign.pdf"
+        path = TESTDATA_ROOT / "陈国付103135" / "APPLY2026060214573700135618149968_trade_history_sign.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
@@ -320,7 +324,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(rows[26][6], "银联待清算往来")
 
     def test_jiangxi_rural_commercial_pdf_uses_coordinate_table_reader(self):
-        path = ROOT / "testdata" / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
+        path = TESTDATA_ROOT / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
         _preamble, rows, route_info = router.read_pdf_rows(str(path))
 
@@ -345,7 +349,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         ])
 
     def test_zhejiang_qyrcb_pdf_uses_coordinate_table_reader_with_anchor_blocks(self):
-        path = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
+        path = TESTDATA_ROOT / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
         if not path.exists():
             self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
 

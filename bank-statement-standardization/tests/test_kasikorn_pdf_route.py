@@ -11,11 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+QA_DIR = ROOT / "tools" / "qa"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
+from _paths import TESTDATA_ROOT  # noqa: E402
 SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / "standardize.py")
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
@@ -23,7 +27,7 @@ SPEC.loader.exec_module(standardize)
 
 class KasikornPdfRouteTests(unittest.TestCase):
     def test_local_kasikorn_pdf_uses_grid_line_table_reader(self):
-        pdf = ROOT / "testdata" / "泰国开泰银行" / "111.pdf"
+        pdf = TESTDATA_ROOT / "泰国开泰银行" / "111.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供开泰银行 PDF 样本")
 

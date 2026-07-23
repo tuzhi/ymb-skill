@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-tag.py — 交易标签梳理与规则沉淀（阶段三，对应 Prompt 3）
+runtime/tag.py — 交易标签梳理与规则沉淀（阶段三，对应 Prompt 3）
 
 规则库 assets/tag_rules.csv 由 build_rules_from_xlsx.py 从《流水标签规则文档》生成
 （资金用途标签判定逻辑 + 流水标签词库管理表）。匹配忠实还原文档判定逻辑：

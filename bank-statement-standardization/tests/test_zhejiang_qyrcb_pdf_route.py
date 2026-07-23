@@ -11,11 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+QA_DIR = ROOT / "tools" / "qa"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
+from _paths import TESTDATA_ROOT  # noqa: E402
 SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / "standardize.py")
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
@@ -46,7 +50,7 @@ class ZhejiangQingyuanRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertEqual(result["reader_id"], "none")
 
     def test_local_grzd_pdf_uses_coordinate_table_reader(self):
-        pdf = ROOT / "testdata" / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
+        pdf = TESTDATA_ROOT / "李先根" / "GRZD-9A202606081958362818-20250608-20260607-X_unsign_sign_18831.pdf"
         if not pdf.exists():
             self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
 
