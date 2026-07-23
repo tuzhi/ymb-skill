@@ -20,7 +20,7 @@ if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
 from _paths import TESTDATA_ROOT  # noqa: E402
-SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "scripts" / "standardize.py")
+SPEC = importlib.util.spec_from_file_location("standardize", ROOT / "runtime" / "standardize.py")
 standardize = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(standardize)
 

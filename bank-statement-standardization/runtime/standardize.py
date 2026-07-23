@@ -1,6 +1,7 @@
-"""兼容旧命令的标准化 CLI 入口。
+"""Stage 1 标准化运行时适配层。
 
-标准化内核已迁到仓库平级子项目 ymb-standardization-core，便于脱敏等其他项目直接复用。
+标准化内核位于仓库平级子项目 ymb-standardization-core；Skill 分发包内使用
+packages/ymb_standardization_core。
 """
 
 import sys
@@ -18,7 +19,3 @@ for _candidate in (
         break
 
 from ymb_standardization_core.core import *  # noqa: F401,F403,E402
-
-
-if __name__ == "__main__":
-    main()

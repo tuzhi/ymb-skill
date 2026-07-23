@@ -53,6 +53,8 @@ class PackageSkillTest(unittest.TestCase):
         package_skill = self.load_package_module()
 
         self.assertTrue(package_skill._is_included(Path("scripts/orchestrator.py")))
+        self.assertFalse((SKILL_ROOT / "scripts" / "standardize.py").exists())
+        self.assertTrue(package_skill._is_included(Path("runtime/standardize.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
         self.assertFalse(package_skill._is_included(Path("tools/qa/run_full_test.py")))
         self.assertFalse(package_skill._is_included(Path("AGENTS.md")))

@@ -7,10 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-SCRIPTS = ROOT / "scripts"
+RUNTIME = ROOT / "runtime"
 CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
@@ -23,12 +23,12 @@ def load_module(name, path):
 
 
 class StandardizationPackageTest(unittest.TestCase):
-    def test_core_package_and_legacy_cli_expose_same_standardize_function(self):
+    def test_runtime_adapter_exposes_core_standardize_function(self):
         core = importlib.import_module("ymb_standardization_core.core")
-        legacy = load_module("standardize_legacy", SCRIPTS / "standardize.py")
+        adapter = load_module("standardize_runtime", RUNTIME / "standardize.py")
 
         self.assertTrue(callable(core.standardize))
-        self.assertIs(legacy.standardize, core.standardize)
+        self.assertIs(adapter.standardize, core.standardize)
 
 
 if __name__ == "__main__":

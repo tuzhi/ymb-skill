@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-STANDARDIZE_PATH = REPO_ROOT / "bank-statement-standardization" / "scripts" / "standardize.py"
+STANDARDIZE_PATH = REPO_ROOT / "bank-statement-standardization" / "runtime" / "standardize.py"
 spec = importlib.util.spec_from_file_location("standardize", STANDARDIZE_PATH)
 standardize = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(standardize)

@@ -23,9 +23,9 @@ bank-statement-standardization/
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
-│   ├── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
-│   └── standardize.py       # stage_1_standardize 兼容 CLI 薄入口
+│   └── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
 ├── runtime/                 # 确定性业务实现，不作为独立生产入口
+│   ├── standardize.py       # stage_1_standardize 运行时适配层
 │   ├── integrate.py         # stage_2_integrate
 │   ├── portfolio_balance.py # stage_2b_portfolio_balance
 │   ├── tag.py               # stage_3_tag
@@ -49,7 +49,7 @@ bank-statement-standardization/
 `../ymb-skill-data/{testdata,testoutput,原始流水数据}`。如需使用其他位置，设置
 `YMB_STANDARDIZATION_DATA_ROOT`；QA 工具和真实样本测试会从该根目录读取。
 
-源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`scripts/standardize.py` 是兼容旧命令的薄入口。执行 `tools/release/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
+源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`runtime/standardize.py` 负责 Stage 1 的运行时装配。执行 `tools/release/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
 
 ## 快速开始（方式 A · 脚本）
 
@@ -174,12 +174,12 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 
 ## 适配新银行模板
 
-绝大多数模板靠 `standardize.py` 内置同义词词典即可自动识别。遇到识别不准：
+绝大多数模板靠共享标准化内核的同义词词典和路由规则即可自动识别。遇到识别不准：
 
 - 用 `--header-row N` 指定表头行；
 - 用 `--map "原始列名=标准字段"` 手工覆盖个别列；
 - 标准化入口不接收客户名称参数；`本方名称` 只允许来自文件证据；
-- 或在 `scripts/standardize.py` 的 `SYNONYMS` 词典里补充该行的列名同义词。
+- 或在 `ymb-standardization-core/ymb_standardization_core/` 的对应标准化或路由层补充规则。
 
 ## 测试验证
 

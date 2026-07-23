@@ -21,10 +21,10 @@ for path in (SCRIPT_DIR, SKILL_DIR):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-import standardize as S
 from runtime import deliverable as P
 from runtime import integrate as I
 from runtime import portfolio_balance as PB
+from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
 from runtime.contracts import IntegrationContext, StageResult, yaml_route_summary

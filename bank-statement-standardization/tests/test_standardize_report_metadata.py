@@ -16,7 +16,7 @@ QA_DIR = SKILL_ROOT / "tools" / "qa"
 if str(QA_DIR) not in sys.path:
     sys.path.insert(0, str(QA_DIR))
 from _paths import TESTDATA_ROOT  # noqa: E402
-STANDARDIZE_PATH = REPO_ROOT / "bank-statement-standardization" / "scripts" / "standardize.py"
+STANDARDIZE_PATH = REPO_ROOT / "bank-statement-standardization" / "runtime" / "standardize.py"
 spec = importlib.util.spec_from_file_location("standardize", STANDARDIZE_PATH)
 standardize = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(standardize)
