@@ -12,10 +12,14 @@ import tempfile
 import zipfile
 import xml.etree.ElementTree as ET
 
-from ymb_standardization_core.readers.router import read_pdf_rows
+from ymb_standardization_core.readers.pdf_input import read_pdf_rows
 from ymb_standardization_core.readers.routing.rule_loader import load_excel_route_rules
 from ymb_standardization_core.contracts import RouteDecision
 from ymb_standardization_core.models import ReadResult
+from ymb_standardization_core.transforms import (
+    merge_configured_header,
+    normalize_cmb_mixed_grid,
+)
 
 
 _excel_reader = None
@@ -337,153 +341,6 @@ def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     return reader(path)
 
 
-def _merge_configured_header(rows, route_info):
-    """按 fingerprint 显式配置合并多层表头，不改变原始数据行号。"""
-    config = (route_info or {}).get("header_merge") or {}
-    if not rows or not config:
-        return rows, route_info
-    row_count = int(config.get("rows") or 0)
-    route_columns = {
-        str(column or "").strip()
-        for column in (route_info.get("column_mapping") or {})
-        if str(column or "").strip()
-    }
-    if row_count < 2 or not route_columns:
-        return rows, route_info
-    header_index = max(
-        range(min(30, len(rows))),
-        key=lambda index: sum(
-            1
-            for value in rows[index]
-            if any(
-                marker in str(value or "").strip()
-                for marker in route_columns
-            )
-        ),
-    )
-    if header_index + row_count > len(rows):
-        return rows, route_info
-
-    width = max(len(rows[header_index + offset]) for offset in range(row_count))
-    separator = str(config.get("separator") or "")
-    merged = []
-    parent = ""
-    for column_index in range(width):
-        top = str(
-            rows[header_index][column_index]
-            if column_index < len(rows[header_index]) else ""
-        ).strip()
-        if top:
-            parent = top
-        parts = []
-        for offset in range(1, row_count):
-            row = rows[header_index + offset]
-            value = str(row[column_index] if column_index < len(row) else "").strip()
-            if value:
-                parts.append(value)
-        if parts:
-            merged.append(separator.join([value for value in (top or parent, *parts) if value]))
-        else:
-            merged.append(top)
-
-    output = [list(row) for row in rows]
-    output[header_index] = merged
-    for offset in range(1, row_count):
-        output[header_index + offset] = [None] * width
-    updated_route = dict(route_info)
-    updated_mapping = dict(updated_route.get("column_mapping") or {})
-    updated_mapping.update(config.get("columns") or {})
-    updated_route["column_mapping"] = updated_mapping
-    return output, updated_route
-
-
-def _parse_cmb_compact_row(row):
-    """解析招行 Excel 首页把日期/币种/金额压在一个单元格的行。"""
-    left = str(row[0] or "").strip() if row else ""
-    middle = str(row[4] or "").strip() if len(row) > 4 else ""
-    left_match = re.match(
-        r"^(20\d{2}-\d{2}-\d{2})\s+([A-Z]{3})\s+([+-]?[\d,]+\.\d{2})$", left
-    )
-    middle_match = re.match(r"^([+-]?[\d,]+\.\d{2})\s+(.+)$", middle)
-    if not left_match or not middle_match:
-        return None
-    return [
-        left_match.group(1), left_match.group(2), left_match.group(3),
-        middle_match.group(1), middle_match.group(2),
-        str(row[7] or "").strip() if len(row) > 7 else "",
-    ]
-
-
-def _amount(value):
-    try:
-        return float(str(value).replace(",", ""))
-    except (TypeError, ValueError):
-        return None
-
-
-def _repair_cmb_amount_scale(records):
-    """按逐笔余额恒等式修复招行导出中偶发丢失两位小数的数值单元格。"""
-    previous_balance = None
-    for record in records:
-        amount = _amount(record[2])
-        balance = _amount(record[3])
-        if amount is None or balance is None:
-            continue
-        if previous_balance is not None:
-            candidates = []
-            for amount_scale in (1, 100):
-                for balance_scale in (1, 100):
-                    fixed_amount = amount / amount_scale
-                    fixed_balance = balance / balance_scale
-                    residual = abs(previous_balance + fixed_amount - fixed_balance)
-                    scaled_fields = (amount_scale != 1) + (balance_scale != 1)
-                    candidates.append((round(residual, 6), scaled_fields, fixed_amount, fixed_balance))
-            residual, _scaled, amount, balance = min(candidates)
-            # 只有余额方程能在分币精度内闭合时才修正，不对缺行场景作猜测。
-            if residual <= 0.02:
-                record[2], record[3] = round(amount, 2), round(balance, 2)
-        previous_balance = _amount(record[3])
-    return records
-
-
-def _read_cmb_mixed_grid(rows):
-    """统一招行 Excel 首页压缩布局与后续普通网格，同时保留原始行号位置。"""
-    normalized = [list(row) for row in rows]
-    if len(normalized) < 31:
-        return normalized
-    header = ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"]
-    normalized[10] = header
-    records = []
-    positions = []
-    for index in range(11, min(28, len(normalized))):
-        record = _parse_cmb_compact_row(normalized[index])
-        if record:
-            records.append(record)
-            positions.append(index)
-    normalized[28] = [None] * len(header)
-    normalized[29] = [None] * len(header)
-    for index in range(30, len(normalized)):
-        row = normalized[index]
-        date = row[0] if row else None
-        if not (hasattr(date, "year") or re.match(r"^20\d{2}-\d{2}-\d{2}(?:\s|$)", str(date or ""))):
-            normalized[index] = [None] * len(header)
-            continue
-        record = [
-            date,
-            row[1] if len(row) > 1 else "",
-            row[2] if len(row) > 2 else "",
-            row[4] if len(row) > 4 else "",
-            row[5] if len(row) > 5 else "",
-            row[7] if len(row) > 7 else "",
-        ]
-        records.append(record)
-        positions.append(index)
-    _repair_cmb_amount_scale(records)
-    for index, record in zip(positions, records):
-        normalized[index] = record
-    return normalized
-
-
 def read_rows(path, hints=None):
     hints = hints or {}
     open_password = hints.get("open_password") or None
@@ -502,8 +359,8 @@ def read_rows(path, hints=None):
                 all_sheets_same_layout=True,
             )
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
-            rows = _read_cmb_mixed_grid(rows)
-        rows, route_info = _merge_configured_header(rows, route_info)
+            rows = normalize_cmb_mixed_grid(rows)
+        rows, route_info = merge_configured_header(rows, route_info)
         return ReadResult(
             kind="excel",
             preamble="",
@@ -514,7 +371,7 @@ def read_rows(path, hints=None):
         raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
         preamble, rows, route_info = read_pdf_rows(path, open_password=open_password)
-        rows, route_info = _merge_configured_header(rows, route_info)
+        rows, route_info = merge_configured_header(rows, route_info)
         return ReadResult(
             kind="pdf",
             preamble=preamble,

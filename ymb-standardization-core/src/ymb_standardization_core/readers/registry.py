@@ -39,3 +39,33 @@ class PdfReaderRegistry:
 
     def ids(self) -> tuple[str, ...]:
         return tuple(self._readers)
+
+
+_PDF_READER_REGISTRY: PdfReaderRegistry | None = None
+
+
+def pdf_reader_registry() -> PdfReaderRegistry:
+    """返回包含四个稳定 reader_id 的进程级只读注册表。"""
+    global _PDF_READER_REGISTRY
+    if _PDF_READER_REGISTRY is None:
+        from ymb_standardization_core.readers.pdf.coordinate_table import (
+            READER as coordinate_table_reader,
+        )
+        from ymb_standardization_core.readers.pdf.line_table import (
+            READER as line_table_reader,
+        )
+        from ymb_standardization_core.readers.pdf.table import READER as table_reader
+        from ymb_standardization_core.readers.pdf.text_lines import (
+            READER as text_lines_reader,
+        )
+
+        registry = PdfReaderRegistry()
+        for reader in (
+            table_reader,
+            line_table_reader,
+            text_lines_reader,
+            coordinate_table_reader,
+        ):
+            registry.register(reader)
+        _PDF_READER_REGISTRY = registry
+    return _PDF_READER_REGISTRY

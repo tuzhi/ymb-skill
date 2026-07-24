@@ -41,6 +41,7 @@ files = [
   "ymb-standardization-core/src/ymb_standardization_core/models/read_result.py",
   "ymb-standardization-core/src/ymb_standardization_core/readers/base.py",
   "ymb-standardization-core/src/ymb_standardization_core/readers/registry.py",
+  "ymb-standardization-core/src/ymb_standardization_core/transforms/registry.py",
   "ymb-standardization-core/src/ymb_standardization_core/transforms/repeated_header.py",
 ]
 strict = true

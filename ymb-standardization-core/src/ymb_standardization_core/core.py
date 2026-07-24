@@ -164,7 +164,7 @@ def load_bank_alias_rules():
     global _BANK_ALIAS_RULES
     if _BANK_ALIAS_RULES is not None:
         return _BANK_ALIAS_RULES
-    path = os.path.join(os.path.dirname(__file__), "readers", "routing", "bank_aliases.yaml")
+    path = os.path.join(_routing_config_dir(), "bank_aliases.yaml")
     with open(path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     aliases = data.get("bank_aliases") if isinstance(data, dict) else None
@@ -930,8 +930,8 @@ _CARD_BIN_RULES = None
 _CARD_BIN_BANK_NAMES = None
 
 
-def _routing_dir():
-    return os.path.join(os.path.dirname(__file__), "readers", "routing")
+def _routing_config_dir():
+    return os.path.join(os.path.dirname(__file__), "config", "routing")
 
 
 def load_card_bin_bank_names():
@@ -939,7 +939,7 @@ def load_card_bin_bank_names():
     global _CARD_BIN_BANK_NAMES
     if _CARD_BIN_BANK_NAMES is not None:
         return _CARD_BIN_BANK_NAMES
-    csv_path = os.path.join(_routing_dir(), "card_bin_banks.csv")
+    csv_path = os.path.join(_routing_config_dir(), "card_bin_banks.csv")
     names = {}
     if os.path.exists(csv_path):
         with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
@@ -957,7 +957,7 @@ def load_card_bin_rules():
     global _CARD_BIN_RULES
     if _CARD_BIN_RULES is not None:
         return _CARD_BIN_RULES
-    routing_dir = _routing_dir()
+    routing_dir = _routing_config_dir()
     csv_path = os.path.join(routing_dir, "card_bins.csv")
     yaml_path = os.path.join(routing_dir, "card_bins.yaml")
     rules = []

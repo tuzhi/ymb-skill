@@ -26,6 +26,8 @@ from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  # noqa: E402
 from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
+from ymb_standardization_core.readers.pdf import common, coordinate_table, table  # noqa: E402
+from ymb_standardization_core.readers.pdf_input import read_pdf_rows  # noqa: E402
 from ymb_standardization_core.transforms import repeated_header_bottom  # noqa: E402
 
 
@@ -49,17 +51,17 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
     def test_pdf_cell_joins_line_breaks_without_removing_inline_spaces(self):
         self.assertEqual(
-            router._clean_pdf_cell("华炬 (浦江\n) 金属制品有限公司"),
+            common._clean_pdf_cell("华炬 (浦江\n) 金属制品有限公司"),
             "华炬 (浦江) 金属制品有限公司",
         )
         self.assertEqual(
-            router._clean_pdf_cell("2026-\n03-10\n09:54:35"),
+            common._clean_pdf_cell("2026-\n03-10\n09:54:35"),
             "2026-03-1009:54:35",
         )
 
     def test_coordinate_cell_preserves_same_line_spaces_only(self):
         self.assertEqual(
-            router._coordinate_cell_text([
+            coordinate_table._coordinate_cell_text([
                 (10.0, 10.0, "ABC"),
                 (10.0, 40.0, "Trading"),
                 (20.0, 10.0, "Co.,"),
@@ -68,7 +70,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "ABC TradingCo., Ltd.",
         )
         self.assertEqual(
-            router._coordinate_cell_text([
+            coordinate_table._coordinate_cell_text([
                 (10.0, 10.0, "华炬(浦江"),
                 (20.0, 10.0, ")金属制品有限公司"),
             ]),
@@ -117,8 +119,8 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 ["554", "2025-\n03-14\n14:52:16", "100101223011001005", "", "50317.66", "", "59607.77"],
             ]),
         ])
-        unchanged = router._extract_pdf_tables_default(pdf)
-        merged = router._extract_pdf_tables_default(
+        unchanged = table._extract_pdf_tables_default(pdf)
+        merged = table._extract_pdf_tables_default(
             pdf,
             row_anchor={
                 "column": "序号",
@@ -141,7 +143,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         ]
         output = []
 
-        router._append_pdf_table_rows(
+        common._append_pdf_table_rows(
             output,
             rows,
             None,
@@ -155,7 +157,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
         )
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
         self.assertEqual(route_info["fingerprint_id"], "md5:1de98a4d0d435b5daca86f7338ccd7e0")
@@ -185,18 +187,18 @@ class PdfRouterDecisionTests(unittest.TestCase):
             TESTDATA_ROOT / "斑马商业对公流水"
             / "斑马商业招行一般户（青山湖支行）-1221流水.1.pdf"
         )
-        original = router._extract_pdf_tables_default
+        original = table._extract_pdf_tables_default
         try:
-            router._extract_pdf_tables_default = lambda _pdf: (_ for _ in ()).throw(
+            table._extract_pdf_tables_default = lambda _pdf: (_ for _ in ()).throw(
                 AssertionError("pdfplumber_line_table must not call extract_tables()")
             )
 
-            _preamble, rows, route_info = router.read_pdf_rows(str(path))
+            _preamble, rows, route_info = read_pdf_rows(str(path))
 
             self.assertEqual(route_info["reader_id"], "pdfplumber_line_table")
             self.assertEqual(len(rows) - 1, 1377)
         finally:
-            router._extract_pdf_tables_default = original
+            table._extract_pdf_tables_default = original
 
     def test_pdfplumber_coordinate_table_reader_groups_separator_rows(self):
         path = (
@@ -204,7 +206,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             / "交易明细记录SHLSMX20260602415882_1.pdf"
         )
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(route_info["fingerprint_id"], "md5:350f23537180795535cad737d2e0c06b")
@@ -272,7 +274,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             with self.subTest(relative_path=relative_path):
                 path = TESTDATA_ROOT / relative_path
 
-                _preamble, rows, route_info = router.read_pdf_rows(str(path))
+                _preamble, rows, route_info = read_pdf_rows(str(path))
 
                 self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
                 self.assertEqual(route_info["fingerprint_id"], "md5:6cadae92bf0342082ec8ce1556cf1ac0")
@@ -297,7 +299,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
     def test_pdfplumber_coordinate_table_reader_uses_composite_header_from_columns(self):
         path = TESTDATA_ROOT / "陈国付103135" / "26060214275857136186.pdf"
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
@@ -331,7 +333,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
     def test_jiangxi_yumin_pdf_uses_coordinate_table_reader(self):
         path = TESTDATA_ROOT / "陈国付103135" / "APPLY2026060214573700135618149968_trade_history_sign.pdf"
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
@@ -363,7 +365,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
     def test_jiangxi_rural_commercial_pdf_uses_coordinate_table_reader(self):
         path = TESTDATA_ROOT / "艾晓林" / "江西·农商银行(2026年05月20日11时29分50秒)-2.pdf"
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(rows[0], [
@@ -390,7 +392,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         if not path.exists():
             self.skipTest("本地未提供李先根 GRZD 浙江庆元农商 PDF 样本")
 
-        _preamble, rows, route_info = router.read_pdf_rows(str(path))
+        _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
         self.assertEqual(route_info["fingerprint_id"], "md5:eb90af33b5f89117b801f28b10fdc111")
@@ -441,7 +443,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertIn(marker, by_id["md5:736db5142663fe121ee00a19d869e2a9"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "pdf_rules.yaml"
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "pdf_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:

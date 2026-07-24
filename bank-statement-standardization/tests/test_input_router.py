@@ -226,8 +226,7 @@ class InputRouterTests(unittest.TestCase):
     def test_boc_hisxls_bilingual_corporate_excel_route(self):
         module = load_input_router()
         excel = (
-            ROOT
-            / "testdata"
+            TESTDATA_ROOT
             / "吉安超创电子PCB"
             / "HISXLS-20250101-20250630-0842744197688651565.xls"
         )
@@ -257,8 +256,7 @@ class InputRouterTests(unittest.TestCase):
     def test_account_header_debit_credit_excel_does_not_infer_bank_from_filename(self):
         module = load_input_router()
         excel = (
-            ROOT
-            / "testdata"
+            TESTDATA_ROOT
             / "广州沛瑾家具"
             / "广州沛瑾家具有限公司_中国工商银行_TF_1.xlsx"
         )
@@ -569,7 +567,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["file_type"], "excel")
 
     def test_excel_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "readers" / "routing" / "excel_rules.yaml"
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "excel_rules.yaml"
         items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
 
         for item in items:
@@ -971,8 +969,7 @@ class InputRouterTests(unittest.TestCase):
     def test_card_detail_download_excel_route_does_not_infer_bank(self):
         module = load_input_router()
         excel = (
-            ROOT
-            / "testdata"
+            TESTDATA_ROOT
             / "广州沛瑾家具"
             / "广州沛瑾家具有限公司@李果红_中国工商银行_TF_1.xlsx"
         )

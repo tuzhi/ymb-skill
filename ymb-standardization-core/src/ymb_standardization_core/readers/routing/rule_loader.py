@@ -270,7 +270,7 @@ def suggest_fingerprint(context, text):
 
 def _yaml_version(name):
     """返回可用于进程内缓存失效的 YAML 文件版本。"""
-    path = Path(__file__).resolve().parent / name
+    path = Path(__file__).resolve().parents[2] / "config" / "routing" / name
     stat = path.stat()
     return str(path), stat.st_mtime_ns, stat.st_size
 

@@ -179,7 +179,7 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
 - 用 `--header-row N` 指定表头行；
 - 用 `--map "原始列名=标准字段"` 手工覆盖个别列；
 - 标准化入口不接收客户名称参数；`本方名称` 只允许来自文件证据；
-- 或在 `ymb-standardization-core/src/ymb_standardization_core/` 的对应标准化或路由层补充规则。
+- 或在 `ymb-standardization-core/src/ymb_standardization_core/config/routing/` 补充模板规则；通用路由机制仍位于 `readers/routing/`。
 
 ## 测试验证
 

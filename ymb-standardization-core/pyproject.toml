@@ -20,4 +20,4 @@ where = ["src"]
 include = ["ymb_standardization_core*"]
 
 [tool.setuptools.package-data]
-ymb_standardization_core = ["readers/routing/*.yaml", "readers/routing/*.csv"]
+ymb_standardization_core = ["config/routing/*"]
