@@ -27,6 +27,7 @@ class RouteRule:
     source_order: str = ""
     date_order: str = ""
     multi_sheet_same_layout: bool = False
+    dedupe_chars: bool = False
     header_merge: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
@@ -512,6 +513,10 @@ def _multi_sheet_same_layout(item):
     return bool(_reader_options(item).get("multi_sheet_same_layout", False))
 
 
+def _dedupe_chars(item):
+    return bool(_reader_options(item).get("dedupe_chars", False))
+
+
 def _header_merge(item):
     config = _reader_options(item).get("header_merge") or {}
     if not config:
@@ -673,6 +678,7 @@ def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
             source_order=_source_order(item),
             date_order=_date_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
+            dedupe_chars=_dedupe_chars(item),
             header_merge=_header_merge(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),

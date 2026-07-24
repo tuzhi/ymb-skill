@@ -1,9 +1,10 @@
 import re
+from types import SimpleNamespace
 
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
 
-def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
+def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, column_mapping,
                    identity_evidence, columns_evidence, route_evidence=None,
                    decision="matched", required_columns_evidence=None,
                    optional_columns_evidence=None, missing_required_columns=None,
@@ -16,6 +17,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "file_type": file_type,
         "bank": bank,
         "account_type": account_type,
+        "series_family": series_family,
         "column_mapping": column_mapping,
         "identity_evidence": identity_evidence,
         "columns_evidence": columns_evidence,
@@ -29,6 +31,8 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, column_mapping,
         "split_amount_balance": route_evidence.get("split_amount_balance", {}) if route_evidence else {},
         "amount_columns": route_evidence.get("amount_columns", []) if route_evidence else [],
         "extract_patterns": route_evidence.get("extract_patterns", []) if route_evidence else [],
+        "dedupe_chars": route_evidence.get("dedupe_chars", False) if route_evidence else False,
+        "header_merge": route_evidence.get("header_merge", {}) if route_evidence else {},
         "preamble_mapping": route_evidence.get("preamble_mapping", {}) if route_evidence else {},
         "preamble_extractors": route_evidence.get("preamble_extractors", []) if route_evidence else [],
         "conditional_mapping": route_evidence.get("conditional_mapping", []) if route_evidence else [],
@@ -53,6 +57,8 @@ def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=
         "file_type": "pdf",
         "fingerprint_id": "",
         "account_type": "",
+        "series_family": "",
+        "dedupe_chars": False,
         "column_mapping": {},
         "candidate_fingerprints": candidate_fingerprints or [],
     }
@@ -127,6 +133,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
             file_type=rule.file_type,
             bank=rule.bank,
             account_type=rule.account_type,
+            series_family=rule.series_family,
             column_mapping=rule.column_mapping,
             identity_evidence=match["identity_evidence"],
             columns_evidence=match["columns_evidence"],
@@ -143,6 +150,8 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "split_amount_balance": rule.split_amount_balance,
                 "amount_columns": rule.amount_columns,
                 "extract_patterns": rule.extract_patterns,
+                "dedupe_chars": rule.dedupe_chars,
+                "header_merge": rule.header_merge,
                 "preamble_mapping": rule.preamble_mapping,
                 "preamble_extractors": rule.preamble_extractors,
                 "conditional_mapping": rule.conditional_mapping,
@@ -1489,16 +1498,27 @@ def read_pdf_rows(path, open_password=None):
         preamble = pdf.pages[0].extract_text() if pdf.pages else ""
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
+        reader_pdf = pdf
+        if route_info.get("dedupe_chars"):
+            reader_pdf = SimpleNamespace(
+                pages=[page.dedupe_chars() for page in pdf.pages],
+            )
+            preamble = reader_pdf.pages[0].extract_text() if reader_pdf.pages else ""
+            text = "\n".join(page.extract_text() or "" for page in reader_pdf.pages)
 
         # fingerprint 已定位但银行导出选项不完整时，保留路由证据交给阶段一 QC；
         # 不继续执行 Reader，避免将不完整格式误当成普通解析失败或可交付流水。
         if route_info.get("decision") == "matched_incomplete":
             return preamble or "", [], route_info
 
-        table_rows = _extract_pdf_rows_by_reader(pdf, route_info.get("reader_id", ""), route_info)
+        table_rows = _extract_pdf_rows_by_reader(
+            reader_pdf,
+            route_info.get("reader_id", ""),
+            route_info,
+        )
         table_rows = _annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") == "pdfplumber_coordinate_table" and table_rows:
-            metadata_preamble = _coordinate_metadata_preamble(pdf, route_info)
+            metadata_preamble = _coordinate_metadata_preamble(reader_pdf, route_info)
             text_preamble = _preamble_before_reader_header(text, table_rows[0])
             preamble = "\n".join(
                 part for part in [metadata_preamble, text_preamble]
@@ -1516,14 +1536,14 @@ def read_pdf_rows(path, open_password=None):
                 preamble = _preamble_before_reader_header(preamble, rows[0])
             return preamble or "", rows, route_info
         if route_info.get("decision") == "unmatched":
-            table_rows = _extract_pdf_tables_default(pdf)
+            table_rows = _extract_pdf_tables_default(reader_pdf)
             if table_rows:
                 route_info = {
                     **route_info,
                     "reader_id": "pdfplumber_table",
                 }
             else:
-                table_rows = _extract_pdf_tables_from_horizontal_lines(pdf)
+                table_rows = _extract_pdf_tables_from_horizontal_lines(reader_pdf)
                 if table_rows:
                     route_info = {
                         **route_info,

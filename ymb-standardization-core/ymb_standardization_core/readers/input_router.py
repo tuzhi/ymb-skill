@@ -345,7 +345,7 @@ def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     return reader(path)
 
 
-def _merge_configured_excel_header(rows, route_info):
+def _merge_configured_header(rows, route_info):
     """按 fingerprint 显式配置合并多层表头，不改变原始数据行号。"""
     config = (route_info or {}).get("header_merge") or {}
     if not rows or not config:
@@ -361,8 +361,12 @@ def _merge_configured_excel_header(rows, route_info):
     header_index = max(
         range(min(30, len(rows))),
         key=lambda index: sum(
-            1 for value in rows[index]
-            if str(value or "").strip() in route_columns
+            1
+            for value in rows[index]
+            if any(
+                marker in str(value or "").strip()
+                for marker in route_columns
+            )
         ),
     )
     if header_index + row_count > len(rows):
@@ -507,7 +511,7 @@ def read_rows(path, hints=None):
             )
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
             rows = _read_cmb_mixed_grid(rows)
-        rows, route_info = _merge_configured_excel_header(rows, route_info)
+        rows, route_info = _merge_configured_header(rows, route_info)
         return ReadResult(
             kind="excel",
             preamble="",
@@ -518,6 +522,7 @@ def read_rows(path, hints=None):
         raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
         preamble, rows, route_info = read_pdf_rows(path, open_password=open_password)
+        rows, route_info = _merge_configured_header(rows, route_info)
         return ReadResult(
             kind="pdf",
             preamble=preamble,
