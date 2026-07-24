@@ -881,10 +881,28 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             self.assertEqual(out_rows[0]["开户行"], "中国工商银行")
 
     def test_card_bin_bank_name_uses_external_mapping_config(self):
-        self.assertEqual(
-            standardize.bank_name_from_card_bin({"bank": "CEB"}),
-            "中国光大银行",
-        )
+        expected_names = {
+            "CEB": "中国光大银行",
+            "CSRCB": "常熟农商银行",
+            "KMRCU": "昆明农村信用联合社",
+        }
+        for bank_code, expected_name in expected_names.items():
+            with self.subTest(bank_code=bank_code):
+                self.assertEqual(
+                    standardize.bank_name_from_card_bin({"bank": bank_code}),
+                    expected_name,
+                )
+
+    def test_card_bin_bank_mapping_covers_every_configured_bank_code(self):
+        bin_codes = {
+            str(rule.get("bank") or "").strip()
+            for rule in standardize.load_card_bin_rules()
+        }
+        bank_names = standardize.load_card_bin_bank_names()
+
+        self.assertNotIn("", bin_codes)
+        self.assertEqual(set(bank_names), bin_codes)
+        self.assertTrue(all(name.strip() for name in bank_names.values()))
 
     def test_mybank_pdf_uses_enterprise_name_and_router_bank(self):
         pdf = (
