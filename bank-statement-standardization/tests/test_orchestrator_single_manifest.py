@@ -345,9 +345,45 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             ):
                 result = runner.stage_4_package()
 
-            validate_final.assert_called_once_with(str(out), "客户", tagged_rows=1)
+            validate_final.assert_called_once_with(
+                str(out), "客户", tagged_rows=1, require_daily_balance=True)
             self.assertEqual(result, final)
             self.assertEqual(runner.final_validation_result, final)
+
+    def test_stage_4_allows_missing_optional_daily_balance_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            work = root / "work"
+            out = root / "artifacts"
+            work.mkdir()
+            out.mkdir()
+            (work / "客户__整合报告.json").write_text("{}", encoding="utf-8")
+            (work / "客户__打标流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
+            (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
+            (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(client="客户")
+            runner.out_dir = str(out)
+            runner.manifest = {"skipped_inputs": []}
+            runner.final_validation_result = None
+            runner.work_dir = lambda: str(work)
+            final = {
+                "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
+                "deliverable_rows": 1,
+                "sheets": ["整合打标流水"],
+            }
+
+            with (
+                patch.object(orchestrator.P, "finalize_deliverable") as finalize,
+                patch.object(orchestrator.V, "validate_final", return_value=final) as validate_final,
+            ):
+                runner.stage_4_package()
+
+            daily = finalize.call_args.args[2]
+            self.assertTrue(daily.empty)
+            validate_final.assert_called_once_with(
+                str(out), "客户", tagged_rows=1, require_daily_balance=False)
 
     def test_stage_2_checks_report_and_csv_row_count_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:

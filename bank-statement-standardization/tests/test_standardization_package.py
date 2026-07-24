@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 RUNTIME = ROOT / "runtime"
-CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core" / "src"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 if str(CORE_PACKAGE) not in sys.path:

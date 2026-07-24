@@ -91,11 +91,18 @@ def package_skill(skill_dir, output=None):
                     continue
                 zf.write(current_path / filename, Path(top) / rel_file)
         repo_root = root.parent
-        core_package = repo_root / CORE_PACKAGE_SOURCE_RELATIVE
-        if core_package.is_dir():
-            for current, dirs, files in os.walk(core_package):
+        core_project = repo_root / CORE_PACKAGE_SOURCE_RELATIVE
+        core_source = core_project / "src"
+        if core_source.is_dir():
+            pyproject = core_project / "pyproject.toml"
+            if pyproject.is_file():
+                zf.write(
+                    pyproject,
+                    Path(top) / CORE_PACKAGE_ARCHIVE_RELATIVE / "pyproject.toml",
+                )
+            for current, dirs, files in os.walk(core_source):
                 current_path = Path(current)
-                rel_dir = current_path.relative_to(core_package)
+                rel_dir = current_path.relative_to(core_source)
                 dirs[:] = sorted(
                     d for d in dirs
                     if d not in {"__pycache__", "build", "dist"} and not d.endswith(".egg-info")

@@ -16,8 +16,8 @@ STD_REQUIRED = {
     "交易金额", "账户余额", "来源文件名", "来源行号",
 }
 TAG_REQUIRED = STD_REQUIRED | {"收支方向", "一级标签", "二级标签", "三级标签", "标签来源"}
-FINAL_SHEETS = {
-    "封面与说明", "整合打标流水", "组合日余额(虚拟账户)", "账户清单",
+FINAL_REQUIRED_SHEETS = {
+    "封面与说明", "整合打标流水", "账户清单",
     "余额校验", "标签汇总", "人工复核事项",
 }
 
@@ -132,13 +132,21 @@ def validate_integrate(work_dir):
 
 
 def validate_portfolio(work_dir):
-    csv_path = _one(work_dir, "*__组合日余额.csv")
     json_path = _one(work_dir, "*__余额校验.json")
+    report = _load_json(json_path)
+    csvs = sorted(glob.glob(os.path.join(work_dir, "*__组合日余额.csv")))
+    if not csvs:
+        balance_accounts = int(report.get("数据范围", {}).get("账户数") or 0)
+        if balance_accounts:
+            raise ValidationError(
+                f"阶段二补充报告包含 {balance_accounts} 个余额账户，但缺少组合日余额 CSV"
+            )
+        return {"portfolio_days": 0, "portfolio_report": json_path, "report_keys": sorted(report)}
+    csv_path = csvs[-1]
     try:
         df = pd.read_csv(csv_path, dtype=str)
     except Exception as exc:
         raise ValidationError(f"CSV 无法读取：{csv_path}：{exc}")
-    report = _load_json(json_path)
     if "合计余额" not in df.columns:
         raise ValidationError("阶段二补充产物缺少合计余额")
     return {"portfolio_days": len(df), "portfolio_report": json_path, "report_keys": sorted(report)}
@@ -156,7 +164,7 @@ def validate_tag(work_dir, integrated_rows=None):
     return {"tagged_rows": len(df), "tagged_csv": csv_path}
 
 
-def validate_final(out_dir, client, tagged_rows=None):
+def validate_final(out_dir, client, tagged_rows=None, require_daily_balance=False):
     path = os.path.join(out_dir, f"{client}_已清洗_待分析.xlsx")
     if not os.path.isfile(path) or os.path.getsize(path) == 0:
         raise ValidationError(f"最终交付物不存在或为空：{path}")
@@ -164,7 +172,10 @@ def validate_final(out_dir, client, tagged_rows=None):
         book = pd.ExcelFile(path)
     except Exception as exc:
         raise ValidationError(f"最终交付物无法打开：{path}：{exc}")
-    missing = sorted(FINAL_SHEETS - set(book.sheet_names))
+    required_sheets = set(FINAL_REQUIRED_SHEETS)
+    if require_daily_balance:
+        required_sheets.add("组合日余额(虚拟账户)")
+    missing = sorted(required_sheets - set(book.sheet_names))
     if missing:
         raise ValidationError(f"最终交付物缺少 sheet：{', '.join(missing)}")
     flow = pd.read_excel(path, sheet_name="整合打标流水", dtype=str)
@@ -183,7 +194,11 @@ def validate_all(work_dir, out_dir, client):
     result["stage_2b_portfolio"] = validate_portfolio(work_dir)
     result["stage_3_tag"] = validate_tag(work_dir, integrated_rows=integrated_rows)
     result["stage_4_deliverable"] = validate_final(
-        out_dir, client, tagged_rows=result["stage_3_tag"]["tagged_rows"])
+        out_dir,
+        client,
+        tagged_rows=result["stage_3_tag"]["tagged_rows"],
+        require_daily_balance=bool(glob.glob(os.path.join(work_dir, "*__组合日余额.csv"))),
+    )
     return result
 
 

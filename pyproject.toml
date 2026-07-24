@@ -18,6 +18,7 @@ standardization = [
   "msoffcrypto-tool>=5.4,<6",
 ]
 test = [
+  "mypy>=1.13,<2",
   "pytest>=8.2",
 ]
 
@@ -26,9 +27,21 @@ testpaths = [
   "bank-statement-standardization/tests",
 ]
 pythonpath = [
-  "ymb-standardization-core",
+  "ymb-standardization-core/src",
   "bank-statement-standardization/scripts",
 ]
 
 [tool.setuptools]
 py-modules = []
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "ymb-standardization-core/src"
+files = [
+  "ymb-standardization-core/src/ymb_standardization_core/models/read_result.py",
+  "ymb-standardization-core/src/ymb_standardization_core/readers/base.py",
+  "ymb-standardization-core/src/ymb_standardization_core/readers/registry.py",
+  "ymb-standardization-core/src/ymb_standardization_core/transforms/repeated_header.py",
+]
+strict = true
+follow_imports = "skip"

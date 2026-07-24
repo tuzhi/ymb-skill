@@ -44,7 +44,7 @@ class PackageSkillTest(unittest.TestCase):
             "testoutput/run/final.xlsx",
             "runs/run-id/manifest.json",
             "原始流水数据/source.xlsx",
-            "tools/TransactionMemoryBenchmark.java",
+            "tools/qa/audit_testdata_support.py",
         ):
             with self.subTest(path=path):
                 self.assertTrue(package_skill._is_excluded(Path(path)))

@@ -42,7 +42,7 @@ token_vault_service = ["static/*.html"]
 testpaths = ["tests"]
 pythonpath = [
   "src",
-  "../ymb-standardization-core",
+  "../ymb-standardization-core/src",
 ]
 
 

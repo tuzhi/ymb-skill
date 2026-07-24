@@ -86,7 +86,7 @@ def _copy_deliverables(work_dir, run_dir, index):
     return copied
 
 
-def package_one_client(index, client_dir, run_dir, temp_root):
+def package_one_client(index, client_dir, run_dir, temp_root, file_sleep_seconds=0):
     client = client_dir.name
     logs_dir = run_dir / "_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +105,8 @@ def package_one_client(index, client_dir, run_dir, temp_root):
         "--run-root",
         str(work_dir / "runs"),
     ]
+    if file_sleep_seconds:
+        cmd.extend(["--file-sleep-seconds", str(float(file_sleep_seconds))])
     proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     log_path.write_text(proc.stdout, encoding="utf-8")
 
@@ -130,13 +132,19 @@ def write_summary_csv(run_dir, rows):
     return summary
 
 
-def run_package_deliverables(testdata_root, run_dir, temp_root=None):
+def run_package_deliverables(testdata_root, run_dir, temp_root=None, file_sleep_seconds=0):
     temp_root = Path(temp_root) if temp_root else run_dir / "_package_work"
     temp_root.mkdir(parents=True, exist_ok=True)
     rows = []
     clients = iter_client_dirs(testdata_root)
     for index, client_dir in enumerate(clients, 1):
-        row = package_one_client(index, client_dir, run_dir, temp_root)
+        row = package_one_client(
+            index,
+            client_dir,
+            run_dir,
+            temp_root,
+            file_sleep_seconds=file_sleep_seconds,
+        )
         rows.append(row)
         print(f"{index:03d} {row['client']} {row['status']} {row['file_count']}", flush=True)
     return write_summary_csv(run_dir, rows), rows
@@ -149,13 +157,22 @@ def main(argv=None):
     parser.add_argument("--testdata-root", default=str(DEFAULT_TESTDATA))
     parser.add_argument("--output-root", help="默认是 testdata 同级 testoutput")
     parser.add_argument("--run-id", help="默认使用 YYYYMMDDHHMMSS")
+    parser.add_argument(
+        "--file-sleep-seconds",
+        type=float,
+        default=0,
+        help="每个客户 Stage 1 的相邻原始文件之间暂停秒数；默认不暂停",
+    )
     args = parser.parse_args(argv)
 
     testdata_root = Path(args.testdata_root)
     run_dir = create_run_dir(testdata_root, run_id=args.run_id, output_root=args.output_root)
     print(f"run_dir={run_dir}")
 
-    summary_csv, rows = run_package_deliverables(testdata_root, run_dir)
+    package_kwargs = {}
+    if args.file_sleep_seconds:
+        package_kwargs["file_sleep_seconds"] = args.file_sleep_seconds
+    summary_csv, rows = run_package_deliverables(testdata_root, run_dir, **package_kwargs)
     support_xlsx, baseline_json = run_support_matrix_from_package_work(
         testdata_root,
         run_dir,

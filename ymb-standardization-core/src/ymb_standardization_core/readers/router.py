@@ -1,7 +1,9 @@
 import re
 from types import SimpleNamespace
 
+from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
+from ymb_standardization_core.transforms import repeated_header_bottom
 
 
 def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, column_mapping,
@@ -329,39 +331,72 @@ def _postprocess_reader_rows(rows, route_info):
     return rows
 
 
-def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
-    route_info = route_info or {}
-    if reader_id == "pdfplumber_coordinate_table":
-        coordinate_rows = _extract_pdf_coordinate_table_rows(
+def _read_coordinate_table(pdf, options):
+    rows = _extract_pdf_vertical_boundary_table_rows(
+        pdf,
+        options.get("reader_header_candidates") or [],
+        options.get("row_anchor") or {},
+        word_filters=options.get("word_filters") or {},
+    )
+    if not rows:
+        rows = _extract_pdf_coordinate_table_rows(
             pdf,
-            route_info.get("reader_header_candidates") or [],
-            route_info.get("row_anchor") or {},
-            word_filters=route_info.get("word_filters") or {},
-            repeated_header=route_info.get("repeated_header") or {},
+            options.get("reader_header_candidates") or [],
+            options.get("row_anchor") or {},
+            word_filters=options.get("word_filters") or {},
+            repeated_header=options.get("repeated_header") or {},
         )
-        separator_rows = _extract_pdf_text_separator_table_rows(pdf)
-        if separator_rows and (
-            not coordinate_rows or len(coordinate_rows[0]) < len(separator_rows[0])
+    separator_rows = _extract_pdf_text_separator_table_rows(pdf)
+    if separator_rows and (
+        not rows or len(rows[0]) < len(separator_rows[0])
+    ):
+        rows = separator_rows
+    return _postprocess_reader_rows(rows, options)
+
+
+def _read_text_lines(pdf, options):
+    text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    return _extract_pdf_text_table_rows(
+        text,
+        options.get("text_table_layout") or "",
+    )
+
+
+def _read_line_table(pdf, _options):
+    return _extract_pdf_tables_from_horizontal_lines(pdf)
+
+
+def _read_default_table(pdf, options):
+    rows = _extract_pdf_tables_default(
+        pdf,
+        word_filters=options.get("word_filters") or {},
+        row_anchor=options.get("row_anchor") or {},
+    )
+    return _drop_configured_rows(rows, options.get("drop_rows") or [])
+
+
+_PDF_READER_REGISTRY = None
+
+
+def pdf_reader_registry():
+    """返回进程级只读 PDF Reader 注册表。"""
+    global _PDF_READER_REGISTRY
+    if _PDF_READER_REGISTRY is None:
+        registry = PdfReaderRegistry()
+        for reader in (
+            FunctionPdfReader("pdfplumber_table", _read_default_table),
+            FunctionPdfReader("pdfplumber_line_table", _read_line_table),
+            FunctionPdfReader("pdfplumber_text_lines", _read_text_lines),
+            FunctionPdfReader("pdfplumber_coordinate_table", _read_coordinate_table),
         ):
-            return separator_rows
-        return coordinate_rows
-    if reader_id == "pdfplumber_grid_line_table":
-        return _postprocess_reader_rows(_extract_pdf_grid_line_table_rows(
-            pdf,
-            route_info.get("reader_header_candidates") or [],
-            route_info.get("row_anchor") or {},
-            word_filters=route_info.get("word_filters") or {},
-        ), route_info)
-    if reader_id == "pdfplumber_line_table":
-        return _extract_pdf_tables_from_horizontal_lines(pdf)
-    if reader_id == "pdfplumber_table":
-        rows = _extract_pdf_tables_default(
-            pdf,
-            word_filters=route_info.get("word_filters") or {},
-            row_anchor=route_info.get("row_anchor") or {},
-        )
-        return _drop_configured_rows(rows, route_info.get("drop_rows") or [])
-    return []
+            registry.register(reader)
+        _PDF_READER_REGISTRY = registry
+    return _PDF_READER_REGISTRY
+
+
+def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
+    reader = pdf_reader_registry().get(reader_id)
+    return reader.read(pdf, route_info or {}) if reader is not None else []
 
 
 def _clean_pdf_cell(value):
@@ -740,7 +775,7 @@ def _coordinate_cell_text(cell):
     return _clean_pdf_cell("\n".join(lines))
 
 
-def _grid_line_vertical_boundaries(page, min_segments=5, body_top_min=None):
+def _vertical_boundary_positions(page, min_segments=5, body_top_min=None):
     counts = {}
     for edge in page.edges:
         if edge.get("orientation") != "v":
@@ -757,7 +792,7 @@ def _grid_line_vertical_boundaries(page, min_segments=5, body_top_min=None):
     return boundaries if len(boundaries) >= 3 else []
 
 
-def _grid_line_anchor_text_match(word, row_anchor):
+def _vertical_boundary_anchor_text_match(word, row_anchor):
     import re
 
     text = str(word.get("text") or "").strip()
@@ -774,7 +809,7 @@ def _grid_line_anchor_text_match(word, row_anchor):
     return bool(text)
 
 
-def _grid_line_header_match(text, candidate_header):
+def _vertical_boundary_header_match(text, candidate_header):
     tokens = [token.lower() for token in str(candidate_header or "").split() if token]
     if not tokens:
         return False
@@ -789,7 +824,7 @@ def _grid_line_header_match(text, candidate_header):
     return True
 
 
-def _grid_line_headers(words, boundaries, candidate_headers, first_anchor_top):
+def _vertical_boundary_headers(words, boundaries, candidate_headers, first_anchor_top):
     candidate_headers = [str(header).strip() for header in candidate_headers if str(header).strip()]
     headers = []
     for index, (left, right) in enumerate(zip(boundaries, boundaries[1:])):
@@ -804,7 +839,7 @@ def _grid_line_headers(words, boundaries, candidate_headers, first_anchor_top):
         ))
         match = ""
         for header in candidate_headers:
-            if _grid_line_header_match(text, header):
+            if _vertical_boundary_header_match(text, header):
                 match = header
                 break
         headers.append(match or f"列{index + 1}")
@@ -823,20 +858,24 @@ def _coordinate_row_bounds(index, anchors, body_top_min, page_height, row_anchor
     return start_top, end_top
 
 
-def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
-    """Use real vertical ruling lines for x columns and row_anchor words for y rows."""
+def _extract_pdf_vertical_boundary_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
+    """Coordinate-reader strategy: use stable vertical boundaries and row-anchor words."""
     all_rows = []
     output_headers = None
     row_anchor = row_anchor or {}
     for page in pdf.pages:
         words = _coordinate_page_words(page, word_filters=word_filters)
         first_anchor_top = min(
-            (float(word.get("top", 0)) for word in words if _grid_line_anchor_text_match(word, row_anchor)),
+            (
+                float(word.get("top", 0))
+                for word in words
+                if _vertical_boundary_anchor_text_match(word, row_anchor)
+            ),
             default=None,
         )
         if first_anchor_top is None:
             continue
-        boundaries = _grid_line_vertical_boundaries(page, body_top_min=first_anchor_top)
+        boundaries = _vertical_boundary_positions(page, body_top_min=first_anchor_top)
         if not boundaries:
             continue
         anchor_column = str(row_anchor.get("column") or "").strip()
@@ -854,7 +893,7 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, w
         anchors = sorted((top, word) for top, word, _index in anchors)
         if not anchors:
             continue
-        headers = _grid_line_headers(words, boundaries, candidate_headers, anchors[0][0])
+        headers = _vertical_boundary_headers(words, boundaries, candidate_headers, anchors[0][0])
         if anchor_column and anchor_column in headers:
             anchor_index = headers.index(anchor_column)
         else:
@@ -905,23 +944,6 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, w
     return all_rows if len(all_rows) > 1 else []
 
 
-def _coordinate_repeated_header_bottom(words, header_top, first_anchor_top, config):
-    end_markers = {
-        str(marker).strip()
-        for marker in (config or {}).get("end_markers", [])
-        if str(marker).strip()
-    }
-    if not end_markers or first_anchor_top is None:
-        return None
-    bottoms = [
-        float(word.get("bottom", word.get("top", 0)))
-        for word in words
-        if header_top <= float(word.get("top", 0)) < first_anchor_top
-        and str(word.get("text") or "").strip() in end_markers
-    ]
-    return max(bottoms) if bottoms else None
-
-
 def _extract_pdf_coordinate_table_rows(
         pdf, candidate_headers, row_anchor=None, word_filters=None,
         repeated_header=None):
@@ -967,14 +989,14 @@ def _extract_pdf_coordinate_table_rows(
             ),
             default=None,
         )
-        repeated_header_bottom = _coordinate_repeated_header_bottom(
+        repeated_header_bottom_value = repeated_header_bottom(
             words,
             header_top if page_starts is not None else body_top_min,
             first_anchor_top,
             repeated_header,
         )
-        if repeated_header_bottom is not None:
-            body_top_min = max(body_top_min, repeated_header_bottom)
+        if repeated_header_bottom_value is not None:
+            body_top_min = max(body_top_min, repeated_header_bottom_value)
         drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
         stop_top = _coordinate_stop_top(words, word_filters=word_filters)
         body_words = [

@@ -176,7 +176,7 @@
       field: 对手名称
       pattern: '^Paid for Ref\s+(?:X[A-Z0-9]{4,}|\d+)\s+(.*)$'
       replacement: '\1'
-  reader_id: pdfplumber_grid_line_table
+  reader_id: pdfplumber_coordinate_table
 - id: md5:eb90af33b5f89117b801f28b10fdc111
   file_type: pdf
   bank: 浙江庆元农商银行
@@ -463,7 +463,7 @@
       field: 对手账户
       pattern: '^([0-9*]{8,})$'
   reader_id: pdfplumber_table
-- id: md5:4bc420e58476b2ac78274d490018f216
+- id: md5:6c51495092e9abac017b130c6e41991d
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -481,7 +481,30 @@
         交易金额: 交易金额
         账户余额: 账户余额
         对方账号与户名: 对手名称
+      optional:
+        序号: {}
+        摘要:
+          field: 银行备注
+        币别: {}
+        钞汇: {}
+        交易日期:
+          field: 交易日期
+        交易地点/附言:
+          field: 账户方附言
+    style:
+      all:
+      - text: 中国建设银行个人活期账户全部交易明细
+        font: STSong-Light
+        size_min: 14.5
+        size_max: 15.5
+        top_max: 30
   reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d{1,6}$'
+    word_filters:
+      stop_line_contains_any:
+      - 生成时间
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户
@@ -491,6 +514,50 @@
       pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
       replacement: ''
   reader_id: pdfplumber_table
+- id: md5:64d7b7142eb110705657f8871d27877f
+  file_type: pdf
+  bank: 中国建设银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国建设银行个人活期账户全部交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户名称[:：]\s*([^\s]+)'
+    columns:
+      all:
+        卡号/账号: 本方账户
+        客户名称: 本方名称
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号与户名: 对手名称
+      optional:
+        序号: {}
+        摘要:
+          field: 银行备注
+        币别: {}
+        钞汇: {}
+        交易日期:
+          field: 交易日期
+        交易地点/附言:
+          field: 账户方附言
+  reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d{1,6}$'
+    word_filters:
+      stop_line_contains_any:
+      - 生成时间
+    extract_mapping:
+    - source: 对方账号与户名
+      field: 对手账户
+      pattern: '^([A-Z0-9][A-Z0-9*]{7,})/.*$'
+    - source: 对方账号与户名
+      field: 对手名称
+      pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
+      replacement: ''
+  reader_id: pdfplumber_coordinate_table
 - id: md5:6db7b0df2ee808ba9fd0c559c836200e
   file_type: pdf
   bank: 中国建设银行

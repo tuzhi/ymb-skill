@@ -4,7 +4,6 @@
 字段映射、金额方向、账户识别仍由 core.standardize 处理。
 """
 
-from dataclasses import dataclass
 import base64
 import inspect
 import os
@@ -16,14 +15,7 @@ import xml.etree.ElementTree as ET
 from ymb_standardization_core.readers.router import read_pdf_rows
 from ymb_standardization_core.readers.routing.rule_loader import load_excel_route_rules
 from ymb_standardization_core.contracts import RouteDecision
-
-
-@dataclass
-class ReadResult:
-    kind: str
-    preamble: str
-    rows: list
-    route_info: RouteDecision
+from ymb_standardization_core.models import ReadResult
 
 
 _excel_reader = None

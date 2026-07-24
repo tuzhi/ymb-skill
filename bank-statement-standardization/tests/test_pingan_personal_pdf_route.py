@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
 SCRIPTS = ROOT / "scripts"
-CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core" / "src"
 QA_DIR = ROOT / "tools" / "qa"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))

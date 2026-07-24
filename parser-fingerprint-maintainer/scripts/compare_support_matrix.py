@@ -10,7 +10,7 @@ import sys
 
 
 def _add_core_path(repo_root: Path) -> None:
-    core = repo_root / "ymb-standardization-core"
+    core = repo_root / "ymb-standardization-core" / "src"
     if str(core) not in sys.path:
         sys.path.insert(0, str(core))
 

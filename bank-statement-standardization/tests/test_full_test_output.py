@@ -1,5 +1,6 @@
 import csv
 import importlib.util
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -139,6 +140,34 @@ class FullTestOutputTests(unittest.TestCase):
             self.assertEqual(copied, ["客户A_已清洗_待分析.xlsx"])
             self.assertTrue((run_dir / "客户A_已清洗_待分析.xlsx").exists())
             self.assertFalse((run_dir.parent / "客户A_已清洗_待分析.xlsx").exists())
+
+    def test_package_client_passes_file_sleep_to_orchestrator(self):
+        module = load_module()
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            return subprocess.CompletedProcess(cmd, 1, stdout="stopped")
+
+        original_run = module.subprocess.run
+        try:
+            module.subprocess.run = fake_run
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                client = root / "testdata" / "客户A"
+                client.mkdir(parents=True)
+                module.package_one_client(
+                    1,
+                    client,
+                    root / "testoutput",
+                    root / "work",
+                    file_sleep_seconds=2,
+                )
+        finally:
+            module.subprocess.run = original_run
+
+        self.assertIn("--file-sleep-seconds", calls[0])
+        self.assertEqual(calls[0][calls[0].index("--file-sleep-seconds") + 1], "2.0")
 
 
 if __name__ == "__main__":

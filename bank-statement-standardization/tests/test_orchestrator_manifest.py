@@ -6,6 +6,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +101,159 @@ class OrchestratorManifestTest(unittest.TestCase):
                 orchestrator.S.standardize_file = original
 
             self.assertEqual(runner.manifest["skipped_inputs"], [])
+
+    def test_stage_one_recursively_reads_nested_customer_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            nested = source / "新余分公司"
+            nested.mkdir(parents=True)
+            statement = nested / "流水.pdf"
+            statement.write_bytes(b"%PDF-1.4\n")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
+            runner.out_dir = str(root / "output")
+            runner.run_dir = str(root)
+            runner.manifest = {
+                "skipped_inputs": [],
+                "client": "测试客户",
+                "stage_1_standardize": {"route_artifact": ""},
+            }
+            runner.write_manifest = lambda: None
+
+            def standardize(context):
+                work = Path(context.out_dir)
+                output = work / "流水__pdf__standardized.csv"
+                self._write_standardized_csv(output, statement.name)
+                return str(output), "", {
+                    "标准化统计": {"交易笔数": 1},
+                    "路由信息": {},
+                }
+
+            with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
+                result = runner.stage_1_standardize()
+
+            self.assertEqual(result["processed_files"], 1)
+            self.assertEqual(Path(result["standardized"][0]["input"]), statement)
+
+    def test_stage_one_keeps_zero_row_output_for_validator_to_reject(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            empty_source = source / "空流水.pdf"
+            valid_source = source / "有效流水.pdf"
+            empty_source.write_bytes(b"%PDF-1.4\n")
+            valid_source.write_bytes(b"%PDF-1.4\n")
+
+            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
+            runner.out_dir = str(root / "output")
+            runner.run_dir = str(root)
+            runner.manifest = {
+                "skipped_inputs": [],
+                "client": "测试客户",
+                "stage_1_standardize": {"route_artifact": ""},
+            }
+            runner.write_manifest = lambda: None
+
+            def standardize(context):
+                work = Path(context.out_dir)
+                stem = Path(context.path).stem
+                output = work / f"{stem}__pdf__standardized.csv"
+                if Path(context.path) == empty_source:
+                    output.write_text(",".join(sorted(orchestrator.V.STD_REQUIRED)) + "\n", encoding="utf-8")
+                    rows = 0
+                else:
+                    self._write_standardized_csv(output, valid_source.name)
+                    rows = 1
+                return str(output), "", {
+                    "标准化统计": {"交易笔数": rows},
+                    "路由信息": {},
+                }
+
+            with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
+                result = runner.stage_1_standardize()
+
+            self.assertEqual(result["processed_files"], 2)
+            self.assertTrue((Path(runner.work_dir()) / "空流水__pdf__standardized.csv").exists())
+            self.assertEqual(runner.manifest["skipped_inputs"], [])
+            with self.assertRaisesRegex(orchestrator.V.ValidationError, "CSV 无交易数据"):
+                orchestrator.V.validate_standardize(
+                    runner.work_dir(),
+                    file_routes=runner.load_stage_1_routes(),
+                )
+
+    def test_ccb_personal_coordinate_pdf_reads_all_transactions(self):
+        source = (
+            Path("/Users/tuzhi/Developer/ymb-skill-data/testdata")
+            / "程旭" / "程旭建行2025.1-3月.pdf"
+        )
+        continuation = source.with_name("程旭建行2025.1-3月（2）.pdf")
+        if not source.exists():
+            self.skipTest("本地未提供建行个人横向 PDF 样本")
+
+        file_kind, _preamble, rows, route = orchestrator.S.read_rows(str(source))
+
+        self.assertEqual(file_kind, "pdf")
+        self.assertEqual(route["reader_id"], "pdfplumber_coordinate_table")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["bank"], "中国建设银行")
+        self.assertEqual(rows[0][0], "序号")
+        self.assertEqual(len(rows), 571)
+        self.assertEqual(rows[1][0], "1")
+        self.assertEqual(rows[-1][0], "570")
+        self.assertEqual(rows[-1][4], "20250326")
+        self.assertEqual(rows[-1][5], "-40,157.00")
+        self.assertNotIn("生成时间", "".join(rows[-1]))
+
+        _kind, _preamble, continuation_rows, continuation_route = (
+            orchestrator.S.read_rows(str(continuation))
+        )
+        self.assertEqual(continuation_route["fingerprint_id"], route["fingerprint_id"])
+        self.assertEqual(len(continuation_rows), 34)
+        self.assertEqual(continuation_rows[1][0], "571")
+        self.assertEqual(continuation_rows[-1][0], "603")
+        self.assertEqual(continuation_rows[-1][4], "20250331")
+        self.assertNotIn("生成时间", "".join(continuation_rows[-1]))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path, _mapping_path, report = orchestrator.S.standardize_file(
+                orchestrator.S.StandardizationContext(
+                    path=str(source),
+                    out_dir=tmp,
+                    write_mapping=False,
+                )
+            )
+            with Path(csv_path).open(encoding="utf-8-sig", newline="") as f:
+                standardized = list(csv.DictReader(f))
+
+        self.assertEqual(report["标准化统计"]["交易笔数"], 570)
+        self.assertEqual(len(standardized), 570)
+        self.assertEqual(standardized[0]["本方名称"], "程旭")
+        self.assertEqual(standardized[0]["本方账户"], "6236682020001828281")
+        self.assertEqual(standardized[0]["交易时间"], "2025-01-01")
+        self.assertEqual(standardized[-1]["交易时间"], "2025-03-26")
+        self.assertEqual(standardized[-1]["交易金额"], "-40157.0")
+
+    def test_ccb_personal_portrait_pdf_keeps_native_table_reader(self):
+        source = (
+            Path("/Users/tuzhi/Developer/ymb-skill-data/testdata")
+            / "涂志" / "hqmx_20260604142056.pdf"
+        )
+        if not source.exists():
+            self.skipTest("本地未提供建行个人竖向 PDF 样本")
+
+        file_kind, _preamble, rows, route = orchestrator.S.read_rows(str(source))
+
+        self.assertEqual(file_kind, "pdf")
+        self.assertEqual(route["reader_id"], "pdfplumber_table")
+        self.assertEqual(route["fingerprint_id"], "md5:6c51495092e9abac017b130c6e41991d")
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(len(rows), 760)
+        self.assertEqual(rows[1][0], "1")
+        self.assertEqual(rows[-1][0], "759")
 
     def test_inventory_excludes_token_vault_secret_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:

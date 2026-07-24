@@ -32,7 +32,7 @@ from _paths import TESTDATA_ROOT, TESTOUTPUT_ROOT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = ROOT.parent
-CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core" / "src"
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
@@ -412,10 +412,39 @@ def _new_record_and_baseline(path, root, today):
     return record, baseline
 
 
-def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_path):
-    with open(json_path, encoding="utf-8") as f:
-        mapping = json.load(f)
-    image = mapping.get("文件画像", {})
+def _stage_route_image(csv_path):
+    """从 Stage 1 的轻量路由契约恢复支持矩阵需要的文件画像。"""
+    route_path = Path(csv_path).parent / "stage_1_routes.json"
+    if not route_path.exists():
+        return {}
+    with route_path.open(encoding="utf-8") as f:
+        routes = json.load(f)
+    route = routes.get(Path(csv_path).name) or {}
+    fingerprint_id = str(route.get("fingerprint_id") or "").strip()
+    rule = ROUTE_RULE_INDEX.get(fingerprint_id) or {}
+    with open(csv_path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
+    first = rows[0] if rows else {}
+    return {
+        "fingerprint_id": fingerprint_id,
+        "reader_id": str(rule.get("reader_id") or "").strip(),
+        "命中模板": "自动同义词映射",
+        "确认银行": str(route.get("router_bank") or "").strip(),
+        "本方名称": str(first.get("本方名称") or "").strip(),
+        "本方账户": str(first.get("本方账户") or "").strip(),
+    }
+
+
+def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_path=None):
+    image = {}
+    if json_path and Path(json_path).exists():
+        with open(json_path, encoding="utf-8") as f:
+            mapping = json.load(f)
+        image = mapping.get("文件画像", {})
+    if not image:
+        image = _stage_route_image(csv_path)
+    if not image:
+        raise ValueError("缺少 mapping.json 和 stage_1_routes.json")
     summary = read_csv_summary(csv_path)
 
     fingerprint_id = image.get("fingerprint_id") or ""
@@ -629,7 +658,7 @@ def build_outputs_from_standardized_artifacts(testdata_root, package_work_root, 
     for csv_path in sorted(package_work_root.rglob("*__standardized.csv")):
         json_path = csv_path.with_name(csv_path.name.replace("__standardized.csv", "__mapping.json"))
         original = _match_original_file(csv_path, testdata_root, files_by_client_and_name)
-        if not original or not json_path.exists():
+        if not original:
             continue
         relative = original.relative_to(testdata_root).as_posix()
         record, baseline = _new_record_and_baseline(original, testdata_root, today)

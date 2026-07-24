@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 import zipfile
@@ -19,6 +20,61 @@ def load_module():
 
 
 class AuditTestdataSupportTests(unittest.TestCase):
+    def test_build_outputs_uses_stage_route_when_mapping_json_is_not_persisted(self):
+        module = load_module()
+        fingerprint = {"identity": {"any": ["测试银行"]}}
+        fingerprint_id = module.fingerprint_md5(fingerprint)
+        original_rules = module.ROUTE_RULE_INDEX
+        try:
+            module.ROUTE_RULE_INDEX = {
+                fingerprint_id: {
+                    "id": fingerprint_id,
+                    "bank": "测试银行",
+                    "account_type": "个人",
+                    "reader_id": "pdfplumber_coordinate_table",
+                    "fingerprint": fingerprint,
+                },
+            }
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                testdata = root / "testdata"
+                source = testdata / "客户A" / "流水.pdf"
+                source.parent.mkdir(parents=True)
+                source.write_bytes(b"%PDF-1.4\n")
+                work = root / "_package_work" / "001_客户A" / "runs" / "run" / "artifacts" / "_工作区" / "客户A"
+                work.mkdir(parents=True)
+                csv_path = work / "流水__pdf__standardized.csv"
+                csv_path.write_text(
+                    "交易时间,本方名称,本方账户,收入金额,支出金额,来源文件名\n"
+                    "2026-01-01,张三,62170001,100,,流水.pdf\n",
+                    encoding="utf-8-sig",
+                )
+                (work / "stage_1_routes.json").write_text(
+                    json.dumps({
+                        csv_path.name: {
+                            "fingerprint_id": fingerprint_id,
+                            "router_bank": "测试银行",
+                            "yaml_match_status": "matched",
+                        },
+                    }, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+
+                _xlsx, baseline_path = module.build_outputs_from_standardized_artifacts(
+                    testdata,
+                    root / "_package_work",
+                    root / "output",
+                    write_baseline=True,
+                )
+                baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(baseline["pass_count"], 1)
+            self.assertEqual(baseline["records"][0]["mapping"]["reader_id"], "pdfplumber_coordinate_table")
+            self.assertEqual(baseline["records"][0]["mapping"]["account_name"], "张三")
+            self.assertEqual(baseline["records"][0]["csv_summary"]["row_count"], 1)
+        finally:
+            module.ROUTE_RULE_INDEX = original_rules
+
     def test_match_original_file_uses_duplicate_artifact_extension_marker(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmp:

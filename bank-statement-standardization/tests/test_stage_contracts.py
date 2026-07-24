@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CORE_ROOT = REPO_ROOT / "ymb-standardization-core"
+CORE_ROOT = REPO_ROOT / "ymb-standardization-core" / "src"
 SKILL_ROOT = REPO_ROOT / "bank-statement-standardization"
 SCRIPTS = SKILL_ROOT / "scripts"
 for path in (str(CORE_ROOT), str(SKILL_ROOT), str(SCRIPTS)):

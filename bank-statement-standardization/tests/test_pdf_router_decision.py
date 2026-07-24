@@ -8,7 +8,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
-CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core"
+CORE_PACKAGE = REPO_ROOT / "ymb-standardization-core" / "src"
 QA_DIR = ROOT / "tools" / "qa"
 if str(QA_DIR) not in sys.path:
     sys.path.insert(0, str(QA_DIR))
@@ -25,9 +25,28 @@ ROUTER_SPEC.loader.exec_module(router)
 from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  # noqa: E402
+from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
+from ymb_standardization_core.transforms import repeated_header_bottom  # noqa: E402
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_pdf_reader_registry_has_stable_reader_ids_and_rejects_duplicates(self):
+        self.assertEqual(
+            router.pdf_reader_registry().ids(),
+            (
+                "pdfplumber_table",
+                "pdfplumber_line_table",
+                "pdfplumber_text_lines",
+                "pdfplumber_coordinate_table",
+            ),
+        )
+
+        registry = PdfReaderRegistry()
+        reader = FunctionPdfReader("demo", lambda _pdf, _options: [["header"]])
+        registry.register(reader)
+        with self.assertRaisesRegex(ValueError, "duplicate PDF reader_id"):
+            registry.register(reader)
+
     def test_pdf_cell_joins_line_breaks_without_removing_inline_spaces(self):
         self.assertEqual(
             router._clean_pdf_cell("华炬 (浦江\n) 金属制品有限公司"),
@@ -65,7 +84,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         ]
 
         self.assertEqual(
-            router._coordinate_repeated_header_bottom(
+            repeated_header_bottom(
                 words,
                 header_top=43.6,
                 first_anchor_top=90.5,

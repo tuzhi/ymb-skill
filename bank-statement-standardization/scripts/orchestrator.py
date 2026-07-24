@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import traceback
 import uuid
 import zipfile
@@ -157,6 +158,15 @@ def inventory(folder):
                 })
             except OSError:
                 rows.append({"path": os.path.relpath(path, folder), "error": "unreadable"})
+    return rows
+
+
+def collect_input_files(folder):
+    """递归、确定性收集客户目录内的文件，供阶段一筛选。"""
+    rows = []
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = sorted(d for d in dirs if d not in {".git", "__pycache__"})
+        rows.extend(os.path.join(root, name) for name in sorted(files))
     return rows
 
 
@@ -631,7 +641,7 @@ class Runner:
         if declared_result:
             return declared_result
 
-        raw_files, skipped = S.screen_files(sorted(glob.glob(os.path.join(self.args.folder, "*"))))
+        raw_files, skipped = S.screen_files(collect_input_files(self.args.folder))
         self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
         self.write_manifest()
         if not raw_files:
@@ -640,7 +650,8 @@ class Runner:
 
         processed = []
         file_routes = {}
-        for path in raw_files:
+        file_sleep_seconds = max(0.0, float(getattr(self.args, "file_sleep_seconds", 0) or 0))
+        for index, path in enumerate(raw_files, 1):
             try:
                 csv_path, _json_path, report = S.standardize_file(S.StandardizationContext(
                     path=path,
@@ -648,12 +659,13 @@ class Runner:
                     account_type=self.args.account_type,
                     write_mapping=False,
                 ))
+                row_count = int(report["标准化统计"]["交易笔数"])
                 route_key = os.path.basename(csv_path)
                 file_routes[route_key] = yaml_route_summary(report)
                 processed.append({
                     "input": path,
                     "csv": csv_path,
-                    "rows": report["标准化统计"]["交易笔数"],
+                    "rows": row_count,
                 })
             except S.SourceFormatQualityError as exc:
                 raise RuntimeError(
@@ -663,6 +675,8 @@ class Runner:
                 skipped.append((os.path.basename(path), exc.reason))
             except Exception as exc:
                 raise RuntimeError(f"标准化失败：{os.path.basename(path)}：{exc}") from exc
+            if file_sleep_seconds and index < len(raw_files):
+                time.sleep(file_sleep_seconds)
 
         if not processed:
             detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "无成功标准化文件"
@@ -700,7 +714,7 @@ class Runner:
         int_csv = self.latest_artifact("*__整合流水.csv")
         daily_csv, report_json, report = PB.run(int_csv, out_dir=self.work_dir())
         return StageResult("stage_2b_portfolio_balance", {
-            "portfolio_csv": daily_csv,
+            "portfolio_csv": daily_csv if os.path.isfile(daily_csv) else "",
             "portfolio_report": report_json,
             "accounts": report["数据范围"]["账户数"],
             "warning_accounts": report["账户余额校验"]["预警账户数"],
@@ -732,8 +746,8 @@ class Runner:
         int_json = self.latest_artifact("*__整合报告.json")
         tag_csv = self.latest_artifact("*__打标流水.csv")
         tag_json = self.latest_artifact("*__标签报告.json")
-        daily_csv = self.latest_artifact("*__组合日余额.csv")
         balance_json = self.latest_artifact("*__余额校验.json")
+        daily_hits = sorted(glob.glob(os.path.join(self.work_dir(), "*__组合日余额.csv")))
         with open(int_json, encoding="utf-8") as f:
             irep = json.load(f)
         with open(tag_json, encoding="utf-8") as f:
@@ -741,7 +755,7 @@ class Runner:
         with open(balance_json, encoding="utf-8") as f:
             pbrep = json.load(f)
         tagged = pd.read_csv(tag_csv, dtype=str)
-        daily = pd.read_csv(daily_csv)
+        daily = pd.read_csv(daily_hits[-1]) if daily_hits else pd.DataFrame()
         skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
         P.finalize_deliverable(
             self.args.client,
@@ -757,6 +771,7 @@ class Runner:
             self.out_dir,
             self.args.client,
             tagged_rows=len(tagged),
+            require_daily_balance=bool(daily_hits),
         )
         return StageResult("stage_4_package", self.final_validation_result)
 
@@ -935,6 +950,12 @@ def main():
     ap.add_argument("--folder", required=True)
     ap.add_argument("--run-root", help="每次运行的独立归档目录，默认 ./runs")
     ap.add_argument("--account-type", choices=["对公", "个人", "未知"])
+    ap.add_argument(
+        "--file-sleep-seconds",
+        type=float,
+        default=0,
+        help="阶段一相邻原始文件之间的暂停秒数；默认不暂停",
+    )
     ap.add_argument("--parent-run-id",
                     help="可选：AI 兜底修复后重跑时，记录关联的上一轮失败 run_id")
     ap.add_argument("--rerun-reason",

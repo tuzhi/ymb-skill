@@ -5,11 +5,13 @@
 
 from .contracts import RouteDecision, StandardizationContext
 from .core import NotABankStatement, SourceFormatQualityError, standardize, standardize_file
+from .models import ReadResult
 
 __all__ = [
     "NotABankStatement",
     "SourceFormatQualityError",
     "RouteDecision",
+    "ReadResult",
     "StandardizationContext",
     "standardize",
     "standardize_file",
