@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import sys
 import tempfile
 import unittest
@@ -704,8 +705,7 @@ class InputRouterTests(unittest.TestCase):
     def test_cmb_transaction_pdf_route_matches_local_sample(self):
         module = load_input_router()
         pdf = (
-            ROOT
-            / "testdata"
+            TESTDATA_ROOT
             / "宁聚&付亮亮&徐美琴"
             / "付亮亮招商银行交易流水(申请时间2026年03月10日17时56分58秒).pdf"
         )
@@ -723,6 +723,14 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(
             result.route_info["row_anchor"],
             {"column": "记账日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
+        )
+        self.assertEqual(
+            result.route_info["repeated_header"],
+            {"end_markers": ["Amount"]},
+        )
+        self.assertEqual(
+            result.route_info["word_filters"],
+            {"drop_words_below_page_bottom": 45},
         )
         self.assertEqual(result.route_info["metadata_evidence"]["Producer"], "openhtmltopdf.com")
         self.assertEqual(result.route_info["date_format_evidence"], ["yyyy-mm-dd hh:mm:ss"])
@@ -764,6 +772,19 @@ class InputRouterTests(unittest.TestCase):
                     "md5:66e9c906a6c3c121ddce1ca9ecb8824d",
                 )
                 self.assertEqual(len(result.rows) - 1, expected_rows)
+                self.assertFalse(any(
+                    str(cell).startswith((
+                        "Date20",
+                        "CurrencyCNY",
+                        "TransactionAmount",
+                        "Balance",
+                        "Transaction",
+                        "Type Counter Party",
+                    ))
+                    or re.search(r"\d+/\d+$", str(cell))
+                    for row in result.rows[1:]
+                    for cell in row
+                ))
 
     def test_cmb_pdf_without_counterparty_option_is_matched_but_qc_incomplete(self):
         module = load_input_router()

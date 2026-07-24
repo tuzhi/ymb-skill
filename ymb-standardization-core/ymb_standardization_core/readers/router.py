@@ -33,6 +33,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, 
         "extract_patterns": route_evidence.get("extract_patterns", []) if route_evidence else [],
         "dedupe_chars": route_evidence.get("dedupe_chars", False) if route_evidence else False,
         "header_merge": route_evidence.get("header_merge", {}) if route_evidence else {},
+        "repeated_header": route_evidence.get("repeated_header", {}) if route_evidence else {},
         "preamble_mapping": route_evidence.get("preamble_mapping", {}) if route_evidence else {},
         "preamble_extractors": route_evidence.get("preamble_extractors", []) if route_evidence else [],
         "conditional_mapping": route_evidence.get("conditional_mapping", []) if route_evidence else [],
@@ -152,6 +153,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
                 "extract_patterns": rule.extract_patterns,
                 "dedupe_chars": rule.dedupe_chars,
                 "header_merge": rule.header_merge,
+                "repeated_header": rule.repeated_header,
                 "preamble_mapping": rule.preamble_mapping,
                 "preamble_extractors": rule.preamble_extractors,
                 "conditional_mapping": rule.conditional_mapping,
@@ -335,6 +337,7 @@ def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
             route_info.get("reader_header_candidates") or [],
             route_info.get("row_anchor") or {},
             word_filters=route_info.get("word_filters") or {},
+            repeated_header=route_info.get("repeated_header") or {},
         )
         separator_rows = _extract_pdf_text_separator_table_rows(pdf)
         if separator_rows and (
@@ -902,7 +905,26 @@ def _extract_pdf_grid_line_table_rows(pdf, candidate_headers, row_anchor=None, w
     return all_rows if len(all_rows) > 1 else []
 
 
-def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
+def _coordinate_repeated_header_bottom(words, header_top, first_anchor_top, config):
+    end_markers = {
+        str(marker).strip()
+        for marker in (config or {}).get("end_markers", [])
+        if str(marker).strip()
+    }
+    if not end_markers or first_anchor_top is None:
+        return None
+    bottoms = [
+        float(word.get("bottom", word.get("top", 0)))
+        for word in words
+        if header_top <= float(word.get("top", 0)) < first_anchor_top
+        and str(word.get("text") or "").strip() in end_markers
+    ]
+    return max(bottoms) if bottoms else None
+
+
+def _extract_pdf_coordinate_table_rows(
+        pdf, candidate_headers, row_anchor=None, word_filters=None,
+        repeated_header=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
@@ -932,6 +954,27 @@ def _extract_pdf_coordinate_table_rows(pdf, candidate_headers, row_anchor=None, 
         else:
             output_starts = starts
         boundaries = _coordinate_boundaries(page.width, starts)
+        first_anchor_top = min(
+            (
+                float(word.get("top", 0))
+                for word in words
+                if _is_coordinate_row_anchor(
+                    word,
+                    starts[anchor_index],
+                    headers[anchor_index],
+                    row_anchor,
+                )
+            ),
+            default=None,
+        )
+        repeated_header_bottom = _coordinate_repeated_header_bottom(
+            words,
+            header_top if page_starts is not None else body_top_min,
+            first_anchor_top,
+            repeated_header,
+        )
+        if repeated_header_bottom is not None:
+            body_top_min = max(body_top_min, repeated_header_bottom)
         drop_bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
         stop_top = _coordinate_stop_top(words, word_filters=word_filters)
         body_words = [

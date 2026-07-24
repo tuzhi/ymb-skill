@@ -56,6 +56,24 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "华炬(浦江)金属制品有限公司",
         )
 
+    def test_coordinate_repeated_header_ends_at_configured_marker_before_first_anchor(self):
+        words = [
+            {"text": "记账日期", "top": 43.6, "bottom": 53.4},
+            {"text": "Transaction", "top": 60.9, "bottom": 70.7},
+            {"text": "Amount", "top": 72.9, "bottom": 82.7},
+            {"text": "Amount", "top": 120.0, "bottom": 129.8},
+        ]
+
+        self.assertEqual(
+            router._coordinate_repeated_header_bottom(
+                words,
+                header_top=43.6,
+                first_anchor_top=90.5,
+                config={"end_markers": ["Amount"]},
+            ),
+            82.7,
+        )
+
     def test_pdf_table_cross_page_continuation_is_explicit_and_column_wise(self):
         class FakePage:
             def __init__(self, rows):

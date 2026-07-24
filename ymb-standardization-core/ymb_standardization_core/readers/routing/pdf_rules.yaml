@@ -797,6 +797,11 @@
     row_transforms:
       anchor_column: 记账日期
       anchor_pattern: '^20\d{2}-\d{2}-\d{2}$'
+    repeated_header:
+      end_markers:
+      - Amount
+    word_filters:
+      drop_words_below_page_bottom: 45
     extract_mapping:
     - source: 对手信息
       field: 对手账户

@@ -29,6 +29,7 @@ class RouteRule:
     multi_sheet_same_layout: bool = False
     dedupe_chars: bool = False
     header_merge: dict = field(default_factory=dict)
+    repeated_header: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
     word_filters: dict = field(default_factory=dict)
     direction_from_column: dict = field(default_factory=dict)
@@ -540,6 +541,25 @@ def _header_merge(item):
     }
 
 
+def _repeated_header(item):
+    config = _reader_options(item).get("repeated_header") or {}
+    if not config:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("reader_options.repeated_header must be a dict")
+    end_markers = config.get("end_markers") or []
+    if not isinstance(end_markers, list):
+        raise ValueError("reader_options.repeated_header.end_markers must be a list")
+    end_markers = [
+        str(marker).strip()
+        for marker in end_markers
+        if str(marker).strip()
+    ]
+    if not end_markers:
+        raise ValueError("reader_options.repeated_header.end_markers must be non-empty")
+    return {"end_markers": end_markers}
+
+
 def _row_anchor(item, fingerprint):
     options = _reader_options(item)
     row_transforms = options.get("row_transforms")
@@ -680,6 +700,7 @@ def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
             multi_sheet_same_layout=_multi_sheet_same_layout(item),
             dedupe_chars=_dedupe_chars(item),
             header_merge=_header_merge(item),
+            repeated_header=_repeated_header(item),
             column_mapping=_column_mapping(fingerprint),
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
