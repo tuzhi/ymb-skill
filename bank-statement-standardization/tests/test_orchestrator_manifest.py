@@ -95,7 +95,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                         "请重新导出招商银行交易流水，并勾选“对手信息”"
                     )
                 )
-                with self.assertRaisesRegex(RuntimeError, "阶段一 QC 未通过.*对手信息"):
+                with self.assertRaisesRegex(RuntimeError, "阶段一处理完成但存在失败文件.*对手信息"):
                     runner.stage_1_standardize()
             finally:
                 orchestrator.S.standardize_file = original
@@ -144,8 +144,8 @@ class OrchestratorManifestTest(unittest.TestCase):
             source.mkdir()
             empty_source = source / "空流水.pdf"
             valid_source = source / "有效流水.pdf"
-            empty_source.write_bytes(b"%PDF-1.4\n")
-            valid_source.write_bytes(b"%PDF-1.4\n")
+            empty_source.write_bytes(b"%PDF-1.4\nempty")
+            valid_source.write_bytes(b"%PDF-1.4\nvalid")
 
             runner = orchestrator.Runner.__new__(orchestrator.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
@@ -174,16 +174,15 @@ class OrchestratorManifestTest(unittest.TestCase):
                 }
 
             with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
-                result = runner.stage_1_standardize()
+                with self.assertRaisesRegex(RuntimeError, "阶段一处理完成但存在失败文件.*CSV 无交易数据"):
+                    runner.stage_1_standardize()
 
-            self.assertEqual(result["processed_files"], 2)
             self.assertTrue((Path(runner.work_dir()) / "空流水__pdf__standardized.csv").exists())
             self.assertEqual(runner.manifest["skipped_inputs"], [])
-            with self.assertRaisesRegex(orchestrator.V.ValidationError, "CSV 无交易数据"):
-                orchestrator.V.validate_standardize(
-                    runner.work_dir(),
-                    file_routes=runner.load_stage_1_routes(),
-                )
+            results = runner.load_stage_1_results()["files"]
+            statuses = {record["name"]: record["status"] for record in results.values()}
+            self.assertEqual(statuses["空流水.pdf"], "ERROR")
+            self.assertEqual(statuses["有效流水.pdf"], "DONE")
 
     def test_ccb_personal_coordinate_pdf_reads_all_transactions(self):
         source = (
@@ -482,11 +481,20 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertFalse((work / "001_raw-a__mapping.json").exists())
             self.assertFalse((work / "002_raw-b__mapping.json").exists())
             self.assertNotIn("file_routes", runner.manifest["stage_1_standardize"])
-            route_artifact = runner.manifest["stage_1_standardize"]["route_artifact"]
-            routes = json.loads((tmp_path / route_artifact).read_text(encoding="utf-8"))
+            results = runner.load_stage_1_results()
+            self.assertEqual(
+                {record["status"] for record in results["files"].values()},
+                {"DONE"},
+            )
+            routes = runner.load_stage_1_routes()
             self.assertEqual(set(routes), {"001_raw-a__standardized.csv", "002_raw-b__standardized.csv"})
             self.assertTrue(all(route["yaml_match_status"] == "unmatched" for route in routes.values()))
-            validation = orchestrator.V.validate_standardize(str(work), file_routes=routes)
+            validation = orchestrator.V.validate_standardize(
+                str(work),
+                file_routes=routes,
+                stage_1_results=results,
+                run_dir=str(tmp_path),
+            )
             self.assertEqual(validation["standardized_files"], 2)
 
     def test_copy_stage_manifest_resets_runtime_fields(self):

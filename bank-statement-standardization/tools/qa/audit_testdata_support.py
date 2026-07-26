@@ -414,12 +414,34 @@ def _new_record_and_baseline(path, root, today):
 
 def _stage_route_image(csv_path):
     """从 Stage 1 的轻量路由契约恢复支持矩阵需要的文件画像。"""
-    route_path = Path(csv_path).parent / "stage_1_routes.json"
-    if not route_path.exists():
+    csv_path = Path(csv_path).resolve()
+    route = {}
+    for run_dir in csv_path.parents:
+        results_path = run_dir / "stage_1_results.json"
+        if not results_path.exists():
+            continue
+        with results_path.open(encoding="utf-8") as f:
+            files = (json.load(f) or {}).get("files") or {}
+        for record in files.values():
+            output = str(record.get("output") or "").strip()
+            if not output:
+                continue
+            resolved = Path(output)
+            if not resolved.is_absolute():
+                resolved = run_dir / resolved
+            if resolved.resolve() == csv_path:
+                route = record.get("route") or {}
+                break
+        break
+    if not route:
+        # 兼容旧 QA 工作区；新 Run 不再写 stage_1_routes.json。
+        route_path = csv_path.parent / "stage_1_routes.json"
+        if route_path.exists():
+            with route_path.open(encoding="utf-8") as f:
+                routes = json.load(f)
+            route = routes.get(csv_path.name) or {}
+    if not route:
         return {}
-    with route_path.open(encoding="utf-8") as f:
-        routes = json.load(f)
-    route = routes.get(Path(csv_path).name) or {}
     fingerprint_id = str(route.get("fingerprint_id") or "").strip()
     rule = ROUTE_RULE_INDEX.get(fingerprint_id) or {}
     with open(csv_path, encoding="utf-8-sig", newline="") as f:
@@ -444,7 +466,7 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
     if not image:
         image = _stage_route_image(csv_path)
     if not image:
-        raise ValueError("缺少 mapping.json 和 stage_1_routes.json")
+        raise ValueError("缺少 mapping.json 和 stage_1_results.json 路由结果")
     summary = read_csv_summary(csv_path)
 
     fingerprint_id = image.get("fingerprint_id") or ""

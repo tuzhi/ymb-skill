@@ -20,7 +20,7 @@ def load_module():
 
 
 class AuditTestdataSupportTests(unittest.TestCase):
-    def test_build_outputs_uses_stage_route_when_mapping_json_is_not_persisted(self):
+    def test_build_outputs_uses_stage_result_route_when_mapping_json_is_not_persisted(self):
         module = load_module()
         fingerprint = {"identity": {"any": ["测试银行"]}}
         fingerprint_id = module.fingerprint_md5(fingerprint)
@@ -41,7 +41,8 @@ class AuditTestdataSupportTests(unittest.TestCase):
                 source = testdata / "客户A" / "流水.pdf"
                 source.parent.mkdir(parents=True)
                 source.write_bytes(b"%PDF-1.4\n")
-                work = root / "_package_work" / "001_客户A" / "runs" / "run" / "artifacts" / "_工作区" / "客户A"
+                run_dir = root / "_package_work" / "001_客户A" / "runs" / "run"
+                work = run_dir / "artifacts" / "_工作区" / "客户A"
                 work.mkdir(parents=True)
                 csv_path = work / "流水__pdf__standardized.csv"
                 csv_path.write_text(
@@ -49,13 +50,21 @@ class AuditTestdataSupportTests(unittest.TestCase):
                     "2026-01-01,张三,62170001,100,,流水.pdf\n",
                     encoding="utf-8-sig",
                 )
-                (work / "stage_1_routes.json").write_text(
+                (run_dir / "stage_1_results.json").write_text(
                     json.dumps({
-                        csv_path.name: {
-                            "fingerprint_id": fingerprint_id,
-                            "router_bank": "测试银行",
-                            "yaml_match_status": "matched",
-                        },
+                        "files": {
+                            "md5:test": {
+                                "name": "流水.pdf",
+                                "status": "DONE",
+                                "output": str(csv_path.relative_to(run_dir)),
+                                "route": {
+                                    "fingerprint_id": fingerprint_id,
+                                    "series_family": "",
+                                    "router_bank": "测试银行",
+                                    "yaml_match_status": "matched",
+                                },
+                            }
+                        }
                     }, ensure_ascii=False),
                     encoding="utf-8",
                 )

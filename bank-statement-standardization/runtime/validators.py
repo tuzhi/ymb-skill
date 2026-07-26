@@ -78,20 +78,57 @@ def _transaction_times(df, path):
         )
 
 
-def validate_standardize(work_dir, skipped_inputs=None, file_routes=None):
+def validate_standardized_file(path):
+    df = _load_csv(path)
+    _require_columns(df, STD_REQUIRED, path)
+    _traceability(df, path)
+    _transaction_times(df, path)
+    return {"standardized_rows": len(df), "standardized_csv": path}
+
+
+def validate_standardize(
+    work_dir,
+    skipped_inputs=None,
+    file_routes=None,
+    stage_1_results=None,
+    run_dir=None,
+):
     skipped_inputs = skipped_inputs or []
-    csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
+    if stage_1_results is not None:
+        files = stage_1_results.get("files") if isinstance(stage_1_results, dict) else None
+        if not isinstance(files, dict):
+            raise ValidationError("stage_1_results.json 缺少 files 对象")
+        failed = {
+            file_id: record.get("status")
+            for file_id, record in files.items()
+            if record.get("status") != "DONE"
+        }
+        if failed:
+            raise ValidationError(f"阶段一仍有未完成文件：{failed}")
+        root = os.path.abspath(run_dir or os.path.dirname(work_dir))
+        csvs = []
+        for file_id, record in files.items():
+            relpath = str(record.get("output") or "").strip()
+            path = os.path.abspath(
+                relpath if os.path.isabs(relpath) else os.path.join(root, relpath)
+            )
+            if os.path.commonpath([root, path]) != root:
+                raise ValidationError(f"阶段一文件结果路径越界：{file_id}：{relpath}")
+            if not path.endswith("__standardized.csv"):
+                raise ValidationError(f"阶段一 DONE 产物命名不合法：{file_id}：{relpath}")
+            if not os.path.isfile(path):
+                raise ValidationError(f"阶段一 DONE 产物不存在：{file_id}：{relpath}")
+            csvs.append(path)
+        csvs.sort()
+    else:
+        csvs = sorted(glob.glob(os.path.join(work_dir, "*__standardized.csv")))
     reports = sorted(glob.glob(os.path.join(work_dir, "*__mapping.json")))
     if not csvs:
         raise ValidationError("阶段一未生成标准化 CSV")
     rows = 0
     for path in csvs:
-        df = _load_csv(path)
-        _require_columns(df, STD_REQUIRED, path)
-        _traceability(df, path)
-        _transaction_times(df, path)
-        rows += len(df)
-    # mapping 已降级为可选的单文件审计报告；阶段间路由事实由客户级 route_artifact 承载。
+        rows += validate_standardized_file(path)["standardized_rows"]
+    # mapping 已降级为可选单文件审计报告；阶段间路由事实由 stage_1_results.json 承载。
     for path in reports:
         _load_json(path)
     if file_routes is not None:

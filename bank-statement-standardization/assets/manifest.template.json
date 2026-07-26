@@ -11,7 +11,6 @@
       "references/附件A-标准化字段说明.md"
     ],
     "ai_fallback_info": "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。",
-    "route_artifact": "",
     "ai_fallback_used": false,
     "ai_fallback_artifacts": [],
     "status": ""

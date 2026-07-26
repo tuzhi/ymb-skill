@@ -68,15 +68,21 @@ python scripts/orchestrator.py run --folder "/path/to/客户流水.zip"
 # 显式客户名称同时作为交付物归档名；后续不会被上游别名或本方名称覆盖
 python scripts/orchestrator.py run --folder "/path/to/客户文件夹" --client "客户名"
 
+# 增量提交或阶段一修复后，显式关联直接父 Run；符合条件的 DONE 文件会复用
+python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
+  --parent-run-id "<父run_id>" --rerun-reason "incremental_submission"
+
 ```
 
 生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
+每个 Run 固定生成 `manifest.json`、`stage_1_results.json` 和 `qc_results.json`：Manifest 只保存阶段状态和阶段一兜底信息；阶段一逐文件结果与 QC 结果分别独立保存。
+
 ## 快速开始（方式 B · 任意大模型）
 
-1. 阶段一遇到加密 PDF/Excel 无法打开时，先打开 `references/prompt-1a-输入读取与文件识别.md`，向用户确认密码并写入 `_file_hints.yaml` 后重跑；文件已成功读取后，再打开 `references/prompt-1-字段映射.md` 做字段映射判断。
-2. 按提示词里的 `{{占位符}}` 附上：原始文件脱敏样本行、文件名/类型/疑似银行、`附件A`。
-3. 模型按要求输出 JSON。再依次按对应阶段使用 prompt-2 / 3 / 4；`prompt-5-交付物组装.md` 对应 `stage_4_package` 兜底，不代表新增状态机阶段。
+1. 只有 Stage 1 失败后才允许 AI 兜底；读取 `fallback/stage_1_standardize/fallback_request.json`，只处理其中 `files` 列出的 `BLOCKED/ERROR` 文件。
+2. 加密 PDF/Excel 无法打开时，读取 `references/prompt-1a-输入读取与文件识别.md`，向用户确认密码并写入 `_file_hints.yaml`；字段映射失败时再读取 `references/prompt-1-字段映射.md`。
+3. 兜底必须形成确定性提示、参数或补丁，并创建带 `parent_run_id` 的新 Run 重新验收；Stage 2～4不使用 AI 兜底。
 4. 交给外部模型前请按 `附件C` 做脱敏。
 
 ## 安装到各类大模型客户端（Skill 安装说明）

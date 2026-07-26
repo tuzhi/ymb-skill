@@ -46,9 +46,28 @@ def add_virtual_balance(df):
     return d.drop(columns=["__t", "__bal", "__order"])
 
 
-def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=None):
-    """组装单文件 xlsx（多 sheet）。skipped 为被自动排除的非流水/无法解析文件清单。"""
+def build_workbook(
+    client,
+    tagged,
+    daily,
+    irep,
+    srep,
+    pbrep,
+    out_path,
+    skipped=None,
+    qc_results=None,
+):
+    """组装单文件 xlsx；skipped 和 qc_results 只进入说明/复核信息。"""
     skipped = skipped or []
+    qc_results = qc_results or {}
+    qc_failures = []
+    for file_id, rules in (qc_results.get("files") or {}).items():
+        for rule_id, result in (rules or {}).items():
+            if not result.get("passed"):
+                qc_failures.append((file_id, rule_id, result))
+    for rule_id, result in (qc_results.get("customer") or {}).items():
+        if not result.get("passed"):
+            qc_failures.append(("客户目录", rule_id, result))
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
@@ -65,6 +84,8 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=N
         ["整合账户数", irep["客户整合概览"]["整合账户数"]],
         ["整合文件数", irep["客户整合概览"]["整合文件数"]],
         ["已跳过文件数(非流水/无法解析)", len(skipped)],
+        ["QC状态", qc_results.get("status", "")],
+        ["QC未通过规则数", len(qc_failures)],
         ["原始交易笔数", irep["客户整合概览"].get("原始交易数", "")],
         ["跨文件去重笔数", irep["客户整合概览"].get("跨文件去重笔数", 0)],
         ["交易笔数(去重后)", irep["客户整合概览"]["整合交易数"]],
@@ -147,6 +168,14 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=N
     for name, why in skipped:    # 自动排除的非流水/无法解析文件，置顶提示
         review_rows.append({"事项类型": "已跳过文件", "复核原因": why,
                             "证据交易编号": name, "建议动作": "确认是否为流水文件；如确需纳入请人工转格式/OCR后重跑"})
+    for target, rule_id, result in qc_failures:
+        level = result.get("level", "")
+        review_rows.append({
+            "事项类型": f"QC-{level}",
+            "复核原因": result.get("message") or rule_id,
+            "证据交易编号": f"{target} / {rule_id}",
+            "建议动作": "HARD 问题修复后重跑；SOFT 问题补件或确认接受例外",
+        })
     for r in irep.get("人工复核事项", []):
         review_rows.append({"事项类型": r.get("事项类型", ""), "复核原因": r.get("复核原因", ""),
                             "证据交易编号": "；".join(r.get("证据交易唯一编号列表", [])[:5]),
@@ -213,7 +242,17 @@ def build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped=N
         _apply_workbook_styles(xw.book)
 
 
-def finalize_deliverable(client, tagged, daily, irep, srep, pbrep, out_dir, skipped=None):
+def finalize_deliverable(
+    client,
+    tagged,
+    daily,
+    irep,
+    srep,
+    pbrep,
+    out_dir,
+    skipped=None,
+    qc_results=None,
+):
     """使用已完成的上游产物组装最终单文件交付物。"""
     tagged = tagged.copy()
     # 客户名称只用于客户归档维度；本方名称保持文件证据，不派生主体名称。
@@ -227,7 +266,17 @@ def finalize_deliverable(client, tagged, daily, irep, srep, pbrep, out_dir, skip
         tagged = add_virtual_balance(tagged)
 
     out_path = os.path.join(out_dir, f"{client}_已清洗_待分析.xlsx")
-    build_workbook(client, tagged, daily, irep, srep, pbrep, out_path, skipped)
+    build_workbook(
+        client,
+        tagged,
+        daily,
+        irep,
+        srep,
+        pbrep,
+        out_path,
+        skipped,
+        qc_results=qc_results,
+    )
     print(f"\n[交付] {out_path}")
     print(f"  规则命中率 {srep['标签梳理概览']['规则命中率']:.0%} | "
           f"虚拟账户期末余额 {pbrep['组合虚拟账户']['期末合计余额']} | "

@@ -75,6 +75,17 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                 "账户明细": [{"账户": "10001", "交易数": 1, "校验状态": "未校验"}],
             },
         }
+        qc_results = {
+            "status": "PASS_WITH_WARNINGS",
+            "files": {},
+            "customer": {
+                "customer.coverage_two_years": {
+                    "level": "SOFT",
+                    "passed": False,
+                    "message": "全部有效文件覆盖不足两年",
+                }
+            },
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "deliverable.xlsx"
@@ -89,9 +100,17 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                     pbrep,
                     out_path,
                     [],
+                    qc_results=qc_results,
                 )
 
             self.assertTrue(out_path.exists())
+            cover = pd.read_excel(out_path, sheet_name="封面与说明", dtype=str)
+            review = pd.read_excel(out_path, sheet_name="人工复核事项", dtype=str)
+            self.assertEqual(
+                cover.loc[cover["项目"] == "QC状态", "内容"].iloc[0],
+                "PASS_WITH_WARNINGS",
+            )
+            self.assertIn("QC-SOFT", set(review["事项类型"]))
 
 
 if __name__ == "__main__":

@@ -25,14 +25,17 @@ for path in (SCRIPT_DIR, SKILL_DIR):
 from runtime import deliverable as P
 from runtime import integrate as I
 from runtime import portfolio_balance as PB
+from runtime import qc as Q
 from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
-from runtime.contracts import IntegrationContext, StageResult, yaml_route_summary
+from runtime.contracts import YAML_ROUTE_FIELDS, IntegrationContext, StageResult, yaml_route_summary
 
 
 DONE = "DONE"
 ERROR = "ERROR"
+BLOCKED = "BLOCKED"
+PENDING = "PENDING"
 MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
@@ -59,6 +62,23 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def md5(path):
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def valid_yaml_route(route):
+    if not isinstance(route, dict) or set(route) != set(YAML_ROUTE_FIELDS):
+        return False
+    status = route.get("yaml_match_status")
+    if status not in {"matched", "unmatched", "ambiguous", "failed"}:
+        return False
+    return status != "matched" or bool(str(route.get("fingerprint_id") or "").strip())
 
 
 def read_json_if_exists(path, default=None):
@@ -371,6 +391,8 @@ class Runner:
         self.receipt_dir = os.path.join(self.run_dir, "receipts")
         self.event_path = os.path.join(self.run_dir, "events.jsonl")
         self.manifest_path = os.path.join(self.run_dir, "manifest.json")
+        self.stage_1_results_path = os.path.join(self.run_dir, "stage_1_results.json")
+        self.qc_results_path = os.path.join(self.run_dir, "qc_results.json")
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
@@ -381,6 +403,7 @@ class Runner:
         self.final_validation_result = None
         self.original_input_folder = os.path.abspath(args.folder)
         parent_context = load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None
+        self.parent_context = parent_context
         if parent_context and parent_context.get("parent_client"):
             parent_client = parent_context["parent_client"]
             if args.client_arg_provided and args.client != parent_client:
@@ -396,6 +419,8 @@ class Runner:
         self.manifest["rerun_reason"] = args.rerun_reason or ""
         self.manifest["skipped_inputs"] = []
         self.write_manifest()
+        Q.atomic_write_json(self.stage_1_results_path, {"files": {}})
+        Q.atomic_write_json(self.qc_results_path, Q.empty_results())
 
     def copy_stage_manifest(self):
         if not os.path.isfile(self.template_manifest_path):
@@ -416,7 +441,7 @@ class Runner:
             if stage_id == "stage_1_standardize":
                 spec["ai_fallback_used"] = False
                 spec["ai_fallback_artifacts"] = []
-                spec["route_artifact"] = ""
+                spec.pop("route_artifact", None)
                 spec.pop("file_routes", None)
             spec.pop("ai_fallback_dir", None)
             spec.pop("started_at", None)
@@ -468,6 +493,94 @@ class Runner:
         path = os.path.join(self.receipt_dir, f"{self.receipt_sequence:02d}-{stage}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(row, f, ensure_ascii=False, indent=2)
+
+    def stage_1_results_file(self, run_dir=None):
+        if run_dir is not None:
+            return os.path.join(run_dir, "stage_1_results.json")
+        return getattr(
+            self,
+            "stage_1_results_path",
+            os.path.join(self.run_dir, "stage_1_results.json"),
+        )
+
+    def qc_results_file(self):
+        run_dir = getattr(self, "run_dir", os.path.dirname(self.out_dir))
+        return getattr(
+            self,
+            "qc_results_path",
+            os.path.join(run_dir, "qc_results.json"),
+        )
+
+    def load_stage_1_results(self, run_dir=None):
+        path = self.stage_1_results_file(run_dir)
+        data = read_json_if_exists(path, {"files": {}})
+        if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+            raise RuntimeError(f"阶段一文件结果结构无效：{path}")
+        return data
+
+    def write_stage_1_results(self, data):
+        if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
+            raise RuntimeError("阶段一文件结果必须包含 files 对象")
+        Q.atomic_write_json(self.stage_1_results_file(), data)
+
+    def load_qc_results(self):
+        return Q.load_results(self.qc_results_file())
+
+    def write_qc_results(self, data):
+        Q.atomic_write_json(self.qc_results_file(), data)
+
+    def run_file_qc(self, file_id, checkpoint, context):
+        results = self.load_qc_results()
+        Q.execute_checkpoint(results, Q.FILE, checkpoint, context, file_id=file_id)
+        Q.update_status(results)
+        self.write_qc_results(results)
+        return Q.has_hard_failure(results, file_id=file_id)
+
+    def remove_file_qc(self, file_id):
+        results = self.load_qc_results()
+        results.get("files", {}).pop(file_id, None)
+        Q.update_status(results)
+        self.write_qc_results(results)
+
+    def file_qc_failure_message(self, file_id):
+        rules = self.load_qc_results().get("files", {}).get(file_id, {})
+        messages = [
+            str(value.get("message") or rule_id)
+            for rule_id, value in rules.items()
+            if value.get("level") == Q.HARD and not value.get("passed")
+        ]
+        return "；".join(messages) or "文件级 HARD QC 未通过"
+
+    def run_customer_qc(self, checkpoint, context, final=False):
+        results = self.load_qc_results()
+        Q.execute_checkpoint(results, Q.CUSTOMER, checkpoint, context)
+        Q.update_status(results, final=final)
+        self.write_qc_results(results)
+        return any(
+            value.get("level") == Q.HARD and not value.get("passed")
+            for value in results.get("customer", {}).values()
+        )
+
+    def current_skill_version(self):
+        return str((self.manifest.get("skill") or {}).get("version") or "")
+
+    def parent_skill_version(self):
+        parent = getattr(self, "parent_context", None) or {}
+        parent_dir = parent.get("parent_run_dir")
+        if not parent_dir:
+            return ""
+        manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
+        return str((manifest.get("skill") or {}).get("version") or "")
+
+    def resolve_result_output(self, run_dir, output):
+        relpath = str(output or "").strip()
+        if not relpath:
+            return ""
+        root = os.path.abspath(run_dir)
+        path = os.path.abspath(relpath if os.path.isabs(relpath) else os.path.join(root, relpath))
+        if os.path.commonpath([root, path]) != root:
+            raise RuntimeError(f"阶段一结果路径越界：{relpath}")
+        return path
 
     def work_dir(self):
         return os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
@@ -543,20 +656,37 @@ class Runner:
             return sum(1 for _ in csv.DictReader(f))
 
     def write_stage_1_routes(self, work, file_routes):
-        """写客户级路由索引；manifest 只保存相对路径，不承载逐文件明细。"""
-        path = os.path.join(work, "stage_1_routes.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(file_routes, f, ensure_ascii=False, indent=2)
-        self.manifest["stage_1_standardize"]["route_artifact"] = normalize_relpath(
-            os.path.relpath(path, self.run_dir)
-        )
-        self.write_manifest()
-        return path
+        """旧调用兼容：把路由写入新的 stage_1_results.json，不再生成路由文件。"""
+        results = {"files": {}}
+        for csv_name, route in file_routes.items():
+            path = os.path.join(work, csv_name)
+            if not os.path.isfile(path):
+                raise RuntimeError(f"阶段一标准化 CSV 不存在：{path}")
+            file_id = f"md5:{md5(path)}"
+            results["files"][file_id] = {
+                "name": csv_name,
+                "status": DONE,
+                "output": normalize_relpath(os.path.relpath(path, self.run_dir)),
+                "route": dict(route),
+            }
+        self.write_stage_1_results(results)
+        return self.stage_1_results_file()
 
     def load_stage_1_routes(self):
+        results = self.load_stage_1_results()
+        if results["files"]:
+            routes = {}
+            for record in results["files"].values():
+                if record.get("status") != DONE:
+                    continue
+                output = self.resolve_result_output(self.run_dir, record.get("output"))
+                routes[os.path.basename(output)] = dict(record.get("route") or {})
+            return routes
+
+        # 兼容读取历史 run；新 run 不再写 route_artifact。
         relpath = str(self.manifest["stage_1_standardize"].get("route_artifact") or "").strip()
         if not relpath:
-            raise RuntimeError("阶段一 manifest 缺少 route_artifact")
+            return {}
         run_dir = os.path.abspath(self.run_dir)
         path = os.path.abspath(os.path.join(run_dir, relpath))
         if os.path.commonpath([run_dir, path]) != run_dir:
@@ -565,6 +695,19 @@ class Runner:
         if not isinstance(routes, dict):
             raise RuntimeError(f"阶段一路由产物无效：{path}")
         return routes
+
+    def standardized_paths_from_results(self):
+        if not getattr(self, "run_dir", None):
+            return []
+        paths = []
+        for record in self.load_stage_1_results()["files"].values():
+            if record.get("status") != DONE:
+                continue
+            path = self.resolve_result_output(self.run_dir, record.get("output"))
+            if not os.path.isfile(path):
+                raise RuntimeError(f"阶段一 DONE 产物不存在：{path}")
+            paths.append(path)
+        return sorted(paths)
 
     def declared_stage_1_file_routes(self, manifest, manifest_path):
         stage_1 = self.declared_stage_1(manifest)
@@ -592,28 +735,70 @@ class Runner:
             return None
 
         processed = []
-        file_routes = {}
+        stage_results = {"files": {}}
         upstream_routes = self.declared_stage_1_file_routes(upstream_manifest, manifest_path)
         for relpath, source_path in self.resolve_declared_standardized_outputs(upstream_manifest, manifest_path):
-            target_csv = os.path.join(work, os.path.basename(source_path))
-            shutil.copy2(source_path, target_csv)
-            row_count = self.count_csv_rows(target_csv)
-            route_key = os.path.basename(target_csv)
-            route = upstream_routes.get(route_key) or upstream_routes.get(str(relpath)) or {}
-            file_routes[route_key] = {
-                "fingerprint_id": str(route.get("fingerprint_id") or ""),
-                "series_family": str(route.get("series_family") or ""),
-                "router_bank": str(route.get("router_bank") or "未识别"),
-                "yaml_match_status": str(route.get("yaml_match_status") or "unmatched"),
-            }
-            processed.append({
-                "input": source_path,
-                "csv": target_csv,
-                "rows": row_count,
-            })
+            file_id = f"md5:{md5(source_path)}"
+            blocked = self.run_file_qc(
+                file_id,
+                Q.BEFORE_STAGE_1,
+                {"path": source_path},
+            )
+            if blocked:
+                stage_results["files"][file_id] = {
+                    "name": os.path.basename(source_path),
+                    "status": "BLOCKED",
+                    "message": "文件级前置 HARD QC 未通过",
+                }
+                self.write_stage_1_results(stage_results)
+                continue
+            try:
+                target_csv = os.path.join(work, os.path.basename(source_path))
+                shutil.copy2(source_path, target_csv)
+                row_count = V.validate_standardized_file(target_csv)["standardized_rows"]
+                route_key = os.path.basename(target_csv)
+                route = upstream_routes.get(route_key) or upstream_routes.get(str(relpath)) or {}
+                route_summary = {
+                    "fingerprint_id": str(route.get("fingerprint_id") or ""),
+                    "series_family": str(route.get("series_family") or ""),
+                    "router_bank": str(route.get("router_bank") or "未识别"),
+                    "yaml_match_status": str(route.get("yaml_match_status") or "unmatched"),
+                }
+                if not valid_yaml_route(route_summary):
+                    raise V.ValidationError(f"阶段一文件路由字段不合法：{route_key}")
+                post_blocked = self.run_file_qc(
+                    file_id,
+                    Q.AFTER_STAGE_1,
+                    {"path": source_path, "output": target_csv, "source_format_error": ""},
+                )
+                if post_blocked:
+                    stage_results["files"][file_id] = {
+                        "name": os.path.basename(source_path),
+                        "status": BLOCKED,
+                        "message": self.file_qc_failure_message(file_id),
+                    }
+                else:
+                    stage_results["files"][file_id] = {
+                        "name": os.path.basename(source_path),
+                        "status": DONE,
+                        "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
+                        "route": route_summary,
+                    }
+                    processed.append({
+                        "input": source_path,
+                        "csv": target_csv,
+                        "rows": row_count,
+                    })
+            except Exception as exc:
+                stage_results["files"][file_id] = {
+                    "name": os.path.basename(source_path),
+                    "status": ERROR,
+                    "message": str(exc),
+                }
+            self.write_stage_1_results(stage_results)
 
         self.manifest["skipped_inputs"] = []
-        route_artifact = self.write_stage_1_routes(work, file_routes)
+        self.write_stage_1_results(stage_results)
         self.manifest["upstream_manifest"] = {
             "path": manifest_path,
             "schema_version": upstream_manifest.get("schema_version", ""),
@@ -628,7 +813,7 @@ class Runner:
             "upstream_manifest": self.manifest["upstream_manifest"],
             "processed_files": len(processed),
             "standardized": processed,
-            "route_artifact": route_artifact,
+            "stage_1_results": self.stage_1_results_file(),
         })
 
     def stage_1_standardize(self):
@@ -636,9 +821,24 @@ class Runner:
         if os.path.isdir(work):
             shutil.rmtree(work)
         os.makedirs(work, exist_ok=True)
+        stage_results = {"files": {}}
+        self.write_stage_1_results(stage_results)
 
         declared_result = self.stage_1_from_declared_standardized_manifest(work)
         if declared_result:
+            done_paths = self.standardized_paths_from_results()
+            customer_hard_failed = self.run_customer_qc(
+                Q.AFTER_STAGE_1,
+                {"standardized_paths": done_paths, "stage_1_results": self.load_stage_1_results()},
+            )
+            failed = [
+                record for record in self.load_stage_1_results()["files"].values()
+                if record.get("status") in {BLOCKED, ERROR}
+            ]
+            if customer_hard_failed:
+                raise RuntimeError("阶段一客户级 HARD QC 未通过")
+            if failed:
+                raise RuntimeError(f"阶段一存在 {len(failed)} 个失败文件")
             return declared_result
 
         raw_files, skipped = S.screen_files(collect_input_files(self.args.folder))
@@ -649,9 +849,131 @@ class Runner:
             raise RuntimeError(f"客户「{self.args.client}」无可处理的银行流水文件。已跳过：{detail}")
 
         processed = []
-        file_routes = {}
+        decisions = {}
+        added = []
+        reused = []
+        rerun = []
+        parent = getattr(self, "parent_context", None) or {}
+        parent_dir = parent.get("parent_run_dir")
+        parent_results = (
+            self.load_stage_1_results(parent_dir)
+            if parent_dir and os.path.isfile(self.stage_1_results_file(parent_dir))
+            else {"files": {}}
+        )
+        parent_files = parent_results["files"]
+        versions_match = bool(
+            self.current_skill_version()
+            and self.current_skill_version() == self.parent_skill_version()
+        )
+        descriptors = []
+        seen_file_ids = {}
+        for path in raw_files:
+            file_id = f"md5:{md5(path)}"
+            if file_id in seen_file_ids:
+                skipped.append((
+                    os.path.basename(path),
+                    f"与 {seen_file_ids[file_id]} 内容 MD5 相同，按重复文件跳过",
+                ))
+                continue
+            seen_file_ids[file_id] = os.path.basename(path)
+            descriptors.append((file_id, path, os.path.basename(path)))
+        current_ids = {file_id for file_id, _path, _name in descriptors}
+        removed = sorted(set(parent_files) - current_ids)
+
         file_sleep_seconds = max(0.0, float(getattr(self.args, "file_sleep_seconds", 0) or 0))
-        for index, path in enumerate(raw_files, 1):
+        for index, (file_id, path, name) in enumerate(descriptors, 1):
+            parent_record = parent_files.get(file_id)
+            decision = "ADDED" if parent_record is None else "RERUN"
+            reason = "new_md5" if parent_record is None else "parent_result_not_reusable"
+            stage_results["files"][file_id] = {"name": name, "status": PENDING}
+            self.write_stage_1_results(stage_results)
+
+            if self.run_file_qc(file_id, Q.BEFORE_STAGE_1, {"path": path}):
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "status": BLOCKED,
+                    "message": "文件级前置 HARD QC 未通过",
+                }
+                decisions[file_id] = {
+                    "decision": decision,
+                    "reason": reason,
+                    "result_status": BLOCKED,
+                }
+                (added if decision == "ADDED" else rerun).append(file_id)
+                self.write_stage_1_results(stage_results)
+                continue
+
+            parent_output = ""
+            if parent_record is not None:
+                if parent_record.get("name") != name:
+                    reason = "same_md5_different_name"
+                elif parent_record.get("status") != DONE:
+                    reason = "parent_file_not_done"
+                elif not versions_match:
+                    reason = "skill_version_mismatch"
+                elif not valid_yaml_route(parent_record.get("route")):
+                    reason = "parent_route_invalid"
+                else:
+                    parent_output = self.resolve_result_output(parent_dir, parent_record.get("output"))
+                    if not os.path.isfile(parent_output):
+                        parent_output = ""
+                        reason = "parent_output_missing"
+                    else:
+                        decision = "REUSED"
+                        reason = "same_md5_same_name_parent_done"
+
+            if decision == "REUSED":
+                target_csv = os.path.join(work, os.path.basename(parent_output))
+                reuse_succeeded = False
+                try:
+                    try:
+                        os.link(parent_output, target_csv)
+                    except OSError:
+                        shutil.copy2(parent_output, target_csv)
+                    row_count = V.validate_standardized_file(target_csv)["standardized_rows"]
+                    post_blocked = self.run_file_qc(
+                        file_id,
+                        Q.AFTER_STAGE_1,
+                        {"path": path, "output": target_csv, "source_format_error": ""},
+                    )
+                    reused.append(file_id)
+                    if post_blocked:
+                        stage_results["files"][file_id] = {
+                            "name": name,
+                            "status": BLOCKED,
+                            "message": self.file_qc_failure_message(file_id),
+                        }
+                        result_status = BLOCKED
+                    else:
+                        stage_results["files"][file_id] = {
+                            "name": name,
+                            "status": DONE,
+                            "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
+                            "route": dict(parent_record.get("route") or {}),
+                        }
+                        processed.append({"input": path, "csv": target_csv, "rows": row_count, "reused": True})
+                        result_status = DONE
+                    reuse_succeeded = True
+                except Exception as exc:
+                    decision = "RERUN"
+                    reason = f"parent_output_reuse_failed:{exc}"
+                    try:
+                        if os.path.isfile(target_csv):
+                            os.unlink(target_csv)
+                    except OSError:
+                        pass
+                if reuse_succeeded:
+                    decisions[file_id] = {
+                        "decision": decision,
+                        "reason": reason,
+                        "result_status": result_status,
+                    }
+                    self.write_stage_1_results(stage_results)
+                    if file_sleep_seconds and index < len(descriptors):
+                        time.sleep(file_sleep_seconds)
+                    continue
+
+            (added if decision == "ADDED" else rerun).append(file_id)
             try:
                 csv_path, _json_path, report = S.standardize_file(S.StandardizationContext(
                     path=path,
@@ -660,40 +982,124 @@ class Runner:
                     write_mapping=False,
                 ))
                 row_count = int(report["标准化统计"]["交易笔数"])
-                route_key = os.path.basename(csv_path)
-                file_routes[route_key] = yaml_route_summary(report)
-                processed.append({
-                    "input": path,
-                    "csv": csv_path,
-                    "rows": row_count,
-                })
+                V.validate_standardized_file(csv_path)
+                route_summary = yaml_route_summary(report)
+                if not valid_yaml_route(route_summary):
+                    raise V.ValidationError(f"阶段一文件路由字段不合法：{name}")
+                post_blocked = self.run_file_qc(
+                    file_id,
+                    Q.AFTER_STAGE_1,
+                    {"path": path, "output": csv_path, "source_format_error": ""},
+                )
+                if post_blocked:
+                    stage_results["files"][file_id] = {
+                        "name": name,
+                        "status": BLOCKED,
+                        "message": self.file_qc_failure_message(file_id),
+                    }
+                else:
+                    stage_results["files"][file_id] = {
+                        "name": name,
+                        "status": DONE,
+                        "output": normalize_relpath(os.path.relpath(csv_path, self.run_dir)),
+                        "route": route_summary,
+                    }
+                    processed.append({
+                        "input": path,
+                        "csv": csv_path,
+                        "rows": row_count,
+                    })
             except S.SourceFormatQualityError as exc:
-                raise RuntimeError(
-                    f"阶段一 QC 未通过：{os.path.basename(path)}：{exc.reason}"
-                ) from exc
+                self.run_file_qc(
+                    file_id,
+                    Q.AFTER_STAGE_1,
+                    {"path": path, "source_format_error": exc.reason},
+                )
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "status": BLOCKED,
+                    "message": exc.reason,
+                }
             except S.NotABankStatement as exc:
-                skipped.append((os.path.basename(path), exc.reason))
+                skipped.append((name, exc.reason))
+                stage_results["files"].pop(file_id, None)
+                self.remove_file_qc(file_id)
             except Exception as exc:
-                raise RuntimeError(f"标准化失败：{os.path.basename(path)}：{exc}") from exc
-            if file_sleep_seconds and index < len(raw_files):
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "status": ERROR,
+                    "message": str(exc),
+                }
+            result_status = (
+                stage_results["files"].get(file_id, {}).get("status")
+                if file_id in stage_results["files"]
+                else "SKIPPED"
+            )
+            decisions[file_id] = {
+                "decision": decision,
+                "reason": reason,
+                "result_status": result_status,
+            }
+            self.write_stage_1_results(stage_results)
+            if file_sleep_seconds and index < len(descriptors):
                 time.sleep(file_sleep_seconds)
 
+        self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
+        self.write_manifest()
+        done_paths = self.standardized_paths_from_results()
+        customer_hard_failed = self.run_customer_qc(
+            Q.AFTER_STAGE_1,
+            {"standardized_paths": done_paths, "stage_1_results": stage_results},
+        )
+        failed_records = {
+            file_id: record
+            for file_id, record in stage_results["files"].items()
+            if record.get("status") in {BLOCKED, ERROR}
+        }
+        if customer_hard_failed:
+            failed_records["customer"] = {"status": BLOCKED, "message": "客户级 HARD QC 未通过"}
+        decision_summary = {
+            "added": sorted(added),
+            "reused": sorted(reused),
+            "rerun": sorted(rerun),
+            "removed": removed,
+            "decisions": decisions,
+        }
+        if getattr(self, "receipt_dir", None):
+            self.receipt(
+                "stage_1_files",
+                "partial" if failed_records else "ok",
+                decision_summary,
+            )
+        if failed_records:
+            detail = "；".join(
+                f"{record.get('name', file_id)}：{record.get('message', record.get('status'))}"
+                for file_id, record in failed_records.items()
+            )
+            raise RuntimeError(f"阶段一处理完成但存在失败文件：{detail}")
         if not processed:
             detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "无成功标准化文件"
             raise RuntimeError(f"阶段一没有生成标准化产物：{detail}")
 
-        self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
-        route_artifact = self.write_stage_1_routes(work, file_routes)
         return StageResult(
             "stage_1_standardize",
-            {"processed_files": len(processed), "standardized": processed, "route_artifact": route_artifact},
+            {
+                "processed_files": len(processed),
+                "standardized": processed,
+                "stage_1_results": self.stage_1_results_file(),
+                **decision_summary,
+            },
         )
 
     def stage_2_integrate(self):
         import pandas as pd
+        standardized_inputs = self.standardized_paths_from_results()
+        if not standardized_inputs:
+            # 兼容历史 run；新 run 必须由 stage_1_results.json 提供 DONE 文件。
+            standardized_inputs = [self.work_dir()]
         int_csv, int_json, report = I.integrate_context(IntegrationContext.create(
             self.args.client,
-            [self.work_dir()],
+            standardized_inputs,
             out_dir=self.work_dir(),
             file_routes=self.load_stage_1_routes(),
         ))
@@ -757,6 +1163,8 @@ class Runner:
         tagged = pd.read_csv(tag_csv, dtype=str)
         daily = pd.read_csv(daily_hits[-1]) if daily_hits else pd.DataFrame()
         skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
+        qc_summary = self.load_qc_results()
+        Q.update_status(qc_summary, final=True)
         P.finalize_deliverable(
             self.args.client,
             tagged,
@@ -766,6 +1174,7 @@ class Runner:
             pbrep,
             self.out_dir,
             skipped,
+            qc_results=qc_summary,
         )
         self.final_validation_result = V.validate_final(
             self.out_dir,
@@ -797,6 +1206,8 @@ class Runner:
                 work,
                 skipped_inputs=self.manifest.get("skipped_inputs", []),
                 file_routes=self.load_stage_1_routes(),
+                stage_1_results=self.load_stage_1_results(),
+                run_dir=self.run_dir,
             )
         raise RuntimeError(f"未知阶段验证器：{stage_id}")
 
@@ -846,14 +1257,31 @@ class Runner:
 
         fallback_dir = self.fallback_dir(stage_id)
         os.makedirs(fallback_dir, exist_ok=True)
+        failed_files = []
+        try:
+            for file_id, record in self.load_stage_1_results()["files"].items():
+                if record.get("status") not in {BLOCKED, ERROR}:
+                    continue
+                failed_files.append({
+                    "file_id": file_id,
+                    "name": record.get("name", ""),
+                    "status": record.get("status", ""),
+                    "message": record.get("message", ""),
+                })
+        except Exception:
+            failed_files = []
         fallback_request = {
             "client": self.args.client,
             "stage": stage_id,
             "name": spec.get("name", ""),
             "ai_fallback_refs": spec.get("ai_fallback_refs", []),
             "error": str(exc),
+            "files": failed_files,
             "created_at": now(),
-            "instruction": "AI 兜底产生的脚本、补丁、参数文件必须保存在本目录，并追加记录到运行时 manifest 的 ai_fallback_artifacts。",
+            "instruction": (
+                "AI 只处理 files 中的 BLOCKED/ERROR 文件；产生的脚本、补丁、参数文件"
+                "必须保存在本目录，并追加记录到运行时 manifest 的 ai_fallback_artifacts。"
+            ),
         }
         fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
         with open(fallback_request_path, "w", encoding="utf-8") as f:
@@ -904,6 +1332,23 @@ class Runner:
                     self.receipt(f"{stage_id}__validator", "ok", {
                         "result": validate_result,
                     })
+                else:
+                    checkpoint = {
+                        "stage_2_integrate": Q.AFTER_STAGE_2,
+                        "stage_2b_portfolio_balance": Q.AFTER_STAGE_2B,
+                        "stage_3_tag": Q.AFTER_STAGE_3,
+                        "stage_4_package": Q.AFTER_STAGE_4,
+                    }[stage_id]
+                    if self.run_customer_qc(
+                        checkpoint,
+                        {
+                            "stage_id": stage_id,
+                            "work_dir": self.work_dir(),
+                            "script_result": script_result,
+                        },
+                        final=stage_id == "stage_4_package",
+                    ):
+                        raise RuntimeError(f"{checkpoint} 存在客户级 HARD QC 失败")
                 self.update_stage_status(stage_id, DONE)
                 message = (
                     f"阶段 {stage_id} 已通过脚本和检测"

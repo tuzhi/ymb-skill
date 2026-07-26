@@ -38,12 +38,14 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 - `ai_fallback_info`：当前阶段 AI 兜底关注点的简要说明。
 - `ai_fallback_used`：默认 `false`；当前阶段进入 AI 兜底时写为 `true`。
 - `ai_fallback_artifacts`：当前阶段 AI 兜底实际产生的脚本、补丁、参数文件清单。
-- `route_artifact`：仅阶段一使用；指向客户级 `stage_1_routes.json`，manifest 本身不承载逐文件路由明细。
 
 核心输出契约：
 
-- `runs/<run-id>/manifest.json` 是本次运行的唯一事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内记录程序路线、AI 兜底路线、状态和产物索引；不承载逐文件路由明细、字段映射正文、输入诊断正文或业务分析结果。
-- 阶段一主流程要求标准化 CSV 与 `route_artifact` 指向的客户级路由索引一一对应。索引以标准化 CSV 文件名为键，每个文件只保存 `fingerprint_id / series_family / router_bank / yaml_match_status` 四项。`inferred_bank` 只允许在阶段一内部推断和单文件审计报告中使用，不跨阶段持久化。单文件 `mapping.json` 降级为可选审计产物，不再作为阶段验收或阶段二输入。
+- `runs/<run-id>/manifest.json` 是本次运行的阶段状态事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内只记录阶段状态和阶段一 AI 兜底信息；不承载逐文件结果、QC、字段映射正文、输入诊断正文或业务分析结果。
+- `runs/<run-id>/stage_1_results.json` 是阶段一逐文件结果事实源，以内容 MD5 为 key，记录文件名、`PENDING / DONE / BLOCKED / ERROR`、标准化产物和最小 route。它替代 `stage_1_routes.json`，Manifest 不再保存 `route_artifact`。
+- `runs/<run-id>/qc_results.json` 独立保存文件级和客户级 QC 结果；规则执行阶段、作用域、软硬级别和 handler 只由代码注册表维护。
+- 最终交付物只展示 `qc_results.json` 的状态和失败规则摘要，完整 QC 事实仍保留在独立结果文件中。
+- 阶段一主流程要求每个 `DONE` 记录对应一个可验收的标准化 CSV 和四字段 route：`fingerprint_id / series_family / router_bank / yaml_match_status`。`inferred_bank` 只允许在阶段一内部推断和单文件审计报告中使用，不跨阶段持久化。单文件 `mapping.json` 降级为可选审计产物，不再作为阶段验收或阶段二输入。
 - `ai_fallback_info` 只说明当前阶段兜底关注点；具体判断不直接展开进 manifest 阶段状态。
 - `runs/<run-id>/receipts/*.json` 是每个确定性步骤的可复核回执，记录实际 handler、参数、校验和产物摘要。
 - `runs/<run-id>/fallback/stage_1_standardize/` 保存阶段一 AI 兜底的实际补丁、参数或临时脚本；只有产生可复用文件时，才把相对文件名追加到阶段一 `ai_fallback_artifacts`。
@@ -67,7 +69,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 3. 兜底必须导向确定性修正，例如补充 `_file_hints.yaml`、参数、映射、临时脚本或补丁；不能只给解释性结论。
 4. 兜底若产生可复用文件，应保存到固定目录 `runs/<run-id>/fallback/stage_1_standardize/`，并写入 `ai_fallback_artifacts`；客户目录 `_file_hints.yaml` 作为输入提示文件由阶段一入口读取。
 5. 阶段一必须记录 `ai_fallback_used = true`，兜底次数必须记录到 `events.jsonl`，最多 2 次。
-6. 兜底后必须创建带 `parent_run_id` 的新运行；新运行从阶段一重新执行，阶段一必须重新通过 `validate_standardize()`，后续阶段必须重新执行并通过最终交付验收。
+6. 兜底后必须创建带 `parent_run_id` 的新运行；新运行只复用直接父 Run 中同 MD5、同文件名、同 Skill 版本且产物存在的 `DONE` 文件，失败、新增或不满足条件的文件重新执行。阶段一仍须整体通过 `validate_standardize()`，后续阶段全部重新执行。
 7. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
 
 执行约束：
@@ -83,12 +85,12 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件夹>" --run-root ".\runs" --parent-run-id "<失败run_id>" --rerun-reason ai_fallback_after_stage_failure
 ```
 
-新的 `manifest.json` 会记录 `parent_run_id`、`rerun_reason`，并从父 manifest 读取客户名、失败阶段和兜底产物；不得复用旧 run 目录覆盖失败现场。重跑必须显式指定 `parent_run_id`，不得通过“最新 run”猜测父运行。
+新的 `manifest.json` 会记录 `parent_run_id`、`rerun_reason`，从父 manifest 读取客户名和兜底上下文，并从直接父 Run 的 `stage_1_results.json` 判断单文件复用；不得复用旧 run 目录覆盖失败现场，不递归猜测祖先或“最新 run”。
 
 ## 写入边界
 
-- 默认只写本次运行目录，例如 `runs/<run-id>/fallback/stage_1_standardize/`、`runs/<run-id>/artifacts/`、`receipts/`、`events.jsonl`。
-- 阶段一失败时 orchestrator 会在固定的 `fallback/stage_1_standardize/` 写入 `fallback_request.json`；阶段二及以后失败不创建 fallback 目录。
+- 默认只写本次运行目录，例如 `runs/<run-id>/stage_1_results.json`、`qc_results.json`、`fallback/stage_1_standardize/`、`artifacts/`、`receipts/`、`events.jsonl`。
+- 阶段一失败时 orchestrator 会在固定的 `fallback/stage_1_standardize/` 写入 `fallback_request.json`，其中 `files` 只列出本轮 `BLOCKED/ERROR` 文件；阶段二及以后失败不创建 fallback 目录。
 - AI 兜底开发的临时脚本、补丁、参数文件必须留存在阶段一固定 fallback 目录，并在运行时 manifest 的 `ai_fallback_artifacts` 记录相对路径。
 - 默认不得修改 skill 源码目录：`scripts/`、`assets/`、`references/`、`SKILL.md`。
 - 只有用户明确要求“修改技能代码”“沉淀为版本”或“发版”时，才允许写回 skill 源码目录；写回后必须重新测试并打包。
