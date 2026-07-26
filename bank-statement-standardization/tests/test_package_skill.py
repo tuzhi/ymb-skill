@@ -34,6 +34,15 @@ class PackageSkillTest(unittest.TestCase):
             "ymb_standardization_core/core.py",
             names,
         )
+        self.assertIn(
+            "bank-statement-standardization/packages/ymb_standardization_core/"
+            "ymb_standardization_core/config/routing/routing_rules.yaml",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/services/statement_service.py",
+            names,
+        )
 
     def test_package_excludes_runtime_raw_data_and_independent_tools(self):
         package_skill = self.load_package_module()
@@ -57,6 +66,7 @@ class PackageSkillTest(unittest.TestCase):
         self.assertTrue(package_skill._is_included(Path("runtime/standardize.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/qc.py")))
+        self.assertTrue(package_skill._is_included(Path("services/statement_service.py")))
         self.assertFalse(package_skill._is_included(Path("tools/qa/run_full_test.py")))
         self.assertFalse(package_skill._is_included(Path("AGENTS.md")))
 

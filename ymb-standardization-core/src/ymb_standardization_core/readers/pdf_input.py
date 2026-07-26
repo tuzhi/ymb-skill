@@ -101,7 +101,7 @@ def _open_pdf(path, open_password=None):
     return pdfplumber.open(path)
 
 
-def read_pdf_rows(path, open_password=None):
+def read_pdf_rows(path, open_password=None, route_rules=None):
     """读取 PDF 并按路由选择专属 reader 或通用表格 reader。
 
     返回 (preamble, rows, route_info)。preamble 供标准化层继续嗅探户名/账号。
@@ -111,7 +111,13 @@ def read_pdf_rows(path, open_password=None):
         text = "\n".join(page.extract_text() or "" for page in pdf.pages)
         from ymb_standardization_core.readers.router import route_pdf
 
-        route_info = route_pdf(text, 0, len(pdf.pages), context=_pdf_context(pdf, text))
+        route_info = route_pdf(
+            text,
+            0,
+            len(pdf.pages),
+            context=_pdf_context(pdf, text),
+            rules=route_rules,
+        )
         reader_pdf = pdf
         if route_info.get("dedupe_chars"):
             reader_pdf = SimpleNamespace(

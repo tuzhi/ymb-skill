@@ -109,7 +109,7 @@ def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candida
     }
 
 
-def route_pdf(text, table_row_count, page_count, context=None):
+def route_pdf(text, table_row_count, page_count, context=None, rules=None):
     """识别 PDF 的解析路线。只判断模板和抽取模式，不在这里清洗交易数据。"""
     text = text or ""
     evidence = {
@@ -121,7 +121,7 @@ def route_pdf(text, table_row_count, page_count, context=None):
     candidates = []
     candidate_fingerprints = []
 
-    for rule in load_pdf_route_rules():
+    for rule in load_pdf_route_rules() if rules is None else rules:
         candidate = rule.fingerprint_candidate(text, context=context)
         if candidate:
             candidate_fingerprints.append(candidate)

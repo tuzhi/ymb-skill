@@ -417,6 +417,7 @@ class Runner:
         self.manifest["client"] = args.client
         self.manifest["parent_run_id"] = args.parent_run_id or ""
         self.manifest["rerun_reason"] = args.rerun_reason or ""
+        self.manifest["routing_rules_version"] = S.routing_rules_version()
         self.manifest["skipped_inputs"] = []
         self.write_manifest()
         Q.atomic_write_json(self.stage_1_results_path, {"files": {}})

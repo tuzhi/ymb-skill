@@ -142,10 +142,10 @@ def _choose_specific_candidate(candidates):
     return None
 
 
-def route_excel(rows, sheet, context=None):
+def route_excel(rows, sheet, context=None, rules=None):
     candidates = []
     candidate_fingerprints = []
-    for rule in load_excel_route_rules():
+    for rule in load_excel_route_rules() if rules is None else rules:
         candidate = rule.fingerprint_candidate(rows, context=context)
         if candidate:
             candidate_fingerprints.append(candidate)
@@ -341,7 +341,7 @@ def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     return reader(path)
 
 
-def read_rows(path, hints=None):
+def read_rows(path, hints=None, route_rules=None):
     hints = hints or {}
     open_password = hints.get("open_password") or None
     ext = os.path.splitext(path)[1].lower()
@@ -351,7 +351,7 @@ def read_rows(path, hints=None):
             raise _unsupported_error(rejection_reason)
         sheet, rows = _call_excel_reader(path, open_password=open_password)
         context = _excel_context(path, rows, sheet, open_password=open_password)
-        route_info = route_excel(rows, sheet, context=context)
+        route_info = route_excel(rows, sheet, context=context, rules=route_rules)
         if route_info.get("multi_sheet_same_layout"):
             sheet, rows = _call_excel_reader(
                 path,
@@ -370,7 +370,11 @@ def read_rows(path, hints=None):
     if ext in (".csv", ".txt", ".tsv"):
         raise _unsupported_error("CSV/TXT/TSV 当前不作为原始流水支持格式")
     if ext == ".pdf":
-        preamble, rows, route_info = read_pdf_rows(path, open_password=open_password)
+        preamble, rows, route_info = read_pdf_rows(
+            path,
+            open_password=open_password,
+            route_rules=route_rules,
+        )
         rows, route_info = merge_configured_header(rows, route_info)
         return ReadResult(
             kind="pdf",

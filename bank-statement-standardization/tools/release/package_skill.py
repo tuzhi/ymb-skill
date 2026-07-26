@@ -26,6 +26,7 @@ INCLUDED_TOP_LEVEL_DIRS = {
     "references",
     "runtime",
     "scripts",
+    "services",
 }
 
 

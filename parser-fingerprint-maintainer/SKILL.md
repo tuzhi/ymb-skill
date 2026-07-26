@@ -14,7 +14,7 @@ description: "当维护银行流水 reader fingerprint、检查 Excel/PDF 是否
 - 判断某个 Excel/PDF 是否命中已有 YAML fingerprint
 - 分析 `generic_*`、`unmatched`、`ambiguous_router_match`
 - 对比 `support_matrix.xlsx` 中同一 fingerprint 的历史样本
-- 新增或收窄 `excel_rules.yaml` / `pdf_rules.yaml`
+- 新增或收窄统一的 `routing_rules.yaml`（用 `file_type` 区分 Excel/PDF）
 - 判断某个 fingerprint 是否过宽、过窄，或错误声明了银行身份
 - 维护 `reader_id`、列到标准字段的映射、支持矩阵中的 reader 命中结果
 

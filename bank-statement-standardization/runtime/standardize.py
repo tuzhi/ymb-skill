@@ -19,3 +19,6 @@ for _candidate in (
         break
 
 from ymb_standardization_core.core import *  # noqa: F401,F403,E402
+from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402,F401
+    routing_rules_version,
+)

@@ -1,3 +1,1362 @@
+- id: md5:9e511d80594efdc217b4ce8a6d1cfd5a
+  file_type: pdf
+  bank: 中国农业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国农业银行账户活期交易明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账户[:：]\s*([0-9*]+)'
+    columns:
+      all:
+        账户活期交易明细清单: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易摘要: 银行备注
+        交易金额: 交易金额
+        本次余额: 账户余额
+        对手信息: 对手名称
+        日 志 号: null
+        交易渠道: 交易渠道
+        交易附言: 账户方附言
+    row_anchor:
+      column: 交易日期
+      pattern: ^20\d{6}$
+  reader_options:
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^\s*(\d{12,})\s*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^\s*\d{12,}\s*$'
+      replacement: ''
+  reader_id: pdfplumber_coordinate_table
+- id: md5:3a12345edcf754cba36162616ca4737d
+  file_type: pdf
+  bank: 江西农商银行
+  account_type: 个人
+  fingerprint:
+    date_format:
+      any:
+      - yyyy-mm-dd
+    identity:
+      any:
+      - 江西·农商银行
+      - 江西农商银行
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[:：]?\s*(.+?)\s*账\s*号[:：]'
+    - field: 本方账户
+      pattern: '账\s*号[:：]?\s*([0-9*]+)'
+    columns:
+      all:
+        江西·农商银行交易流水: null
+        户 名: 本方名称
+        账 号: 本方账户
+        起止日期: null
+        记账日期: 交易日期
+        交易金额(元): 交易金额
+        交易后余额(元): 账户余额
+        交易摘要: 银行备注
+        对方户名: 对手名称
+        对方账号: 对手账户
+    row_anchor:
+      column: 记账日期
+      pattern: ^20\d{2}-\d{2}-\d{2}$
+    word_filters:
+      drop_words_below_page_bottom: 45
+      stop_line_contains_any:
+      - 借方总笔数
+      - 借方发生额累计
+      - 贷方总笔数
+      - 贷方发生额累计
+      drop_chars:
+      - text_any:
+        - 江
+        - 西
+        - 农
+        - 商
+        - 银
+        - 行
+        - ·
+        fontname_contains: SimHei
+        min_size: 18
+  reader_id: pdfplumber_coordinate_table
+- id: md5:b75cf43e9a35b4ca0c082906f3aa2c7b
+  file_type: pdf
+  bank: 开泰银行（Kasikorn Bank）
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Creator: PDFium
+        Producer: PDFium
+    date_format:
+      any:
+      - yy-mm-dd
+    identity:
+      any:
+      - K PLUS
+      - K BIZ
+      - AccountMR.
+      - Account Number
+    preamble_extractors:
+    - field: 本方名称
+      pattern: 'AccountMR\.\s*(.+?)\s+Reference'
+    - field: 本方账户
+      pattern: 'Account Number\s+(\d[\d\-]{5,}\d)'
+    columns:
+      all:
+        K PLUS: null
+        K BIZ: null
+        AccountMR.: null
+        Account Number: null
+        Date: 交易日期
+        Time/: 交易时间
+        Descriptions: 银行备注
+        Withdrawal / Deposit: 交易金额
+        Outstanding Balance: 账户余额
+        Channel: 交易渠道
+        Details: 账户方附言
+        Eff.Date: null
+  reader_options:
+    date_order: dmy
+    row_transforms:
+      anchor_column: Date
+      anchor_pattern: ^\d{2}-\d{2}-\d{2}$
+      continuation: until_next_anchor
+    drop_rows:
+    - column: Descriptions
+      values:
+      - Beginning Balance
+    split_amount_balance:
+      source: Outstanding Balance
+      amount: Withdrawal / Deposit
+    amount_columns:
+    - Withdrawal / Deposit
+    - Outstanding Balance
+    extract_patterns:
+    - column: Date
+      pattern: \d{2}-\d{2}-\d{2}
+    - column: Time/
+      pattern: \d{2}:\d{2}
+    direction_from_column:
+      source: Descriptions
+      income_prefixes:
+      - Transfer Deposit
+      - Cash Deposit
+      - Interest Deposit
+      - Inter-Region Transfer
+      expense_prefixes:
+      - Transfer Withdrawal
+      - Payment
+      - Cash Withdrawal
+      - Fee
+      - Annual Debit Card Fee
+      - Annual Debit Card
+      - Withholding Tax Payable
+      - Withholding Tax
+      - Deposit Transfer Withdrawal
+      - Transfer Withdrawal For more information,
+    extract_mapping:
+    - source: Details
+      field: 对手账户
+      pattern: '^(?:To|From)\s+.*?\b(X[A-Z0-9]{4,})\b.*$'
+      replacement: '\1'
+    - source: Details
+      field: 对手名称
+      pattern: '^(?:To|From)\s+.*?\bX[A-Z0-9]{4,}\b\s*(.*?)(?:\+\+)?$'
+      replacement: '\1'
+    - source: Details
+      field: 对手名称
+      pattern: '^Paid for Ref\s+(?:X[A-Z0-9]{4,}|\d+)\s+(.*)$'
+      replacement: '\1'
+  reader_id: pdfplumber_coordinate_table
+- id: md5:eb90af33b5f89117b801f28b10fdc111
+  file_type: pdf
+  bank: 浙江庆元农商银行
+  account_type: 个人
+  fingerprint:
+    style:
+      all:
+      - text: 个人账户交易明细
+        font: STSong-Light
+        size_min: 13
+        size_max: 15
+        top_max: 60
+    identity:
+      any:
+      - 浙江庆元农商银行
+      - 庆元农商银行
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]?\s*([^:：\s]+)\s+账号'
+    - field: 本方账户
+      pattern: '账号[:：]?\s*(\d[\d*\-]{5,}\d)'
+    columns:
+      all:
+        个人账户交易明细: null
+        '户名:': 本方名称
+        '账号:': 本方账户
+        '开户行:': null
+        '账户种类:': null
+        交易日期: 交易日期
+        币种: null
+        交易摘要: 银行备注
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方行: null
+        交易渠道: 交易渠道
+        备注: 银行备注
+  reader_options:
+    row_transforms:
+      anchor_column: 交易日期
+      anchor_pattern: ^20\d{2}-\d{2}-\d{2}$
+      continuation: until_next_anchor
+    word_filters:
+      stop_line_contains_any:
+      - 重要提示
+      drop_words_below_page_bottom: 45
+  reader_id: pdfplumber_coordinate_table
+- id: md5:ad9958268d66435c0cba9f63bd3f8a34
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    columns:
+      all:
+        交易时间: 交易时间
+        本方账号: 本方账户
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方账户开户行: null
+        凭证号: null
+        借/贷: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        摘要: 银行备注
+        用途: 银行备注
+        余额: 账户余额
+  reader_id: pdfplumber_table
+- id: md5:e073efe882f3e565867cff972fc58e3e
+  file_type: pdf
+  bank: 平安银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Producer: SealSADK® 3.1.4.6; modified using SealSADK® 3.1.4.6
+    identity:
+      any:
+      - 平安银行个人账户交易明细清单
+      - Transaction Details List of Personal Account of Pingan Bank
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[：:]\s*([^\s]+)\s+卡号/账号'
+    - field: 本方账户
+      pattern: '卡号/账号[：:]\s*([0-9*]+)\s+存款类型'
+    columns:
+      required:
+        户名: null
+        卡号/账号: null
+        存款类型: null
+        交易日期: 交易日期
+        交易金额: 交易金额
+        余额: 账户余额
+        交易地点: null
+        摘要: 银行备注
+        备注: 账户方附言
+  reader_options:
+    dedupe_chars: true
+    word_filters:
+      drop_chars:
+      - rotated: true
+  reader_id: pdfplumber_table
+- id: md5:aecf32d3b7fafab4b468106cd8a06d3a
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    columns:
+      all:
+        入账日期: 交易日期
+        转入金额: 收入金额
+        转出金额: 支出金额
+        余额: 账户余额
+        对方单位: 对手名称
+        对方行号: null
+        对方账号: 对手账户
+        用途: 银行备注
+        本方账号: 本方账户
+        对方行名: null
+        摘要: 银行备注
+        回单个性化信息: null
+  reader_id: pdfplumber_table
+- id: md5:84a33d2b19cac75ce0e72118080eb538
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    columns:
+      all:
+        账号：: 本方账户
+        本方账号户名: 本方名称
+        本方账号开户行: 本方账户
+        时间范围: null
+        对方账号: 对手账户
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        用途: 银行备注
+        摘要: 银行备注
+        附言: 账户方附言
+        回单个性化信息: null
+        转出金额: 支出金额
+        转入金额: 收入金额
+        余额: 账户余额
+  reader_id: pdfplumber_table
+- id: md5:12073bf82ed836a1dcba3d4bb8aa2047
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Creator: PDFium
+        Producer: PDFium
+    date_format:
+      any:
+      - yyyy-mm-dd
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    columns:
+      all:
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: 本方账户
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+  reader_id: pdfplumber_table
+- id: md5:1ac2b953b8acacc332c7e2e0544eb1f6
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  series_family: icbc_personal_history_openpdf
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.27
+        Title: 借记卡账户明细清单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '卡号\s*([0-9*]+)'
+    columns:
+      all:
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: null
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+  reader_id: pdfplumber_table
+- id: md5:d933e13d10427ffb9d2590d52325b15e
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 个人
+  series_family: icbc_personal_history_openpdf
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.27
+        Title: 借记卡账户明细清单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '卡号\s*([0-9*]+)'
+    columns:
+      all:
+        电子版: null
+        卡号: 本方账户
+        户名: 本方名称
+        交易日期: 交易日期
+        账号: null
+        储种: null
+        序号: null
+        币种: null
+        钞汇: null
+        地区: null
+        收入/支出金额: 收入金额
+        余额: 账户余额
+        渠道: 交易渠道
+        对方户名: 对手名称
+        对方账号: null
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+    extract_mapping:
+    - source: 对方账号
+      field: 对手账户
+      pattern: '^([0-9*]{8,})$'
+  reader_id: pdfplumber_table
+- id: md5:6c51495092e9abac017b130c6e41991d
+  file_type: pdf
+  bank: 中国建设银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国建设银行个人活期账户全部交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户名称[:：]\s*([^\s]+)'
+    columns:
+      all:
+        卡号/账号: 本方账户
+        客户名称: 本方名称
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号与户名: 对手名称
+      optional:
+        序号: {}
+        摘要:
+          field: 银行备注
+        币别: {}
+        钞汇: {}
+        交易日期:
+          field: 交易日期
+        交易地点/附言:
+          field: 账户方附言
+    style:
+      all:
+      - text: 中国建设银行个人活期账户全部交易明细
+        font: STSong-Light
+        size_min: 14.5
+        size_max: 15.5
+        top_max: 30
+  reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d{1,6}$'
+    word_filters:
+      stop_line_contains_any:
+      - 生成时间
+    extract_mapping:
+    - source: 对方账号与户名
+      field: 对手账户
+      pattern: '^([A-Z0-9][A-Z0-9*]{7,})/.*$'
+    - source: 对方账号与户名
+      field: 对手名称
+      pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
+      replacement: ''
+  reader_id: pdfplumber_table
+- id: md5:64d7b7142eb110705657f8871d27877f
+  file_type: pdf
+  bank: 中国建设银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国建设银行个人活期账户全部交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户名称[:：]\s*([^\s]+)'
+    columns:
+      all:
+        卡号/账号: 本方账户
+        客户名称: 本方名称
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方账号与户名: 对手名称
+      optional:
+        序号: {}
+        摘要:
+          field: 银行备注
+        币别: {}
+        钞汇: {}
+        交易日期:
+          field: 交易日期
+        交易地点/附言:
+          field: 账户方附言
+  reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d{1,6}$'
+    word_filters:
+      stop_line_contains_any:
+      - 生成时间
+    extract_mapping:
+    - source: 对方账号与户名
+      field: 对手账户
+      pattern: '^([A-Z0-9][A-Z0-9*]{7,})/.*$'
+    - source: 对方账号与户名
+      field: 对手名称
+      pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
+      replacement: ''
+  reader_id: pdfplumber_coordinate_table
+- id: md5:6db7b0df2ee808ba9fd0c559c836200e
+  file_type: pdf
+  bank: 中国建设银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国建设银行账户明细信息
+    columns:
+      all:
+        本方户名: 本方名称
+        账号: 本方账户
+        交易时: 交易时间
+        借方发: 支出金额
+        贷方发: 收入金额
+        对方户: 对手名称
+        对方账: 对手名称
+        账户明: null
+  reader_id: pdfplumber_table
+- id: md5:46cb259aaeb59d1ed620281dcd3f1714
+  file_type: pdf
+  bank: 中国银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国银行交易流水明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
+    columns:
+      all:
+        借记卡号: 本方账户
+        记账日期: 交易日期
+        记账时间: 交易时间
+        币别: null
+        金额: 交易金额
+        余额: 账户余额
+        对方账户名: 对手名称
+        对方卡号/账号: 对手账户
+  reader_options:
+    extract_mapping:
+    - source: 对方账户名
+      field: 对手名称
+      pattern: '^\s*-+\s*$'
+      replacement: ''
+    - source: 对方卡号/账号
+      field: 对手账户
+      pattern: '^\s*-+\s*$'
+      replacement: ''
+    - source: 对方账户名
+      field: 对手名称
+      pattern: '^(.*?)-\s+(.+)$'
+      replacement: '\1-\2'
+  reader_id: pdfplumber_table
+- id: md5:9858d002b7a09dd4d28147128a08c637
+  file_type: pdf
+  bank: 中国邮政储蓄银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 邮储银行历史明细
+      - 中国邮政储蓄银行借记账户历史明细
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '卡号/账号[:：]\s*([0-9*]+)'
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    columns:
+      all:
+        交易时间: 交易时间
+        子账号: null
+        储种: null
+        币种: null
+        钞汇: null
+        交易金额: 交易金额
+        交易余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        交易渠道: 交易渠道
+  reader_id: pdfplumber_table
+- id: md5:62e6d295a83d90bedc2c273c43fd29b6
+  file_type: pdf
+  bank: 中国农业银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.32
+    identity:
+      any:
+      - 账户明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    columns:
+      all:
+        账号：: 本方账户
+        户名：: 本方名称
+        币种：: null
+        起止日期: null
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        交易行名: null
+        对方城市: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        交易用途: 银行备注
+        会计日期: 交易日期
+  reader_options:
+    source_order: descending
+  reader_id: pdfplumber_table
+- id: md5:6a5112d8308bc6c15bc9e8da752c1bcf
+  file_type: pdf
+  bank: 上饶银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Creator: JasperReports (testReport)
+        Producer: iText 2.1.7 by 1T3XT
+    style:
+      all:
+      - text: 交易明细
+        font: STSong-Light
+        size_min: 24
+        size_max: 24
+        bold: false
+        top_max: 50
+        centered: true
+        center_tolerance: 0.03
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 交易明细
+    columns:
+      all:
+        交易流水号: null
+        交易时间: 交易时间
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方账户开户网点: 对手账户
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+        附言: 账户方附言
+        摘要: 银行备注
+        超网-贷记转出: 支出金额
+  reader_id: pdfplumber_table
+- id: md5:faa41e63d794e9c93a71a882791fb90f
+  file_type: pdf
+  bank: 上饶银行
+  account_type: 个人
+  fingerprint:
+    style:
+      all:
+      - text: 上饶银行历史交易流水
+        font: STSongStd-Light
+        size_min: 19
+        size_max: 21
+        top_max: 70
+        centered: true
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 上饶银行历史交易流水
+    columns:
+      all:
+        户名：: 本方名称
+        账号：: 本方账户
+        流水日期：: null
+        开户行：: null
+        申请时间：: null
+        序号: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        余额: 账户余额
+        对方银行: null
+        卡号: null
+        对方户名: 对手名称
+        摘要: 银行备注
+  reader_options:
+    extract_mapping:
+    - source: 对方银行卡号
+      field: 对手账户
+      pattern: '^(.+)$'
+    - source: 对方银行卡号
+      field: 对手账户
+      pattern: '\s+'
+      replacement: ''
+  reader_id: pdfplumber_table
+- id: md5:f2ac81b34fea59be828e6e5dbd017b63
+  file_type: pdf
+  bank: 上饶银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 上饶银行账户交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        账号：: 本方账户
+        户名：: 本方名称
+        银行盖章: null
+        打印时间: null
+        操作员号: null
+        序号: null
+        交易时间: 交易时间
+        流水号: null
+        对方账号: 对手账户
+        对方户名: 对手名称
+        支出: 支出金额
+        收入: 收入金额
+        账户余额: 账户余额
+        摘要: 银行备注
+        附言: 账户方附言
+  reader_options:
+    row_transforms:
+      anchor_column: 序号
+      anchor_pattern: '^\d+$'
+      continuation: until_next_anchor_across_pages
+  reader_id: pdfplumber_table
+- id: md5:6cadae92bf0342082ec8ce1556cf1ac0
+  file_type: pdf
+  bank: 浙江网商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 企业账号
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '企业名称\s+(.+?)\s+企业账号'
+    - field: 本方账户
+      pattern: '企业账号\s+(\d[\d*\-]{5,}\d)'
+    columns:
+      all:
+        企业名称: 本方名称
+        企业账号: 本方账户
+        借方交易笔数: 支出金额
+        借方交易金额: 支出金额
+        贷方交易笔数: 收入金额
+        贷方交易金额: 收入金额
+        序号: null
+        账务流水号: null
+        提交时间: null
+        交易时间: 交易时间
+        交易名称: 银行备注
+        借方金额（收）: 支出金额
+        贷方金额（支）: 收入金额
+        余额: 账户余额
+        对方户名: 对手名称
+        对方账号: 对手账户
+        对方机构: null
+        备注: 银行备注
+  reader_id: pdfplumber_coordinate_table
+- id: md5:66e9c906a6c3c121ddce1ca9ecb8824d
+  file_type: pdf
+  bank: 招商银行
+  account_type: 个人
+  fingerprint:
+    metadata:
+      all:
+        Producer: openhtmltopdf.com
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 招商银行交易流水
+      - Transaction Statement of China Merchants Bank
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '账号[:：]\s*([0-9*]+)'
+    columns:
+      required:
+        户 名: 本方名称
+        账号: 本方账户
+        记账日期: 交易日期
+        货币: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易摘要: 银行备注
+      optional:
+        对手信息:
+          field: 对手名称
+          qc: required
+          missing_hint: 请重新导出招商银行交易流水，并勾选“对手信息”
+  reader_options:
+    row_transforms:
+      anchor_column: 记账日期
+      anchor_pattern: '^20\d{2}-\d{2}-\d{2}$'
+    repeated_header:
+      end_markers:
+      - Amount
+    word_filters:
+      drop_words_below_page_bottom: 45
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^.*?(?<!\d)(\d{8,})(?!\d).*$'
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^.*(?<!\d)(\d{8,})(?!\d)\s*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '(?<!\d)\d{8,}(?!\d)'
+      replacement: ''
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^\s*(?<!\d)\d{8,}(?!\d)\s+(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
+      replacement: '\1'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^Type\s*Counter\s*Party\s*(.*?)\s+(?<!\d)\d{8,}(?!\d)\s*$'
+      replacement: '\1'
+  reader_id: pdfplumber_coordinate_table
+- id: md5:0a45d881baf8861f2799735ca60e0652
+  file_type: pdf
+  bank: 兴业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 兴业银⾏交易流⽔
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[^：:]{0,10}[：:]\s*[-\d\s]*([\u4e00-\u9fff]{2,20})'
+    - field: 本方账户
+      pattern: '账号[^：:]{0,10}[：:]\s*(\d{6}\s*\*{4}\s*\d{4})'
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    columns:
+      all:
+        Bank Transaction Details: null
+        Transaction Time: null
+        Accounting Date: null
+        Transaction Type: null
+        Transaction Amount: 交易金额
+        Account Balance: 账户余额
+        Counterparty’s: 对手名称
+        Counterparty’s Account No.: 对手账户
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+    extract_mapping:
+    - source: Counterparty’s Account No.
+      field: 对手账户
+      pattern: '(?s)^.*?([0-9*]{8,}).*$'
+    - source: Counterparty’s Account No.
+      field: 对手账户
+      pattern: '(?s)^.*无.*$'
+      replacement: ''
+  reader_id: pdfplumber_table
+- id: md5:1de98a4d0d435b5daca86f7338ccd7e0
+  file_type: pdf
+  bank: 招商银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.30
+    date_format:
+      any:
+      - yyyy-mm-dd
+    identity:
+      any:
+      - 用户所属公司
+      - 记录数
+    preamble_mapping:
+      用户所属公司: 本方名称
+    columns:
+      all:
+        交易日期: 交易日期
+        借方(出账): 支出金额
+        贷方(入账): 收入金额
+        余额摘要: 账户余额
+        收(付)方名称: 对手名称
+        收(付)方账号: 对手账户
+        交易类型: 银行备注
+  reader_id: pdfplumber_line_table
+- id: md5:779ac95e49164978d2f63a808b850459
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国工商银行版权所有
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '单位名称[:：]\s*([^*\n]+?)\s*(?=\*?账号[:：])'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{10,})'
+    columns:
+      all:
+        交易时间: 交易时间
+        转出金额: 支出金额
+        转入金额: 收入金额
+        币种: null
+        余额: 账户余额
+        对方单位: 对手名称
+        对方账号: 对手账户
+        摘要: 银行备注
+        操作: null
+        详细信息: null
+  reader_options:
+    drop_rows:
+    - any_values:
+      - '合计 (人民币):'
+      - '借方发生额：'
+      - '贷方发生额：'
+  reader_id: pdfplumber_table
+- id: md5:cdccd6123047eb2b26165e7e19d4e205
+  file_type: pdf
+  bank: 九江银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 开户银行:九江银行
+      - 开户银行:九江银行股份有限公司
+    columns:
+      all:
+        交易明细清单: null
+        '查询账号:': 本方账户
+        '账户名称:': 本方名称
+        '交易时间范围:': 交易时间
+        交易时间: 交易时间
+        收入(元): 收入金额
+        支出(元): 支出金额
+        余额(元): 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        摘要: 银行备注
+        交易用途: 银行备注
+  reader_id: pdfplumber_table
+- id: md5:e6e38346900050e3619ef4d86ec20fb1
+  file_type: pdf
+  bank: 中国光大银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 中国光大银行账户明细查询清单
+      - Transaction Statement of China Everbright Bank
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '客户账号[:：]\s*(\d{8,})'
+    date_format:
+      any:
+      - yyyy-mm-dd
+    columns:
+      all:
+        交易日期: 交易日期
+        支出金额: 支出金额
+        存入金额: 收入金额
+        账户余额: 账户余额
+        对手信息: 对手名称
+        摘要: 银行备注
+        Trans Date: null
+        Trans Amt Dr: null
+        Trans Amt Cr: null
+        Account Balance: null
+        Payment Receipt Account Information: null
+        Abstract: null
+  reader_options:
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '^.*?(?<!\d)(\d{12,})(?!\d).*$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '(?<!\d)\d{12,}(?!\d)'
+      replacement: ''
+  reader_id: pdfplumber_table
+- id: md5:717bcba4db286d79f4050c5e736ab11e
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '本方账号户名[:：]\s*(.+?)\s+本方账号开户行[:：]'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    columns:
+      all:
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        摘要: 银行备注
+        转出金额: 支出金额
+        转入金额: 收入金额
+        余额: 账户余额
+        时间戳: null
+  reader_id: pdfplumber_table
+- id: md5:907beda6d95ea54b2f6e380193726787
+  file_type: pdf
+  bank: 中国民生银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 个人账户对账单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '客户账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        中国民生银行: null
+        客户姓名: null
+        客户账号: 本方账户
+        交易时间: 交易时间
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方户名/账号: 对手名称
+  reader_options:
+    text_table_layout: cmbc_personal
+    extract_mapping:
+    - source: 对方户名/账号
+      field: 对手账户
+      pattern: '^.*?/\s*(\d{8,})(?:\s+.*)?$'
+    - source: 对方户名/账号
+      field: 对手名称
+      pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
+      replacement: '\1'
+  reader_id: pdfplumber_text_lines
+- id: md5:350f23537180795535cad737d2e0c06b
+  file_type: pdf
+  bank: 丰城顺银村镇银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 丰城顺银村镇银行股份有限公司
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    columns:
+      all:
+        账户/卡明细信息: null
+        账号/卡号: 本方账户
+        户名: 本方名称
+        交易时间: 交易时间
+        存入/支取: 交易金额
+        交易后余额: 账户余额
+  reader_id: pdfplumber_coordinate_table
+- id: md5:5550365935c904e0f19086789b2496e7
+  file_type: pdf
+  bank: 江西裕民银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 江西裕民银行交易流水
+      - 江西裕民银行交易流水
+    columns:
+      all:
+        客户姓名: null
+        账号: 本方账户
+        交易日期: 交易日期
+        业务摘要: 收支方向
+        交易金额(元): 交易金额
+        账户余额(元): 账户余额
+        交易币种: null
+        交易类别: 银行备注
+        对方户名: 对手名称
+        对方账号: 对手账户
+    row_anchor:
+      column: 交易日期
+      pattern: ^\d{4}[‑-]\d{2}[‑-]\d{2}$
+  reader_id: pdfplumber_coordinate_table
+- id: md5:736db5142663fe121ee00a19d869e2a9
+  file_type: pdf
+  bank: 微信支付
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 微信支付交易明细证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)'
+    - field: 本方账户
+      pattern: '在其微信号[:：]?\s*[【\[]?\s*([^】\]\s]+?)\s*[】\]]?\s*中的交易明细信息\s*如\s*下'
+    columns:
+      all:
+        兹证明: null
+        交易明细对应时间段: null
+        具体交易明细: null
+        交易单号: null
+        交易时间: 交易时间
+        交易类型: 银行备注
+        收/支/其他: 收支方向
+        交易方式: 交易渠道
+        金额(元): 交易金额
+        交易对方: 对手名称
+        商户单号: null
+  reader_options:
+    extract_mapping:
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱充值$
+      replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱提现$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^转入零钱通.*$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^零钱通转出.*$
+      replacement: 收入
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^分付还款$
+      replacement: 支出
+    - source: 交易类型
+      field: 收支方向
+      pattern: ^信用卡还款$
+      replacement: 支出
+    - source: 交易对方
+      field: 对手名称
+      pattern: '(?<=[\u3400-\u9fff])\s+(?=[\ue000-\uf8ff])'
+      replacement: ''
+  reader_id: pdfplumber_table
+- id: md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6
+  file_type: pdf
+  bank: 支付宝
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 支付宝支付科技有限公司
+      - 交易流水证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*([^（(\s,，:：\-]+)\s*[（(]证件号码'
+    - field: 本方账户
+      pattern: '支付宝账号\s*([^\s，。,；;]+?)\s*中(?:的)?明细信息'
+    columns:
+      all:
+        兹证明: null
+        交易时间段: 交易时间
+        币种: null
+        收/支: 收支方向
+        交易对方: 对手名称
+        商品说明: 银行备注
+        收/付款方式: 交易渠道
+        金额: 交易金额
+        交易订单号: null
+        商家订单号: 账户方附言
+        交易时间: 交易时间
+    row_anchor:
+      column: 收/支
+      values:
+      - 收入
+      - 支出
+      - 不计
+  reader_options:
+    extract_mapping:
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-(?:自动|单次)转入.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-转出到余额.*$
+      replacement: 收入
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额宝-.*收益(?:发放)?.*$
+      replacement: 收入
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*提现-实时提现.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*花呗(?:自动|主动)还款.*$
+      replacement: 支出
+    - source: 商品说明
+      field: 收支方向
+      pattern: ^.*余额升级服务收益发放.*$
+      replacement: 收入
+  reader_id: pdfplumber_coordinate_table
+- id: md5:fd0c28e51e5a27c063d443534cc70c81
+  file_type: pdf
+  bank: 广发银行
+  account_type: 对公
+  series_family: cgb_corporate_current_account_statement_openpdf
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.30
+    identity:
+      any:
+      - 广发银行活期对公对账单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[：:]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账\s*号[：:]\s*([0-9*]+)'
+    columns:
+      required:
+        交易日期: 交易日期
+        交易类型: 银行备注
+        票据号码: null
+        本期支出: 支出金额
+        本期收入: 收入金额
+        交易对手信息: 对手名称
+        余额: 账户余额
+  reader_options:
+    drop_rows:
+    - any_values:
+      - 上期余额
+  reader_id: pdfplumber_table
+- id: md5:18cd1e83f703a76a2c83a791160a8eb9
+  file_type: pdf
+  bank: 上海浦东发展银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Creator: JasperReports Library version 6.12.2-75c5e90a222ab406e416cbf590a5397028a52de3
+        Producer: iText 2.1.7 by 1T3XT
+    identity:
+      any:
+      - 上海浦东发展银行电子对账单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '账户名称\s*Account Name\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号\s*Account Number\s*([0-9*]+)'
+    columns:
+      required:
+        客户名称: null
+        账户名称: null
+        账号: null
+        交易日期: null
+        交易流水号: null
+        发生额: null
+        借方: null
+        贷方: null
+        账户余额: null
+        交易对手信息: null
+        对手名称: null
+        摘要代码: null
+        备注: null
+        浦发企业版App: null
+  reader_options:
+    header_merge:
+      rows: 2
+      columns:
+        交易日期TransactionDate: 交易日期
+        发生额Transaction Amount借方Debit: 支出金额
+        发生额Transaction Amount贷方Credit: 收入金额
+        账户余额Account Balance: 账户余额
+        交易对手信息Counterparty Information对手机构CounterpartyInstitution: __对手开户行
+        交易对手信息Counterparty Information对手名称Counterparty Name: 对手名称
+        摘要代码Abstract Code: 银行备注
+        备注Description: 银行备注
+    drop_rows:
+    - any_values:
+      - '提示 Remarks:1、为保障账户资金安全，请及时核实、纠正可能发生的财务差错。 To ensure the safety of the accountfunds,please promptly verify and correct any potential financial errors that may occur.2、账单内交易日期为银行记账日期，可能与单位记账日期不一致。 The transaction date in the bill is the daterecorded by the bank,which may not be the same as the date recorded by the organization.3、当日交易有抹账可能，当日账单暂不提供印章，账单明细款项以资金实际支付为准。 There is a possibility ofreconciliation for daily transactions, and a seal cannot be provided for daily bills. The details of the billwill be based on the actual payment of funds.4、查询间隔最多支持一年，最多查询近5年内的交易明细。 The query interval supports a maximum of one year,and the transaction details within the past 5 years can be queried at most5、如有任何疑问，请致电95528或亲临本行营业网点，我们将竭诚为您服务。 If you have any question,please call95528 or visit our bank branches.6、如需校验电子印章，请下载“浦发企业版App”或点击公司网银页面（http://cor.spdb.com.cn/company_e_bank/）进行验证。 To verify the electronic seal, please download the "SPDB Enterprise Edition App" or click on thecompany''s webpage (http://cor.spdb.com.cn/company_e_bank/) for verification.'
+  reader_id: pdfplumber_table
 - id: md5:67782b663739efc4e1fe6abab80507cf
   file_type: excel
   bank: 中国农业银行

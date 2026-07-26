@@ -236,16 +236,21 @@ def test_class_for_fingerprint(fingerprint_id):
 
 def _load_route_rule_index():
     rules = {}
-    for name in ("excel_rules.yaml", "pdf_rules.yaml"):
-        path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / name
-        try:
-            items = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-        except Exception:
-            items = []
-        for item in items:
-            fingerprint_id = item.get("id")
-            if fingerprint_id:
-                rules[fingerprint_id] = item
+    path = (
+        CORE_PACKAGE
+        / "ymb_standardization_core"
+        / "config"
+        / "routing"
+        / "routing_rules.yaml"
+    )
+    try:
+        items = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+    except Exception:
+        items = []
+    for item in items:
+        fingerprint_id = item.get("id")
+        if fingerprint_id:
+            rules[fingerprint_id] = item
     return rules
 
 

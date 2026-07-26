@@ -443,8 +443,11 @@ class PdfRouterDecisionTests(unittest.TestCase):
             self.assertIn(marker, by_id["md5:736db5142663fe121ee00a19d869e2a9"].column_markers)
 
     def test_pdf_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "pdf_rules.yaml"
-        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "routing_rules.yaml"
+        items = [
+            item for item in yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+            if item.get("file_type") == "pdf"
+        ]
 
         for item in items:
             self.assertNotIn("parser", item)

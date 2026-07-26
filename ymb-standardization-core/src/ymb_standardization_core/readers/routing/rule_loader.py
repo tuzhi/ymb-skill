@@ -1,9 +1,9 @@
 from dataclasses import dataclass, field
-from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
 import re
+from threading import RLock
 
 import yaml
 
@@ -150,6 +150,20 @@ class ExcelRouteRule(RouteRule):
         return self.fingerprint_candidate_text(text, context=context)
 
 
+@dataclass(frozen=True)
+class RoutingRulesSnapshot:
+    """一次完整加载的 PDF/Excel 路由规则快照。"""
+
+    version: str
+    pdf_rules: tuple[PdfRouteRule, ...]
+    excel_rules: tuple[ExcelRouteRule, ...]
+
+
+_ROUTING_RULES_LOCK = RLock()
+_CURRENT_ROUTING_RULES = None
+_CURRENT_ROUTING_SIGNATURE = None
+
+
 def _rows_text(rows):
     parts = []
     for row in rows[:300]:
@@ -272,18 +286,21 @@ def _yaml_version(name):
     """返回可用于进程内缓存失效的 YAML 文件版本。"""
     path = Path(__file__).resolve().parents[2] / "config" / "routing" / name
     stat = path.stat()
-    return str(path), stat.st_mtime_ns, stat.st_size
+    return str(path), stat.st_ino, stat.st_mtime_ns, stat.st_size
 
 
-@lru_cache(maxsize=8)
-def _load_yaml_versioned(path_text, _mtime_ns, _size):
-    """相同版本的 YAML 只解析一次；mtime 或大小变化后自动加载新版本。"""
-    with Path(path_text).open("r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or []
+def routing_rules_path():
+    return Path(_yaml_version("routing_rules.yaml")[0])
 
 
-def _load_yaml(name):
-    return _load_yaml_versioned(*_yaml_version(name))
+def routing_rules_version(content=None):
+    """返回统一路由规则内容对应的不可变版本标识。"""
+    payload = (
+        routing_rules_path().read_bytes()
+        if content is None
+        else str(content).encode("utf-8")
+    )
+    return "sha256-" + hashlib.sha256(payload).hexdigest()
 
 
 def _normalize_fingerprint(value):
@@ -682,10 +699,12 @@ def _extract_patterns(item):
     return normalized
 
 
-@lru_cache(maxsize=8)
-def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
+def build_pdf_route_rules(items):
+    """从统一规则列表构造 PDF 路由规则。"""
     rules = []
-    for item in _load_yaml("pdf_rules.yaml"):
+    for item in items:
+        if item.get("file_type") != "pdf":
+            continue
         fingerprint = item.get("fingerprint", {})
         rules.append(PdfRouteRule(
             id=_rule_id(item, fingerprint),
@@ -725,14 +744,12 @@ def _load_pdf_route_rules_versioned(_path_text, _mtime_ns, _size):
     return tuple(rules)
 
 
-def load_pdf_route_rules():
-    return _load_pdf_route_rules_versioned(*_yaml_version("pdf_rules.yaml"))
-
-
-@lru_cache(maxsize=8)
-def _load_excel_route_rules_versioned(_path_text, _mtime_ns, _size):
+def build_excel_route_rules(items):
+    """从统一规则列表构造 Excel 路由规则。"""
     rules = []
-    for item in _load_yaml("excel_rules.yaml"):
+    for item in items:
+        if item.get("file_type") != "excel":
+            continue
         fingerprint = item.get("fingerprint", {})
         rules.append(ExcelRouteRule(
             id=_rule_id(item, fingerprint),
@@ -769,12 +786,118 @@ def _load_excel_route_rules_versioned(_path_text, _mtime_ns, _size):
     return tuple(rules)
 
 
+def validate_routing_rule_items(items):
+    """校验统一路由规则结构，并返回已构造的 PDF/Excel 规则。"""
+    if not isinstance(items, list):
+        raise ValueError("routing rules must be a YAML list")
+    if not items:
+        raise ValueError("routing rules must not be empty")
+    seen_ids = set()
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise ValueError(f"routing rule #{index + 1} must be a mapping")
+        file_type = item.get("file_type")
+        if file_type not in {"pdf", "excel"}:
+            raise ValueError(f"routing rule #{index + 1} has invalid file_type: {file_type}")
+        if not str(item.get("bank") or "").strip():
+            raise ValueError(f"routing rule #{index + 1} is missing bank")
+        reader_id = _reader_id(item, file_type)
+        if file_type == "pdf":
+            from ymb_standardization_core.readers.registry import pdf_reader_registry
+
+            if reader_id not in pdf_reader_registry().ids():
+                raise ValueError(f"unknown PDF reader_id: {reader_id}")
+        elif reader_id != "openpyxl_grid":
+            raise ValueError(f"unknown Excel reader_id: {reader_id}")
+        rule_id = str(item.get("id") or "").strip()
+        if rule_id in seen_ids:
+            raise ValueError(f"duplicate route rule id: {rule_id}")
+        seen_ids.add(rule_id)
+    pdf_rules = build_pdf_route_rules(items)
+    excel_rules = build_excel_route_rules(items)
+    if not pdf_rules or not excel_rules:
+        raise ValueError("routing rules must include both pdf and excel rules")
+    return {"pdf": pdf_rules, "excel": excel_rules}
+
+
+def parse_routing_rules(content):
+    """解析并校验 YAML 文本，供生产加载和草稿服务共享。"""
+    try:
+        items = yaml.safe_load(content) or []
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid routing rules YAML: {exc}") from exc
+    return items, validate_routing_rule_items(items)
+
+
+def build_routing_rules_snapshot(content):
+    """在切换锁外完整构造一份不可变规则快照。"""
+    _, rules = parse_routing_rules(content)
+    return RoutingRulesSnapshot(
+        version=routing_rules_version(content),
+        pdf_rules=rules["pdf"],
+        excel_rules=rules["excel"],
+    )
+
+
+def activate_routing_rules_snapshot(snapshot):
+    """原子切换当前 PDF/Excel 规则引用；已取出的旧快照继续有效。"""
+    if not isinstance(snapshot, RoutingRulesSnapshot):
+        raise TypeError("snapshot must be RoutingRulesSnapshot")
+    global _CURRENT_ROUTING_RULES, _CURRENT_ROUTING_SIGNATURE
+    while True:
+        signature = _yaml_version("routing_rules.yaml")
+        content = Path(signature[0]).read_text(encoding="utf-8")
+        if _yaml_version("routing_rules.yaml") != signature:
+            continue
+        if routing_rules_version(content) != snapshot.version:
+            raise ValueError("规则快照内容与当前生产 YAML 不一致")
+        with _ROUTING_RULES_LOCK:
+            if _yaml_version("routing_rules.yaml") != signature:
+                continue
+            _CURRENT_ROUTING_RULES = snapshot
+            _CURRENT_ROUTING_SIGNATURE = signature
+            return snapshot
+
+
+def load_routing_rules_snapshot():
+    """获取当前规则快照；配置变化时锁外构造、锁内一次切换。"""
+    global _CURRENT_ROUTING_RULES, _CURRENT_ROUTING_SIGNATURE
+    while True:
+        signature = _yaml_version("routing_rules.yaml")
+        with _ROUTING_RULES_LOCK:
+            if (
+                _CURRENT_ROUTING_RULES is not None
+                and _CURRENT_ROUTING_SIGNATURE == signature
+            ):
+                return _CURRENT_ROUTING_RULES
+
+        content = Path(signature[0]).read_text(encoding="utf-8")
+        snapshot = build_routing_rules_snapshot(content)
+        if _yaml_version("routing_rules.yaml") != signature:
+            continue
+
+        with _ROUTING_RULES_LOCK:
+            if (
+                _CURRENT_ROUTING_RULES is not None
+                and _CURRENT_ROUTING_SIGNATURE == signature
+            ):
+                return _CURRENT_ROUTING_RULES
+            _CURRENT_ROUTING_RULES = snapshot
+            _CURRENT_ROUTING_SIGNATURE = signature
+            return snapshot
+
+
+def load_pdf_route_rules():
+    return load_routing_rules_snapshot().pdf_rules
+
+
 def load_excel_route_rules():
-    return _load_excel_route_rules_versioned(*_yaml_version("excel_rules.yaml"))
+    return load_routing_rules_snapshot().excel_rules
 
 
 def clear_route_rule_cache():
     """清理 Router 规则缓存，供测试和同进程内配置热更新显式调用。"""
-    _load_yaml_versioned.cache_clear()
-    _load_pdf_route_rules_versioned.cache_clear()
-    _load_excel_route_rules_versioned.cache_clear()
+    global _CURRENT_ROUTING_RULES, _CURRENT_ROUTING_SIGNATURE
+    with _ROUTING_RULES_LOCK:
+        _CURRENT_ROUTING_RULES = None
+        _CURRENT_ROUTING_SIGNATURE = None

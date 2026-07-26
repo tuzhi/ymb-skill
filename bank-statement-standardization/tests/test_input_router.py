@@ -567,8 +567,11 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["file_type"], "excel")
 
     def test_excel_route_config_uses_fingerprint_columns_for_layout_and_mapping(self):
-        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "excel_rules.yaml"
-        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "routing_rules.yaml"
+        items = [
+            item for item in yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+            if item.get("file_type") == "excel"
+        ]
 
         for item in items:
             self.assertNotIn("parser", item)
