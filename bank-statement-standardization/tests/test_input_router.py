@@ -32,6 +32,81 @@ def load_input_router():
     return module
 
 class InputRouterTests(unittest.TestCase):
+    def test_directional_payer_payee_biff_xls_route(self):
+        module = load_input_router()
+        header = [
+            "流水号",
+            "付款账号",
+            "付款人户名",
+            "付款人开户行行名",
+            "收款账号",
+            "收款人户名",
+            "收款人开户行行名",
+            "交易日期",
+            "交易时间",
+            "交易金额",
+            "借贷标志(1收2付)",
+            "备注",
+        ]
+        rows = [
+            header,
+            [
+                "1001",
+                "10000001",
+                "付款人",
+                "付款行",
+                "20000001",
+                "收款人",
+                "收款行",
+                "2026-01-01",
+                "2026-01-01 12:00:00",
+                "100.00",
+                "1",
+                "",
+            ],
+        ]
+        context = {
+            "metadata": {"sheet": "第一页", "application": "BIFF/XLS"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss", "yyyy-mm-dd"],
+            "styles": [],
+            "lines": [" ".join(row) for row in rows],
+        }
+
+        route = module.route_excel(rows, "第一页", context=context)
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["fingerprint_id"], "md5:98235c4e391e46ea704ef108db671a52")
+        self.assertEqual(route["reader_id"], "openpyxl_grid")
+        self.assertEqual(route["bank"], "未识别")
+        self.assertEqual(route["account_type"], "未知")
+        self.assertEqual(
+            route["direction_from_column"],
+            {
+                "source": "借贷标志(1收2付)",
+                "target": "收支方向",
+                "income_prefixes": ["1"],
+                "expense_prefixes": ["2"],
+            },
+        )
+        self.assertEqual(
+            route["conditional_mapping"][0]["if"],
+            {"借贷标志(1收2付)": {"equals": "1"}},
+        )
+
+        original_context = module._excel_context
+        try:
+            module.configure_readers(
+                lambda _path: ("第一页", rows),
+                unsupported_error=core.NotABankStatement,
+            )
+            module._excel_context = lambda *_args, **_kwargs: context
+            result = module.read_rows("directional.xls")
+        finally:
+            module._excel_context = original_context
+
+        self.assertEqual(result.rows[0][-1], "收支方向")
+        self.assertEqual(result.rows[1][-1], "收入")
+
     def test_csv_input_is_not_supported_as_raw_statement(self):
         module = load_input_router()
         with tempfile.TemporaryDirectory() as tmp:

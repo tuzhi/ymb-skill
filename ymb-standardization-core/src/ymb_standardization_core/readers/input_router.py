@@ -17,6 +17,7 @@ from ymb_standardization_core.readers.routing.rule_loader import load_excel_rout
 from ymb_standardization_core.contracts import RouteDecision
 from ymb_standardization_core.models import ReadResult
 from ymb_standardization_core.transforms import (
+    apply_reader_options,
     merge_configured_header,
     normalize_cmb_mixed_grid,
 )
@@ -89,6 +90,11 @@ def _excel_candidate(rule, match):
         "preamble_extractors": rule.preamble_extractors,
         "conditional_mapping": rule.conditional_mapping,
         "extract_mapping": rule.extract_mapping,
+        "direction_from_column": rule.direction_from_column,
+        "drop_rows": rule.drop_rows,
+        "split_amount_balance": rule.split_amount_balance,
+        "amount_columns": rule.amount_columns,
+        "extract_patterns": rule.extract_patterns,
         "require_monetary_value": rule.require_monetary_value,
         "identity_evidence": match["identity_evidence"],
         "columns_evidence": match["columns_evidence"],
@@ -361,6 +367,7 @@ def read_rows(path, hints=None, route_rules=None):
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
             rows = normalize_cmb_mixed_grid(rows)
         rows, route_info = merge_configured_header(rows, route_info)
+        rows = apply_reader_options(rows, route_info)
         return ReadResult(
             kind="excel",
             preamble="",

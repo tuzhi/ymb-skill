@@ -928,6 +928,62 @@
       pattern: '(?s)^.*无.*$'
       replacement: ''
   reader_id: pdfplumber_table
+- id: md5:8626b51d2fac7f18ec01c5042e1b2731
+  file_type: pdf
+  bank: 兴业银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 兴业银行交易明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户\s*名[：:]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '(?:账户)?账号[：:]\s*(\d{12,})'
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    columns:
+      required:
+        交易明细内容仅供个人参考: null
+        记账日期: null
+        支/收: null
+        交易金额: null
+        交易用途: null
+        对方户名: null
+        对方账户/对方银行: null
+      optional:
+        交易时间TransactionTime:
+          field: 交易时间
+        记账日期Accounting Date:
+          field: 交易日期
+        摘要TransactionType:
+          field: 银行备注
+        支/收Expenditure/Income:
+          field: 收支方向
+        交易金额TransactionAmount:
+          field: 交易金额
+        账户余额Account Balance:
+          field: 账户余额
+        交易用途TransactionUsage:
+          field: 账户方附言
+        对方户名Counterparty'sAccount Name:
+          field: 对手名称
+        对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank:
+          field: null
+  reader_options:
+    word_filters:
+      drop_chars:
+      - rotated: true
+    extract_mapping:
+    - source: 对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank
+      field: 对手账户
+      pattern: '^([0-9*]{8,}).*$'
+    - source: 对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank
+      field: __对手开户行
+      pattern: '^[0-9*]{8,}(.+)$'
+  reader_id: pdfplumber_table
 - id: md5:1de98a4d0d435b5daca86f7338ccd7e0
   file_type: pdf
   bank: 招商银行
@@ -1511,6 +1567,64 @@
         付款人账号[ Debit Account No. ]: 对手账户
         付款人名称[ Payer's Name ]: 对手名称
         付款人开户行名[ Payer account bank ]: __对手开户行
+  reader_id: openpyxl_grid
+- id: md5:98235c4e391e46ea704ef108db671a52
+  file_type: excel
+  bank: 未识别
+  account_type: 未知
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+    identity:
+      any:
+      - 借贷标志(1收2付)
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    columns:
+      all:
+        流水号: null
+        付款账号: null
+        付款人户名: null
+        付款人开户行行名: null
+        收款账号: null
+        收款人户名: null
+        收款人开户行行名: null
+        交易日期: 交易日期
+        交易时间: 交易时间
+        交易金额: 交易金额
+        借贷标志(1收2付): null
+        备注: 银行备注
+  reader_options:
+    direction_from_column:
+      source: 借贷标志(1收2付)
+      target: 收支方向
+      income_prefixes:
+      - '1'
+      expense_prefixes:
+      - '2'
+    conditional_mapping:
+    - if:
+        借贷标志(1收2付):
+          equals: '1'
+      map:
+        收款账号: 本方账户
+        收款人户名: 本方名称
+        收款人开户行行名: __本方开户行
+        付款账号: 对手账户
+        付款人户名: 对手名称
+        付款人开户行行名: __对手开户行
+    - if:
+        借贷标志(1收2付):
+          equals: '2'
+      map:
+        付款账号: 本方账户
+        付款人户名: 本方名称
+        付款人开户行行名: __本方开户行
+        收款账号: 对手账户
+        收款人户名: 对手名称
+        收款人开户行行名: __对手开户行
   reader_id: openpyxl_grid
 - id: md5:9160ecccb80e57358b52ad52bd6d75ef
   file_type: excel
@@ -2566,6 +2680,36 @@
         币种: null
         附言: 账户方附言
   reader_id: openpyxl_grid
+- id: md5:4d08f63283ef6a59a221231a6dd1c9d6
+  file_type: pdf
+  bank: 江西银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 企业电子银行交易明细
+    preamble_mapping:
+      户名: 本方名称
+      账号: 本方账户
+    date_format:
+      any:
+      - yyyy-mm-dd
+    columns:
+      required:
+        序号: null
+        交易日期: 交易日期
+        对方账户: 对手账户
+        对方户名: 对手名称
+        交易类型: 交易渠道
+        交易金额: null
+        账户余额: null
+        附言: 账户方附言
+      optional:
+        交易金额(元):
+          field: 交易金额
+        账户余额(元):
+          field: 账户余额
+  reader_id: pdfplumber_table
 - id: md5:84a8614651d8e779b66865cb175843ff
   file_type: excel
   bank: 九江银行

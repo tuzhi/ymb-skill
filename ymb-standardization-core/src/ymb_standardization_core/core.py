@@ -868,7 +868,9 @@ def sniff_account_info(rows, header_idx, preamble="", preamble_mapping=None,
 def apply_conditional_mapping(row, header, standard_values, rules):
     """比较原始列与标准字段；条件成立时按 YAML 将原始列写入标准字段。"""
     raw_values = {
-        _norm(name): str(row[index] or "").strip()
+        _norm(name): (
+            "" if row[index] is None else str(row[index]).strip()
+        )
         for index, name in enumerate(header)
         if name and index < len(row)
     }
@@ -877,7 +879,12 @@ def apply_conditional_mapping(row, header, standard_values, rules):
     for rule in rules or []:
         source, target = next(iter(rule["if"].items()))
         left = raw_values.get(_norm(source), "")
-        if target == "__nonzero__":
+        if isinstance(target, dict):
+            literal = target.get("equals")
+            expected = "" if literal is None else str(literal).strip()
+            if not left or _norm(left) != _norm(expected):
+                continue
+        elif target == "__nonzero__":
             amount = parse_amount(left)
             if amount in (None, 0):
                 continue
@@ -1042,6 +1049,37 @@ def infer_account_type_from_counterparties(records, min_rows=20, min_ratio=0.3):
     if total >= min_rows and ratio >= min_ratio:
         return "拟对公", stats
     return "", stats
+
+
+def infer_bank_from_structured_self_banks(values, min_rows=3, min_ratio=0.8):
+    """从按模板方向明确选出的本方开户行字段确认银行，不反写 Router 身份。"""
+    nonempty_values = [
+        str(value).strip()
+        for value in values
+        if str(value or "").strip()
+    ]
+    banks = [infer_bank(value) for value in nonempty_values]
+    banks = [bank for bank in banks if bank]
+    counts = Counter(banks)
+    top_bank, top_count = counts.most_common(1)[0] if counts else ("", 0)
+    ratio = round(top_count / len(nonempty_values), 4) if nonempty_values else 0
+    recognition_ratio = (
+        round(len(banks) / len(nonempty_values), 4)
+        if nonempty_values
+        else 0
+    )
+    profile = {
+        "nonempty_count": len(nonempty_values),
+        "candidate_count": len(banks),
+        "candidate_bank_counts": dict(sorted(counts.items())),
+        "candidate_ratio": ratio,
+        "recognition_ratio": recognition_ratio,
+        "min_rows": min_rows,
+        "min_ratio": min_ratio,
+    }
+    if top_count >= min_rows and ratio >= min_ratio:
+        return top_bank, profile
+    return "", profile
 
 
 LOAN_DISBURSEMENT_KEYWORDS = ["贷款放款"]
@@ -1433,6 +1471,12 @@ def standardize(path, out_dir=None, bank=None,
         target = str(rule.get("field") or "").strip()
         if source and target:
             derived_target_sources.setdefault(target, []).append(source)
+    for rule in route_info.get("conditional_mapping") or []:
+        for source, target in (rule.get("map") or {}).items():
+            source = str(source or "").strip()
+            target = str(target or "").strip()
+            if source and target:
+                derived_target_sources.setdefault(target, []).append(source)
     col_to_field = {}      # 列索引 -> 标准字段
     field_to_cols = {}     # 标准字段 -> [列索引...]
     mapping_detail = {}    # 标准字段 -> {原始字段, 置信度, 说明}
@@ -1529,6 +1573,7 @@ def standardize(path, out_dir=None, bank=None,
 
     # ---- 逐行生成标准化记录 ----
     std_records = []
+    structured_self_bank_values = []
     fp_seen = Counter()   # 同一文件内的内容指纹计数，给真实重复笔加序号保证编号唯一
     header_set = set(h for h in header if h)
     dropped_noise = 0
@@ -1619,6 +1664,11 @@ def standardize(path, out_dir=None, bank=None,
             route_info.get("conditional_mapping") or [],
         )
         derived_values = {**extract_values, **conditional_values}
+        structured_self_bank = str(
+            derived_values.get("__本方开户行") or ""
+        ).strip()
+        if structured_self_bank:
+            structured_self_bank_values.append(structured_self_bank)
         balance = parse_amount(cell(field_to_cols.get("账户余额", [])))
         opp_name = (derived_values["对手名称"] if "对手名称" in derived_values
                     else cell(field_to_cols.get("对手名称", [])))
@@ -1626,7 +1676,11 @@ def standardize(path, out_dir=None, bank=None,
                     else cell(field_to_cols.get("对手账户", [])))
         cust_memo = cell(field_to_cols.get("账户方附言", []))
         channel = cell(field_to_cols.get("交易渠道", []))
-        counterparty_bank = cell(field_to_cols.get("__对手开户行", []))
+        counterparty_bank = (
+            derived_values["__对手开户行"]
+            if "__对手开户行" in derived_values
+            else cell(field_to_cols.get("__对手开户行", []))
+        )
 
         # 默认仅丢弃全空噪声；分段导出 Excel 可由 YAML 要求交易行必须含金额或余额。
         no_monetary_value = income is None and expense is None and txn is None and balance is None
@@ -1723,13 +1777,26 @@ def standardize(path, out_dir=None, bank=None,
     if record_account.get("本方名称"):
         acct["本方名称"] = record_account["本方名称"]
     counterparty_account_type, counterparty_account_type_stats = infer_account_type_from_counterparties(std_records)
-    inferred_bank, internal_transaction_profile = infer_bank_from_internal_transactions(std_records)
+    structured_bank, structured_self_bank_profile = infer_bank_from_structured_self_banks(
+        structured_self_bank_values
+    )
+    internal_bank, internal_transaction_profile = infer_bank_from_internal_transactions(std_records)
+    inferred_bank = structured_bank or internal_bank
+    inferred_source = (
+        "structured_self_bank"
+        if structured_bank
+        else "internal_transaction_profile" if internal_bank else "未知"
+    )
     bank_conflict = bool(
         inferred_bank and bank_name and _norm(inferred_bank) != _norm(bank_name)
+    ) or bool(
+        structured_bank
+        and internal_bank
+        and _norm(structured_bank) != _norm(internal_bank)
     )
     if inferred_bank and not bank_name:
         bank_name = inferred_bank
-        bank_infer_source = "internal_transaction_profile"
+        bank_infer_source = inferred_source
     elif bank_conflict:
         review_items.append({
             "字段": "开户行",
@@ -1822,6 +1889,7 @@ def standardize(path, out_dir=None, bank=None,
             "bank_source": bank_infer_source,
             "bank_conflict": bank_conflict,
             "internal_transaction_profile": internal_transaction_profile,
+            "structured_self_bank_profile": structured_self_bank_profile,
             "账户类型": account_type,
             "account_type_source": account_type_source,
             "card_bin_match": account_type_card_bin or {},

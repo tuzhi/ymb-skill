@@ -27,11 +27,59 @@ from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_
 from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  # noqa: E402
 from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
 from ymb_standardization_core.readers.pdf import common, coordinate_table, table  # noqa: E402
-from ymb_standardization_core.readers.pdf_input import read_pdf_rows  # noqa: E402
+from ymb_standardization_core.readers.pdf_input import (  # noqa: E402
+    _prepare_pdf_reader_view,
+    read_pdf_rows,
+)
 from ymb_standardization_core.transforms import repeated_header_bottom  # noqa: E402
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_pdf_reader_view_applies_yaml_filters_to_every_page(self):
+        calls = []
+
+        class FakePage:
+            def __init__(self, chars):
+                self.chars = chars
+
+            def dedupe_chars(self):
+                calls.append("dedupe")
+                return self
+
+            def filter(self, predicate):
+                calls.append("filter")
+                return FakePage([char for char in self.chars if predicate(char)])
+
+            def extract_text(self):
+                return "".join(char["text"] for char in self.chars)
+
+        class FakePdf:
+            def __init__(self):
+                self.pages = [
+                    FakePage([
+                        {"text": "正", "matrix": (1, 0, 0, 1)},
+                        {"text": "W", "matrix": (0, 1, -1, 0)},
+                    ]),
+                    FakePage([
+                        {"text": "文", "matrix": (1, 0, 0, 1)},
+                        {"text": "M", "matrix": (0, 1, -1, 0)},
+                    ]),
+                ]
+
+        raw_pdf = FakePdf()
+        clean_pdf = _prepare_pdf_reader_view(raw_pdf, {
+            "dedupe_chars": True,
+            "word_filters": {"drop_chars": [{"rotated": True}]},
+        })
+
+        self.assertIsNot(clean_pdf, raw_pdf)
+        self.assertEqual(
+            [page.extract_text() for page in clean_pdf.pages],
+            ["正", "文"],
+        )
+        self.assertEqual(calls, ["dedupe", "dedupe", "filter", "filter"])
+        self.assertIs(_prepare_pdf_reader_view(raw_pdf, {}), raw_pdf)
+
     def test_pdf_reader_registry_has_stable_reader_ids_and_rejects_duplicates(self):
         self.assertEqual(
             router.pdf_reader_registry().ids(),
@@ -1016,6 +1064,55 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")
+
+    def test_industrial_bank_signed_personal_detail_pdf_route(self):
+        text = (
+            "兴业银行交易明细 记账日期 支/收 交易金额 交易用途 "
+            "对方户名 对方账户/对方银行 "
+            "说明：交易明细涉及您的个人隐私，请妥善处理。交易明细内容仅供个人参考"
+        )
+        context = {
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["fingerprint_id"], "md5:8626b51d2fac7f18ec01c5042e1b2731")
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
+        self.assertEqual(result["bank"], "兴业银行")
+        self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["word_filters"], {"drop_chars": [{"rotated": True}]})
+        self.assertEqual(result["preamble_extractors"], [
+            {"field": "本方名称", "pattern": r"户\s*名[：:]\s*([^\s]+)"},
+            {"field": "本方账户", "pattern": r"(?:账户)?账号[：:]\s*(\d{12,})"},
+        ])
+
+    def test_jiangxi_bank_corporate_online_banking_pdf_route(self):
+        text = (
+            "企业电子银行交易明细 户名 账号 "
+            "序号 交易日期 对方账户 对方户名 交易类型 "
+            "交易金额 账户余额 附言"
+        )
+        context = {
+            "date_patterns": ["yyyy-mm-dd"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["fingerprint_id"], "md5:4d08f63283ef6a59a221231a6dd1c9d6")
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
+        self.assertEqual(result["bank"], "江西银行")
+        self.assertEqual(result["account_type"], "对公")
+        self.assertEqual(
+            result["preamble_mapping"],
+            {"户名": "本方名称", "账号": "本方账户"},
+        )
 
     def test_srbank_corporate_transaction_detail_pdf_route(self):
         text = (

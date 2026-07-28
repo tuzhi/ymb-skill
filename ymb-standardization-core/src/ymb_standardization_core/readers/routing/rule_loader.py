@@ -460,8 +460,19 @@ def _conditional_mapping(item):
         if not isinstance(mapping, dict) or not mapping:
             raise ValueError("conditional_mapping.map must be a non-empty dict")
         source, target = next(iter(condition.items()))
+        if isinstance(target, dict):
+            if set(target) != {"equals"}:
+                raise ValueError(
+                    "conditional_mapping.if literal comparison only supports equals"
+                )
+            expected = target.get("equals")
+            normalized_target = {
+                "equals": "" if expected is None else str(expected).strip()
+            }
+        else:
+            normalized_target = str(target).strip()
         normalized.append({
-            "if": {str(source).strip(): str(target).strip()},
+            "if": {str(source).strip(): normalized_target},
             "map": {str(raw).strip(): str(field).strip() for raw, field in mapping.items()},
         })
     return normalized

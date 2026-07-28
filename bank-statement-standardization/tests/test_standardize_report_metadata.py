@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from openpyxl import Workbook
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +24,90 @@ spec.loader.exec_module(standardize)
 
 
 class StandardizeReportMetadataTest(unittest.TestCase):
+    def test_conditional_mapping_supports_literal_equals(self):
+        header = [
+            "借贷标志(1收2付)",
+            "付款账号",
+            "收款账号",
+        ]
+        rules = [
+            {
+                "if": {"借贷标志(1收2付)": {"equals": "1"}},
+                "map": {
+                    "收款账号": "本方账户",
+                    "付款账号": "对手账户",
+                },
+            },
+            {
+                "if": {"借贷标志(1收2付)": {"equals": "2"}},
+                "map": {
+                    "付款账号": "本方账户",
+                    "收款账号": "对手账户",
+                },
+            },
+        ]
+
+        income = standardize.apply_conditional_mapping(
+            ["1", "payer", "self"],
+            header,
+            {},
+            rules,
+        )
+        expense = standardize.apply_conditional_mapping(
+            ["2", "self", "payee"],
+            header,
+            {},
+            rules,
+        )
+        zero = standardize.apply_conditional_mapping(
+            [0, "payer", "self"],
+            header,
+            {},
+            [{
+                "if": {"借贷标志(1收2付)": {"equals": 0}},
+                "map": {"收款账号": "本方账户"},
+            }],
+        )
+
+        self.assertEqual(
+            income,
+            {"本方账户": "self", "对手账户": "payer"},
+        )
+        self.assertEqual(
+            expense,
+            {"本方账户": "self", "对手账户": "payee"},
+        )
+        self.assertEqual(zero, {"本方账户": "self"})
+
+        from ymb_standardization_core.readers.routing.rule_loader import _conditional_mapping
+        normalized = _conditional_mapping({
+            "reader_options": {
+                "conditional_mapping": [{
+                    "if": {"借贷标志(1收2付)": {"equals": 0}},
+                    "map": {"收款账号": "本方账户"},
+                }],
+            },
+        })
+        self.assertEqual(
+            normalized[0]["if"],
+            {"借贷标志(1收2付)": {"equals": "0"}},
+        )
+
+    def test_structured_self_bank_is_confirmed(self):
+        bank, profile = standardize.infer_bank_from_structured_self_banks(
+            ["浙商银行南昌分行营业部"] * 4,
+        )
+        sparse_bank, sparse_profile = standardize.infer_bank_from_structured_self_banks(
+            ["未知开户机构"] * 97 + ["浙商银行南昌分行营业部"] * 3,
+        )
+
+        self.assertEqual(bank, "浙商银行")
+        self.assertEqual(profile["candidate_ratio"], 1.0)
+        self.assertEqual(profile["recognition_ratio"], 1.0)
+        self.assertEqual(sparse_bank, "")
+        self.assertEqual(sparse_profile["candidate_ratio"], 0.03)
+        self.assertEqual(sparse_profile["recognition_ratio"], 0.03)
+
     def test_matched_incomplete_route_is_rejected_by_stage_one_qc(self):
         function_globals = standardize.standardize.__globals__
         original = function_globals["read_rows"]
@@ -341,6 +426,53 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertFalse(hasattr(standardize, "BANK_PATTERNS"))
         self.assertEqual(standardize.infer_bank("开户行：中国工商银行"), "中国工商银行")
         self.assertEqual(standardize.infer_bank("开户行：工行南昌支行"), "中国工商银行")
+        self.assertEqual(standardize.infer_bank("浙商银行南昌分行营业部"), "浙商银行")
+        cases = {
+            "国家开发银行江西省分行": "国家开发银行",
+            "广发银行股份有限公司广州分行": "广发银行",
+            "江苏江阴农村商业银行股份有限公司": "江苏江阴农村商业银行",
+            "浙江网商银行股份有限公司": "浙江网商银行",
+            "江西裕民银行股份有限公司": "江西裕民银行",
+            "湖南银行股份有限公司": "湖南银行",
+            "深圳前海微众银行股份有限公司": "深圳前海微众银行",
+            "重庆农村商业银行股份有限公司": "重庆农村商业银行",
+            "四川新网银行股份有限公司": "四川新网银行",
+            "广西壮族自治区农村信用社联合社": "广西壮族自治区农村信用社联合社",
+            "汇丰银行（中国）有限公司": "汇丰银行",
+        }
+        for source, expected in cases.items():
+            with self.subTest(source=source):
+                self.assertEqual(standardize.infer_bank(source), expected)
+        self.assertEqual(standardize.infer_bank("BOCOM"), "")
+        self.assertEqual(standardize.infer_bank("ABC INDUSTRIES"), "")
+        self.assertEqual(standardize.infer_bank("Standard Chartered Bank"), "")
+
+    def test_bank_alias_yaml_has_no_conflicting_normalized_aliases(self):
+        config_path = (
+            REPO_ROOT
+            / "ymb-standardization-core"
+            / "src"
+            / "ymb_standardization_core"
+            / "config"
+            / "routing"
+            / "bank_aliases.yaml"
+        )
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        self.assertTrue(config["bank_aliases"])
+        english_aliases = [
+            alias
+            for aliases in config["bank_aliases"].values()
+            for alias in aliases
+            if re.search(r"[A-Za-z]", str(alias))
+        ]
+        self.assertEqual(english_aliases, [])
+        owners = {}
+        conflicts = []
+        for normalized, canonical in standardize.load_bank_alias_rules():
+            previous = owners.setdefault(normalized, canonical)
+            if previous != canonical:
+                conflicts.append((normalized, previous, canonical))
+        self.assertEqual(conflicts, [])
 
     def test_internal_transaction_profile_infers_bank_without_changing_router_bank(self):
         records = []
