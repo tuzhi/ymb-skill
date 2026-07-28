@@ -57,6 +57,14 @@ class RuleTestResult:
     passed: bool
     files: list[dict[str, Any]]
     error: str | None = None
+    test_id: str = ""
+    draft_version: str = ""
+    summary: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def source_run_id(self) -> str:
+        """规则测试只读取该 Run 的输入快照，不修改正式运行。"""
+        return self.run_id
 
 
 @dataclass(frozen=True)

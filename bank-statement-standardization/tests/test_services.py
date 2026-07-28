@@ -144,6 +144,37 @@ class YamlRuleServiceTests(unittest.TestCase):
                 result = service.test_draft("run-1")
 
             self.assertTrue(result.passed)
+            self.assertEqual(result.source_run_id, "run-1")
+            self.assertTrue(result.test_id.startswith("rule-test-"))
+            self.assertEqual(result.draft_version, routing_rules_version(content))
+            self.assertEqual(
+                result.summary,
+                {
+                    "total": 1,
+                    "supported": 1,
+                    "matched": 1,
+                    "unmatched": 0,
+                    "ambiguous": 0,
+                    "incomplete": 0,
+                    "errors": 0,
+                    "skipped": 0,
+                    "failed": 0,
+                },
+            )
+            test_result_path = (
+                root / "rule-store" / "tests" / result.test_id / "result.json"
+            )
+            persisted = json.loads(test_result_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["source_run_id"], "run-1")
+            self.assertEqual(persisted["files"][0]["relative_path"], "sample.xlsx")
+
+            service.draft_path.write_text(content + "\n# untested change\n", encoding="utf-8")
+            self.assertFalse(service._draft().tested)
+            with self.assertRaisesRegex(RuntimeError, "已通过测试的版本不一致"):
+                service.publish_draft()
+            service.save_draft(content)
+            with mock.patch.object(yaml_service_module, "read_rows", return_value=matched):
+                service.test_draft("run-1")
             published = service.publish_draft()
             self.assertEqual(service.download_rules().read(), content.encode("utf-8"))
             self.assertEqual(service.download_rules(published.version).read(), content.encode("utf-8"))
@@ -155,6 +186,94 @@ class YamlRuleServiceTests(unittest.TestCase):
             self.assertIn(
                 f"rolled_back_from: {initial_version}",
                 service.download_rules().read().decode("utf-8"),
+            )
+
+    def test_draft_tests_entire_run_snapshot_and_keeps_results_outside_run(self):
+        production = (
+            CORE_PACKAGE
+            / "ymb_standardization_core"
+            / "config"
+            / "routing"
+            / "routing_rules.yaml"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            production_copy = root / "routing_rules.yaml"
+            content = production.read_text(encoding="utf-8")
+            production_copy.write_text(content, encoding="utf-8")
+            run_input = root / "runs" / "run-directory" / "input"
+            nested = run_input / "银行A"
+            nested.mkdir(parents=True)
+            (run_input / "主账户.xlsx").write_bytes(b"excel")
+            (nested / "补充流水.pdf").write_bytes(b"pdf")
+            (nested / "说明.txt").write_text("仅用于说明", encoding="utf-8")
+            service = YamlRuleService(
+                run_root=root / "runs",
+                storage_root=root / "rule-store",
+                production_rules_path=production_copy,
+            )
+            service.create_draft()
+
+            def route_for(path, route_rules):
+                decision = (
+                    "matched_incomplete"
+                    if str(path).endswith("补充流水.pdf")
+                    else "matched"
+                )
+                return SimpleNamespace(route_info=RouteDecision({
+                    "decision": decision,
+                    "fingerprint_id": "md5:test",
+                    "reader_id": (
+                        "pdfplumber_coordinate_table"
+                        if str(path).endswith(".pdf")
+                        else "openpyxl_grid"
+                    ),
+                }))
+
+            with mock.patch.object(yaml_service_module, "read_rows", side_effect=route_for):
+                result = service.test_draft("run-directory")
+
+            self.assertFalse(result.passed)
+            self.assertEqual(
+                result.summary,
+                {
+                    "total": 3,
+                    "supported": 2,
+                    "matched": 1,
+                    "unmatched": 0,
+                    "ambiguous": 0,
+                    "incomplete": 1,
+                    "errors": 0,
+                    "skipped": 1,
+                    "failed": 1,
+                },
+            )
+            self.assertEqual(
+                {item["relative_path"] for item in result.files},
+                {"主账户.xlsx", "银行A/补充流水.pdf", "银行A/说明.txt"},
+            )
+            persisted = (
+                root
+                / "rule-store"
+                / "tests"
+                / result.test_id
+                / "result.json"
+            )
+            self.assertTrue(persisted.is_file())
+            self.assertFalse(
+                any((root / "runs" / "run-directory").rglob("result.json"))
+            )
+            with self.assertRaisesRegex(RuntimeError, "必须先通过"):
+                service.publish_draft()
+
+            selected_id = service._file_md5(run_input / "主账户.xlsx")
+            with mock.patch.object(yaml_service_module, "read_rows", side_effect=route_for):
+                selected = service.test_draft("run-directory", [selected_id])
+            self.assertTrue(selected.passed)
+            self.assertEqual(selected.summary["total"], 1)
+            self.assertEqual(
+                [item["relative_path"] for item in selected.files],
+                ["主账户.xlsx"],
             )
 
 

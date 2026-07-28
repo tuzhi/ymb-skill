@@ -39,10 +39,12 @@ class YamlRuleService:
         self.storage_root = Path(storage_root).resolve()
         self.production_path = Path(production_rules_path or routing_rules_path()).resolve()
         self.draft_dir = self.storage_root / "drafts"
+        self.test_dir = self.storage_root / "tests"
         self.version_dir = self.storage_root / "versions"
         self.draft_path = self.draft_dir / "routing_rules.yaml"
         self.draft_meta_path = self.draft_dir / "metadata.json"
         self.draft_dir.mkdir(parents=True, exist_ok=True)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
         self.version_dir.mkdir(parents=True, exist_ok=True)
         self._ensure_version(self.production_path.read_text(encoding="utf-8"))
 
@@ -92,19 +94,22 @@ class YamlRuleService:
     ) -> RuleTestResult:
         with _DRAFT_LOCK:
             content = self._require_draft().read_text(encoding="utf-8")
+            draft_version = routing_rules_version(content)
+            test_id = f"rule-test-{uuid.uuid4().hex}"
             try:
                 snapshot = build_routing_rules_snapshot(content)
             except ValueError as exc:
-                self._write_meta({
-                    "status": DRAFT,
-                    "test": {"run_id": run_id, "error": str(exc)},
-                })
-                return RuleTestResult(
+                result = RuleTestResult(
                     run_id=run_id,
                     passed=False,
                     files=[],
                     error=str(exc),
+                    test_id=test_id,
+                    draft_version=draft_version,
+                    summary=self._summarize_test_results([]),
                 )
+                self._record_test_result(result, [])
+                return result
             input_dir = self._run_input(run_id)
             selected = {
                 value if str(value).startswith("md5:") else f"md5:{value}"
@@ -123,11 +128,13 @@ class YamlRuleService:
                 if selected and file_id not in selected:
                     continue
                 seen.add(file_id)
+                relative_path = path.relative_to(input_dir).as_posix()
                 file_type = "pdf" if path.suffix.lower() == ".pdf" else "excel"
                 if path.suffix.lower() not in {".pdf", ".xlsx", ".xlsm", ".xls"}:
                     results.append({
                         "file_id": file_id,
                         "name": path.name,
+                        "relative_path": relative_path,
                         "passed": True,
                         "skipped": True,
                         "reason": "非 Router 支持格式",
@@ -142,12 +149,14 @@ class YamlRuleService:
                     )
                     result = read_rows(str(path), route_rules=route_rules)
                     route = dict(result.route_info)
-                    item_passed = route.get("decision") not in {"unmatched", "ambiguous"}
+                    decision = str(route.get("decision") or "")
+                    item_passed = decision == "matched"
                     results.append({
                         "file_id": file_id,
                         "name": path.name,
+                        "relative_path": relative_path,
                         "passed": item_passed,
-                        "decision": route.get("decision", ""),
+                        "decision": decision,
                         "fingerprint_id": route.get("fingerprint_id", ""),
                         "reader_id": route.get("reader_id", ""),
                     })
@@ -157,6 +166,7 @@ class YamlRuleService:
                     results.append({
                         "file_id": file_id,
                         "name": path.name,
+                        "relative_path": relative_path,
                         "passed": False,
                         "error": str(exc),
                     })
@@ -171,23 +181,29 @@ class YamlRuleService:
                 passed = False
                 error = error or "没有 Router 支持格式的测试文件"
 
-            self._write_meta({
-                "status": TESTED if passed else DRAFT,
-                "test": {"run_id": run_id, "file_ids": sorted(selected), "results": results},
-            })
-            return RuleTestResult(
+            result = RuleTestResult(
                 run_id=run_id,
                 passed=passed,
                 files=results,
                 error=error,
+                test_id=test_id,
+                draft_version=draft_version,
+                summary=self._summarize_test_results(results),
             )
+            self._record_test_result(result, sorted(selected))
+            return result
 
     def publish_draft(self) -> RuleVersion:
         with _DRAFT_LOCK:
             self._require_draft()
-            if self._meta().get("status") != TESTED:
+            meta = self._meta()
+            if meta.get("status") != TESTED:
                 raise RuntimeError("草稿必须先通过真实文件测试")
             content = self.draft_path.read_text(encoding="utf-8")
+            current_version = routing_rules_version(content)
+            tested_version = str((meta.get("test") or {}).get("draft_version") or "")
+            if tested_version != current_version:
+                raise RuntimeError("当前草稿内容与已通过测试的版本不一致")
             snapshot = build_routing_rules_snapshot(content)
             previous = self._ensure_version(self.production_path.read_text(encoding="utf-8"))
             version = self._ensure_version(content)
@@ -226,12 +242,64 @@ class YamlRuleService:
             raise FileNotFoundError(f"Run 输入快照不存在：{run_id}")
         return input_dir
 
+    def _record_test_result(
+        self,
+        result: RuleTestResult,
+        selected_file_ids: list[str],
+    ) -> None:
+        payload = {
+            "test_id": result.test_id,
+            "source_run_id": result.run_id,
+            "draft_version": result.draft_version,
+            "passed": result.passed,
+            "file_ids": selected_file_ids,
+            "summary": result.summary,
+            "files": result.files,
+            "error": result.error,
+        }
+        result_path = self.test_dir / result.test_id / "result.json"
+        self._atomic_write(
+            result_path,
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        )
+        self._write_meta({
+            "status": TESTED if result.passed else DRAFT,
+            "test": {
+                "test_id": result.test_id,
+                "source_run_id": result.run_id,
+                "draft_version": result.draft_version,
+                "passed": result.passed,
+                "result_path": result_path.relative_to(self.storage_root).as_posix(),
+            },
+        })
+
+    @staticmethod
+    def _summarize_test_results(results: list[dict[str, Any]]) -> dict[str, int]:
+        supported = [item for item in results if not item.get("skipped")]
+        decisions = [str(item.get("decision") or "") for item in supported]
+        return {
+            "total": len(results),
+            "supported": len(supported),
+            "matched": decisions.count("matched"),
+            "unmatched": decisions.count("unmatched"),
+            "ambiguous": decisions.count("ambiguous"),
+            "incomplete": decisions.count("matched_incomplete"),
+            "errors": sum(1 for item in supported if item.get("error")),
+            "skipped": sum(1 for item in results if item.get("skipped")),
+            "failed": sum(1 for item in supported if not item.get("passed")),
+        }
+
     def _draft(self) -> RuleDraft:
         path = self._require_draft()
         meta = self._meta()
+        content = path.read_text(encoding="utf-8")
+        tested_version = str((meta.get("test") or {}).get("draft_version") or "")
         return RuleDraft(
-            content=path.read_text(encoding="utf-8"),
-            tested=meta.get("status") == TESTED,
+            content=content,
+            tested=(
+                meta.get("status") == TESTED
+                and tested_version == routing_rules_version(content)
+            ),
         )
 
     def _require_draft(self) -> Path:
