@@ -537,7 +537,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(stage["ai_fallback_artifacts"], [])
             self.assertNotIn("ai_fallback_dir", stage)
             self.assertNotIn("started_at", stage)
-            self.assertNotIn("duration_seconds", stage)
+            self.assertIsNone(stage["duration_seconds"])
             self.assertNotIn("script", stage)
             self.assertNotIn("validator", stage)
             self.assertEqual(stage["status"], "")

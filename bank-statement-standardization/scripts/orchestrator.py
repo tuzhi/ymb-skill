@@ -446,13 +446,15 @@ class Runner:
                 spec.pop("file_routes", None)
             spec.pop("ai_fallback_dir", None)
             spec.pop("started_at", None)
-            spec.pop("duration_seconds", None)
+            spec["duration_seconds"] = None
         return data
 
-    def update_stage_status(self, stage_id, status):
+    def update_stage_status(self, stage_id, status, duration_seconds=None):
         if stage_id not in self.manifest:
             raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
         self.manifest[stage_id]["status"] = status
+        if duration_seconds is not None:
+            self.manifest[stage_id]["duration_seconds"] = duration_seconds
         self.write_manifest()
 
     def mark_stage_ai_fallback_used(self, stage_id, artifacts=None):
@@ -1240,7 +1242,7 @@ class Runner:
     def bundle_path(self, level):
         return os.path.join(self.run_dir, f"{self.run_id}__{level}__{self.args.error_bundle_mode}.zip")
 
-    def handle_stage_failure(self, stage_id, spec, exc):
+    def handle_stage_failure(self, stage_id, spec, exc, duration_seconds=None):
         if stage_id != "stage_1_standardize":
             self.emit(
                 "ERROR",
@@ -1249,7 +1251,11 @@ class Runner:
                 stage=stage_id,
                 error=str(exc),
             )
-            self.update_stage_status(stage_id, ERROR)
+            self.update_stage_status(
+                stage_id,
+                ERROR,
+                duration_seconds=duration_seconds,
+            )
             self.receipt(stage_id, "error", {
                 "orchestrator_handler": self.stage_handler_name(stage_id),
                 "error": str(exc),
@@ -1299,7 +1305,11 @@ class Runner:
             error=str(exc),
         )
         self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
-        self.update_stage_status(stage_id, ERROR)
+        self.update_stage_status(
+            stage_id,
+            ERROR,
+            duration_seconds=duration_seconds,
+        )
         self.receipt(stage_id, "error", {
             "orchestrator_handler": self.stage_handler_name(stage_id),
             "ai_fallback_refs": spec.get("ai_fallback_refs", []),
@@ -1313,6 +1323,7 @@ class Runner:
             stage_id, spec = self.first_pending_stage()
             if not stage_id:
                 return
+            stage_started = time.perf_counter()
             self.emit(
                 "INFO",
                 "STAGE_START",
@@ -1350,7 +1361,15 @@ class Runner:
                         final=stage_id == "stage_4_package",
                     ):
                         raise RuntimeError(f"{checkpoint} 存在客户级 HARD QC 失败")
-                self.update_stage_status(stage_id, DONE)
+                duration_seconds = round(
+                    max(0.0, time.perf_counter() - stage_started),
+                    3,
+                )
+                self.update_stage_status(
+                    stage_id,
+                    DONE,
+                    duration_seconds=duration_seconds,
+                )
                 message = (
                     f"阶段 {stage_id} 已通过脚本和检测"
                     if stage_id == "stage_1_standardize"
@@ -1358,7 +1377,16 @@ class Runner:
                 )
                 self.emit("INFO", "STAGE_DONE", message, stage=stage_id)
             except Exception as exc:
-                self.handle_stage_failure(stage_id, spec, exc)
+                duration_seconds = round(
+                    max(0.0, time.perf_counter() - stage_started),
+                    3,
+                )
+                self.handle_stage_failure(
+                    stage_id,
+                    spec,
+                    exc,
+                    duration_seconds=duration_seconds,
+                )
                 raise
 
     def execute(self):

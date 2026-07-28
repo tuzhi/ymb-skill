@@ -48,7 +48,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     continue
                 self.assertNotIn("ai_fallback_dir", stage)
                 self.assertNotIn("started_at", stage)
-                self.assertNotIn("duration_seconds", stage)
+                self.assertIsNone(stage["duration_seconds"])
                 self.assertNotIn("script", stage)
                 self.assertNotIn("validator", stage)
                 if stage_id != "stage_1_standardize":
@@ -281,12 +281,63 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner.execute_stage_script = Mock(return_value={"integrated_rows": 1})
             runner.validate_stage = Mock(side_effect=AssertionError("下游不应调用 stage validator"))
 
-            runner.run_manifest_stages()
+            with patch.object(
+                orchestrator.time,
+                "perf_counter",
+                side_effect=[10.0, 12.3456],
+            ):
+                runner.run_manifest_stages()
 
             self.assertEqual(runner.manifest["stage_2_integrate"]["status"], "DONE")
+            self.assertEqual(
+                runner.manifest["stage_2_integrate"]["duration_seconds"],
+                2.346,
+            )
             runner.validate_stage.assert_not_called()
             receipts = [path.name for path in Path(runner.receipt_dir).glob("*.json")]
             self.assertFalse(any("stage_2_integrate__validator" in name for name in receipts))
+
+    def test_failed_stage_records_duration_seconds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            runner = orchestrator.Runner(
+                runner_args(root / "runs", source, client="斑马商业")
+            )
+            for stage_id, stage in runner.manifest.items():
+                if stage_id.startswith("stage_"):
+                    stage["status"] = "DONE"
+            runner.manifest["stage_2_integrate"]["status"] = ""
+            runner.write_manifest()
+            runner.execute_stage_script = Mock(
+                side_effect=RuntimeError("阶段二测试失败")
+            )
+
+            with (
+                patch.object(
+                    orchestrator.time,
+                    "perf_counter",
+                    side_effect=[20.0, 21.2349],
+                ),
+                self.assertRaisesRegex(RuntimeError, "阶段二测试失败"),
+            ):
+                runner.run_manifest_stages()
+
+            manifest = json.loads(
+                (Path(runner.run_dir) / "manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(
+                manifest["stage_2_integrate"]["status"],
+                "ERROR",
+            )
+            self.assertEqual(
+                manifest["stage_2_integrate"]["duration_seconds"],
+                1.235,
+            )
 
     def test_execute_reuses_final_delivery_validation_result(self):
         with tempfile.TemporaryDirectory() as tmp:

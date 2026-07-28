@@ -13,22 +13,27 @@
     "ai_fallback_info": "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。",
     "ai_fallback_used": false,
     "ai_fallback_artifacts": [],
+    "duration_seconds": null,
     "status": ""
   },
   "stage_2_integrate": {
     "name": "单客户多文件整合与验证",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_2b_portfolio_balance": {
     "name": "组合余额与余额校验",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_3_tag": {
     "name": "交易打标与规则沉淀",
+    "duration_seconds": null,
     "status": ""
   },
   "stage_4_package": {
     "name": "单文件交付物组装",
+    "duration_seconds": null,
     "status": ""
   }
 }

@@ -3,7 +3,7 @@ name: bank-statement-standardization
 description: >-
   用于银行/支付流水标准化、字段映射、多文件整合、余额校验、交易打标、尽调底表和单客户交付物生成。
   用户提到流水清洗、银行流水标准化、流水合并去重、流水余额校验、交易打标签、流水尽调底表，或直接提供
-  Excel/CSV/PDF 银行流水文件时使用。本技能是脚本优先的 harness：按 assets/manifest.template.json 生成只记录阶段状态和阶段一兜底信息的运行时 manifest.json；
+  Excel/CSV/PDF 银行流水文件时使用。本技能是脚本优先的 harness：按 assets/manifest.template.json 生成记录阶段状态、阶段耗时和阶段一兜底信息的运行时 manifest.json；
   orchestrator 按 stage_id 执行固定程序，且仅阶段一失败后允许按 ai_fallback_refs 读取对应提示词有限兜底。
 ---
 
@@ -31,6 +31,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 - `name`：阶段显示名称，不参与执行分派。
 - `status`：只允许空字符串、`DONE`、`ERROR`。
+- `duration_seconds`：阶段完整执行耗时；运行前为 `null`，成功或失败后写入秒数并保留三位小数。
 
 仅 `stage_1_standardize` 额外使用这些键：
 
@@ -41,7 +42,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 
 核心输出契约：
 
-- `runs/<run-id>/manifest.json` 是本次运行的阶段状态事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内只记录阶段状态和阶段一 AI 兜底信息；不承载逐文件结果、QC、字段映射正文、输入诊断正文或业务分析结果。
+- `runs/<run-id>/manifest.json` 是本次运行的阶段状态事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内只记录阶段状态、阶段完整耗时和阶段一 AI 兜底信息；不承载逐文件结果、QC、字段映射正文、输入诊断正文或业务分析结果。
 - `runs/<run-id>/stage_1_results.json` 是阶段一逐文件结果事实源，以内容 MD5 为 key，记录文件名、`PENDING / DONE / BLOCKED / ERROR`、标准化产物和最小 route。它替代 `stage_1_routes.json`，Manifest 不再保存 `route_artifact`。
 - `runs/<run-id>/qc_results.json` 独立保存文件级和客户级 QC 结果；规则执行阶段、作用域、软硬级别和 handler 只由代码注册表维护。
 - 最终交付物只展示 `qc_results.json` 的状态和失败规则摘要，完整 QC 事实仍保留在独立结果文件中。
@@ -57,7 +58,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 2. 记录 `STAGE_START` 到 `events.jsonl`。
 3. orchestrator 按 `stage_id` 执行代码中固定的确定性 handler；manifest 不参与程序分派。
 4. 阶段一固定执行 `validate_standardize()`；阶段四生成交付物后固定执行一次 `validate_final()`。
-5. 程序及其适用的验收通过后写 `status = "DONE"`。
+5. 程序及其适用的验收通过后，同时写 `status = "DONE"` 和本阶段 `duration_seconds`。
 6. 全部阶段 `DONE` 且最终交付验收通过后，才能宣称完成。
 
 阶段一产物存在不代表完成，必须通过 `validate_standardize()`；阶段二及以后由确定性程序成功返回并满足内部断言后完成，最终交付物必须通过 `validate_final()`。
@@ -70,12 +71,12 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 4. 兜底若产生可复用文件，应保存到固定目录 `runs/<run-id>/fallback/stage_1_standardize/`，并写入 `ai_fallback_artifacts`；客户目录 `_file_hints.yaml` 作为输入提示文件由阶段一入口读取。
 5. 阶段一必须记录 `ai_fallback_used = true`，兜底次数必须记录到 `events.jsonl`，最多 2 次。
 6. 兜底后必须创建带 `parent_run_id` 的新运行；新运行只复用直接父 Run 中同 MD5、同文件名、同 Skill 版本且产物存在的 `DONE` 文件，失败、新增或不满足条件的文件重新执行。阶段一仍须整体通过 `validate_standardize()`，后续阶段全部重新执行。
-7. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 并中止打包。
+7. 无确定性修正、超过次数或仍失败时，写 `status = "ERROR"` 和本阶段 `duration_seconds`，并中止打包。
 
 执行约束：
 
 - 以 `runs/<run-id>/manifest.json` 为唯一阶段事实源；不要在 `SKILL.md` 里维护或脑补阶段表。
-- manifest 只负责阶段状态；执行对象和验收函数由 orchestrator 按 `stage_id` 固定选择。
+- manifest 只负责阶段状态、阶段完整耗时和阶段一兜底信息；执行对象和验收函数由 orchestrator 按 `stage_id` 固定选择。
 - 不根据 manifest 内容替换 handler、验收函数或阶段一 `ai_fallback_refs`。
 - 阶段一验收口径以 `validate_standardize()` 为准；后续业务口径由确定性程序及最终交付验收维护，不在 manifest 重复声明。
 
