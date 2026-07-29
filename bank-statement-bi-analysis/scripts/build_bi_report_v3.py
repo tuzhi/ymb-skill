@@ -97,8 +97,10 @@ def prep(df):
     df["支出金额"] = df.get("支出金额", pd.Series(0, index=df.index)).fillna(0.0)
     if (df["收入金额"] == 0).all() and (df["支出金额"] == 0).all() and "交易金额" in df.columns:
         df["收入金额"] = df["交易金额"].clip(lower=0); df["支出金额"] = (-df["交易金额"]).clip(lower=0)
-    df["交易时间"] = pd.to_datetime(df["交易时间"], errors="coerce")
-    df["月份"] = df["交易时间"].dt.strftime("%Y-%m")
+    # pandas 2.x 默认按首个值推断单一格式；同列混有 YYYY-MM-DD 与含时分秒文本时，
+    # 后续合法日期会被批量解析为 NaT。银行流水常见这种混排，必须逐值混合解析。
+    df["交易时间"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
+    df["月份"] = df["交易时间"].dt.strftime("%Y-%m").fillna("")
     df["日期"] = df["交易时间"].dt.date
     df["对手名称"] = df.get("对手名称", "").fillna("").astype(str).str.strip()
     # 归一化：融资租赁公司常见「金融租赁/融资租赁」混写 → 统一 key
@@ -186,7 +188,9 @@ def analyze(df, dbal_series, vchk, whitelist, new_loan):
 
     cp = ext[ext["对手key"] != ""].groupby("对手key").agg(
         对手=("对手名称", "first"), 流入=("收入金额", "sum"), 流出=("支出金额", "sum"),
-        笔数=("收入金额", "size"), 首次=("月份", "min"), 末次=("月份", "max"))
+        笔数=("收入金额", "size"),
+        首次=("月份", lambda s: min((x for x in s if isinstance(x, str) and x), default="")),
+        末次=("月份", lambda s: max((x for x in s if isinstance(x, str) and x), default="")))
     A["cp"] = cp
     A["hhi_in"] = ((cp["流入"] / max(cp["流入"].sum(), 1)) ** 2).sum()
     A["hhi_out"] = ((cp["流出"] / max(cp["流出"].sum(), 1)) ** 2).sum()
@@ -338,9 +342,16 @@ def analyze(df, dbal_series, vchk, whitelist, new_loan):
         return [zy_in, o_in, cg, xz, tax, o_out, invb, invo, borrow, rp]
     years = sorted({m[:4] for m in MONTHS})
     A["cfs_cols"] = [(y, cfs_vals(df[df["月份"].str.startswith(y)])) for y in years] + [("区间合计", cfs_vals(df))]
-    first = df.iloc[0]
-    A["opening_cash"] = float(first.get("账户余额", 0) or 0) + float(first["支出金额"]) - float(first["收入金额"]) if "账户余额" in df.columns else float("nan")
-    A["closing_cash"] = float(df["账户余额"].dropna().iloc[-1]) if "账户余额" in df.columns and df["账户余额"].notna().any() else float("nan")
+    # 多账户报告必须使用组合日余额的首末有效值；直接取明细首/末行只会落到某一个账户，
+    # 且输入按账户连续性排序而非全局时间排序，会系统性错报期初/期末现金。
+    bal_clean = pd.to_numeric(dbal_series, errors="coerce").dropna() if dbal_series is not None else pd.Series(dtype=float)
+    if len(bal_clean):
+        A["opening_cash"] = float(bal_clean.iloc[0])
+        A["closing_cash"] = float(bal_clean.iloc[-1])
+    else:
+        first = df.iloc[0]
+        A["opening_cash"] = float(first.get("账户余额", 0) or 0) + float(first["支出金额"]) - float(first["收入金额"]) if "账户余额" in df.columns else float("nan")
+        A["closing_cash"] = float(df["账户余额"].dropna().iloc[-1]) if "账户余额" in df.columns and df["账户余额"].notna().any() else float("nan")
     A["big_tx"] = ext[(ext["收入金额"] >= 500_000) | (ext["支出金额"] >= 500_000)].sort_values("交易时间")
     A["new_loan"] = new_loan
     A["bal"] = bal

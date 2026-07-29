@@ -103,7 +103,7 @@ def analyze_v4(df, A, vchk):
         if not acct and acct_col: continue
         key = (owner, acct or "(未提供账号)")
         tmin, tmax = g["交易时间"].min(), g["交易时间"].max()
-        n_m = g["月份"].nunique()
+        n_m = g.loc[g["月份"] != "", "月份"].nunique()
         cp_fill = float((g["对手名称"] != "").mean()); memo_fill = float((g["摘要"].str.strip() != "").mean())
         jx = g[(g["对手名称"] == "") & (g["收入金额"] > 0) & (g["收入金额"] < 1000) &
                ((g["摘要"].str.contains("结息|利息")) |
@@ -128,7 +128,7 @@ def analyze_v4(df, A, vchk):
                              jx="有" if has_jx else "无", fill=fill, grade=grade,
                              detail="；".join(detail) or "—"))
         # 余额矩阵（日末余额前向填充）
-        t = g.dropna(subset=["账户余额"])
+        t = g.dropna(subset=["账户余额", "日期"])
         if len(t):
             last = t.groupby("日期")["账户余额"].last()
             idx = pd.date_range(min(t["日期"]), max(t["日期"]))
@@ -384,6 +384,8 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
         cell = ws.cell(r, c, v); cell.font = font or F(bold=bold)
         if fillc: cell.fill = fillc
         if fmt: cell.number_format = fmt
+        elif isinstance(v, str) and re.fullmatch(r"\d{10,}", v):
+            cell.number_format = "@"
         ha = "right" if (right if right is not None else isinstance(v, (int, float)) and not isinstance(v, bool)) else None
         cell.alignment = Alignment(vertical="center", wrap_text=wrap, horizontal=ha)
         return cell
@@ -499,6 +501,7 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     S3 = wb.create_sheet("数据明细")
     S3.column_dimensions["A"].width = 6
     for i, w in enumerate([32] + [13] * (nm + 3), 2): S3.column_dimensions[get_column_letter(i)].width = w
+    S3.column_dimensions["C"].width = 24  # 7.3 本方账号需完整显示为文本
     S4 = wb.create_sheet("可视化看板"); S4.column_dimensions["A"].width = 2
     S5 = wb.create_sheet("风险指标")
     S5.column_dimensions["A"].width = 6
@@ -532,10 +535,13 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     ov_rows = []
     for owner, g in df.groupby("_owner", sort=True):
         hits = int(hit_mask.reindex(g.index).sum())
+        valid_times = g["交易时间"].dropna()
+        period = (f"{valid_times.min():%Y.%m.%d}~{valid_times.max():%Y.%m.%d}"
+                  if len(valid_times) else "无有效交易日期")
         ov_rows.append([owner or "(未识别主体)",
                         int(g["来源文件名"].nunique()) if src_ok else "—",
                         int(g["_acct"].replace("", np.nan).nunique()) if "_acct" in g.columns else g["本方账户"].nunique(),
-                        len(g), f"{g['交易时间'].min():%Y.%m.%d}~{g['交易时间'].max():%Y.%m.%d}",
+                        len(g), period,
                         hits, hits / max(len(g), 1)])
     tot_hits = int(hit_mask.sum())
     r = table(ws, r, ["主体名称", "原始文件数", "账户数", "标准化笔数", "流水期间", "打标命中笔数", "打标命中率"],
@@ -599,13 +605,13 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
                       ("年化·上限", S["hi_a"], MF)])
     steps = [["有效流入（起点）", S["eff_in"], "剔除 内部互转/筹资/票据/结息/退款 后的对外流入"],
              ["− 补贴/退税/财政性收入", -S["e1"], f"对手含「{SUBSIDY_CP}」或标签含「{SUBSIDY_KW}」"],
-             ["= 上限（最宽口径）", S["hi"], "把全部未定性流入都算作销售，销售额的绝对上界"],
+             ["＝ 上限（最宽口径）", S["hi"], "把全部未定性流入都算作销售，销售额的绝对上界"],
              ["− 对倒/过账重合", -S["e2"], f"同一对手双向往来且重合比≥{THRESHOLDS['过账重合比下限']:.0%}，按 min(流入,流出) 剔除"],
-             ["= 中值（推荐口径）", S["mid"], "剔除明显过账后的销售额，审批建议以此为基准"],
+             ["＝ 中值（推荐口径）", S["mid"], "剔除明显过账后的销售额，审批建议以此为基准"],
              ["− 个人往来/拆借流入", -S["e3"],
               f"对手为自然人且标签为往来/借贷或非经营类；其中明确带往来/借贷标签 {S['e3_lab']:,.0f} 元、"
               f"仅因未打标(非经营类)而剔除 {S['e3_untag']:,.0f} 元"],
-             ["= 下限（最严口径）", S["lo"], "仅保留可定性为经营性销售的流入，销售额的保守下界"]]
+             ["＝ 下限（最严口径）", S["lo"], "仅保留可定性为经营性销售的流入，销售额的保守下界"]]
     r = table(ws, r, ["口径步骤", "金额", "说明"], steps, fmts=[None, MF, None],
               seq=False, spans={3: 4})
     if S["e3_untag"] > 0 and S["e3"] > 0:
@@ -785,10 +791,14 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     # ---- 三 数据验证 ----
     r = nxt(ws); chap(ws, r, "三", "数据验证"); r += 1
     sect(ws, r, "3.1", "数据完整性校验（按主体×账户）"); r += 1
+    def account_period(a):
+        if pd.isna(a["t0"]) or pd.isna(a["t1"]):
+            return "无有效交易日期"
+        return f"{a['t0']:%Y.%m.%d}~{a['t1']:%Y.%m.%d}"
     for owner in dict.fromkeys(a["owner"] for a in V["accounts"]):
         put(ws, r, 2, owner, bold=True); r += 1
         rows = [[a["acct"], a["bank"] or "—", a["cur"] or "—",
-                 f"{a['t0']:%Y.%m.%d}~{a['t1']:%Y.%m.%d}", f"{a['months']}个月",
+                 account_period(a), f"{a['months']}个月",
                  ("无" if not a["breaks"] else f"{a['breaks']}处") if a["breaks"] is not None else "未提供校验表",
                  a["cp"], a["memo"]] for a in V["accounts"] if a["owner"] == owner]
         r = table(ws, r, ["账号", "所属银行", "币种", "数据时间范围", "数据时长", "余额断点", "对方名称", "交易信息"], rows, spans={7: 2}) + 1
@@ -1139,7 +1149,8 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
             is_sent = isinstance(v, (int, float)) and not isinstance(v, bool) and v in SPEC_SENTINELS
             put(ws, r, 2, c); put(ws, r, 3, n, wrap=True)
             put(ws, r, 4, v, fillc=YEL if is_sent else None, fmt="#,##0.0000" if isinstance(v, float) else None)
-            put(ws, r, 5, lg, wrap=True, font=F(size=9, color="808080"))
+            display_logic = ("＝" + lg[1:]) if isinstance(lg, str) and lg.startswith("=") else lg
+            put(ws, r, 5, display_logic, wrap=True, font=F(size=9, color="808080"))
             fit_row(ws, r, max(est_lines(n, colw(ws, 3)), est_lines(lg or "", colw(ws, 5), size=9)))
             r += 1
         r += 1
@@ -1153,7 +1164,7 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     dcols = [c for c in DETAIL_COLS if c in df.columns]
     AMT_COLS = {"收入金额", "支出金额", "交易金额", "账户余额", "虚拟账户余额"}
     DW = {"交易唯一编号": 16, "交易时间": 19, "本方名称": 22, "对手名称": 26, "开户行": 22,
-          "本方账户": 20, "对手账户": 20, "银行备注": 28, "账户方附言": 20, "来源文件名": 30, "命中关键词": 14}
+          "本方账户": 24, "对手账户": 24, "银行备注": 28, "账户方附言": 20, "来源文件名": 30, "命中关键词": 14}
     put(ws, 1, 1, "标准化（合并）流水数据明细表", font=TITLE_F); ws.row_dimensions[1].height = 30
     mtext(ws, 2, "标准化交付物「整合打标流水」的只读副本（含内部互转标记），供手工筛选分析，无需翻看上游产物；"
                  "行序沿用余额连续性还原结果，切勿按时间重排后回写。", span=8, col=1)
@@ -1172,7 +1183,10 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
             elif isinstance(v, float) and v != v: v = None
             elif isinstance(v, (np.integer, np.floating)): v = float(v)
             cell = ws.cell(rr, j, v); cell.font = NUMF
-            if j in amt_idx: cell.number_format = MF
+            if j in amt_idx:
+                cell.number_format = MF
+            elif c in {"交易唯一编号", "本方账户", "对手账户"}:
+                cell.number_format = "@"
         ws.cell(rr, len(dcols) + 1, "是" if bool(df["内部互转"].iloc[k]) else "").font = NUMF
     ws.freeze_panes = ws.cell(hr + 1, 1)
     ws.auto_filter.ref = f"A{hr}:{get_column_letter(len(dcols) + 1)}{hr + len(df)}"
