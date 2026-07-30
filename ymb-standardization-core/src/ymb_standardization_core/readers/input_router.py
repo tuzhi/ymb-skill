@@ -13,7 +13,10 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.readers.pdf_input import read_pdf_rows
-from ymb_standardization_core.readers.routing.rule_loader import load_excel_route_rules
+from ymb_standardization_core.readers.routing.rule_loader import (
+    apply_required_reader_header_gate,
+    load_excel_route_rules,
+)
 from ymb_standardization_core.contracts import RouteDecision
 from ymb_standardization_core.models import ReadResult
 from ymb_standardization_core.transforms import (
@@ -102,6 +105,7 @@ def _excel_candidate(rule, match):
         "optional_columns_evidence": match.get("optional_columns_evidence", []),
         "missing_required_columns": match.get("missing_required_columns", []),
         "missing_hints": match.get("missing_hints", []),
+        "required_reader_headers": rule.required_reader_headers,
         "metadata_evidence": match.get("metadata_evidence", {}),
         "style_evidence": match.get("style_evidence", []),
         "date_format_evidence": match.get("date_format_evidence", []),
@@ -368,6 +372,9 @@ def read_rows(path, hints=None, route_rules=None):
             rows = normalize_cmb_mixed_grid(rows)
         rows, route_info = merge_configured_header(rows, route_info)
         rows = apply_reader_options(rows, route_info)
+        route_info = apply_required_reader_header_gate(route_info, rows)
+        if route_info.get("decision") == "matched_incomplete":
+            rows = []
         return ReadResult(
             kind="excel",
             preamble="",

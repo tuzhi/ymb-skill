@@ -131,6 +131,47 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(record["status"], "DONE")
             self.assertNotIn("route_artifact", child.manifest["stage_1_standardize"])
 
+    def test_child_run_does_not_reuse_legacy_unmatched_raw_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.pdf").write_bytes(b"same-content")
+            run_root = root / "runs"
+
+            parent = orchestrator.Runner(runner_args(run_root, source))
+            with patch.object(
+                orchestrator.S,
+                "standardize_file",
+                side_effect=self.standardize_success,
+            ):
+                parent.stage_1_standardize()
+            parent_results = parent.load_stage_1_results()
+            parent_record = next(iter(parent_results["files"].values()))
+            parent_record["route"] = {
+                "fingerprint_id": "",
+                "series_family": "",
+                "router_bank": "未识别",
+                "yaml_match_status": "unmatched",
+            }
+            parent.write_stage_1_results(parent_results)
+
+            child = orchestrator.Runner(
+                runner_args(run_root, source, parent_run_id=parent.run_id)
+            )
+            with patch.object(
+                orchestrator.S,
+                "standardize_file",
+                side_effect=self.standardize_success,
+            ) as standardize:
+                result = child.stage_1_standardize()
+
+            self.assertEqual(standardize.call_count, 1)
+            self.assertEqual(result["reused"], [])
+            self.assertEqual(len(result["rerun"]), 1)
+            decision = next(iter(result["decisions"].values()))
+            self.assertEqual(decision["reason"], "parent_route_invalid")
+
     def test_child_run_reuses_three_done_and_reruns_two_failed_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

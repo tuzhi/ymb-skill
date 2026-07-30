@@ -69,6 +69,12 @@ class SourceFormatQualityError(Exception):
         self.route_info = dict(route_info or {})
 
 
+class YamlRouteRequiredError(SourceFormatQualityError):
+    """原始流水未唯一命中已发布 YAML，不允许进入正式标准化。"""
+
+    code = "YAML_ROUTE_REQUIRED"
+
+
 def is_pipeline_product(path):
     base = os.path.basename(path)
     return any(base.endswith(s) for s in PRODUCT_SUFFIXES)
@@ -1332,7 +1338,8 @@ def adopt_standardized_input(path, out_dir=None, write_mapping=True):
 
 
 def standardize(path, out_dir=None, bank=None,
-                account_type=None, header_row=None, overrides=None, write_mapping=True):
+                account_type=None, header_row=None, overrides=None, write_mapping=True,
+                strict_yaml_route=True):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
@@ -1372,6 +1379,43 @@ def standardize(path, out_dir=None, bank=None,
         raise NotABankStatement(
             "图片型/扫描件 PDF，未抽取到文本（需先 OCR 转文本）" if file_kind == "pdf"
             else "空文件或无可解析内容")
+
+    route_decision = str(route_info.get("decision") or "").strip()
+    fingerprint_id = str(
+        route_info.get("fingerprint_id") or route_info.get("id") or ""
+    ).strip()
+    if strict_yaml_route and file_kind in {"excel", "pdf"} and (
+        route_decision != "matched" or not fingerprint_id
+    ):
+        kind_name = "PDF" if file_kind == "pdf" else "Excel"
+        if route_decision == "ambiguous":
+            candidates = (
+                route_info.get("candidate_fingerprints")
+                or route_info.get("candidates")
+                or []
+            )
+            candidate_ids = []
+            for candidate in candidates:
+                candidate_id = (
+                    candidate.get("fingerprint_id") or candidate.get("id")
+                    if isinstance(candidate, dict)
+                    else candidate
+                )
+                candidate_id = str(candidate_id or "").strip()
+                if candidate_id and candidate_id not in candidate_ids:
+                    candidate_ids.append(candidate_id)
+            detail = f"（候选：{'、'.join(candidate_ids)}）" if candidate_ids else ""
+            reason = (
+                f"原始{kind_name}命中多个已发布 YAML 指纹{detail}，"
+                "禁止生成正式标准化产物；请收窄 YAML 规则并测试发布后重跑"
+            )
+        else:
+            reason = (
+                f"原始{kind_name}未唯一命中已发布 YAML 指纹，"
+                "禁止使用通用 Reader 生成正式标准化产物；"
+                "请创建或维护 YAML 草稿并测试发布后重跑"
+            )
+        raise YamlRouteRequiredError(reason, route_info=route_info)
 
     if header_row is None:
         header_idx, hits = find_header_row(rows)

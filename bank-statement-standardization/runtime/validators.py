@@ -108,6 +108,30 @@ def validate_standardize(
         root = os.path.abspath(run_dir or os.path.dirname(work_dir))
         csvs = []
         for file_id, record in files.items():
+            route = record.get("route")
+            expected_fields = set(YAML_ROUTE_FIELDS)
+            if not isinstance(route, dict) or set(route) != expected_fields:
+                raise ValidationError(f"阶段一文件路由字段不合法：{file_id}")
+            status = route.get("yaml_match_status")
+            source_name = str(record.get("name") or "")
+            declared_standardized_input = source_name.lower().endswith("__standardized.csv")
+            if status not in {"matched", "unmatched", "ambiguous", "failed"}:
+                raise ValidationError(
+                    f"阶段一 YAML 命中状态不合法：{source_name or file_id}：{status}"
+                )
+            if declared_standardized_input and status not in {"matched", "unmatched"}:
+                raise ValidationError(
+                    f"已声明标准化输入的路由状态不合法：{source_name or file_id}：{status}"
+                )
+            if status != "matched" and not declared_standardized_input:
+                raise ValidationError(
+                    f"阶段一原始文件未唯一命中 YAML，不得标记为 DONE："
+                    f"{source_name or file_id}：{status}"
+                )
+            if status == "matched" and not str(route.get("fingerprint_id") or "").strip():
+                raise ValidationError(
+                    f"阶段一已命中 YAML 但缺少 fingerprint_id：{source_name or file_id}"
+                )
             relpath = str(record.get("output") or "").strip()
             path = os.path.abspath(
                 relpath if os.path.isabs(relpath) else os.path.join(root, relpath)

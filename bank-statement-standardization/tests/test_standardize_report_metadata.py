@@ -132,6 +132,57 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertIn("缺少必需可选列：对手信息", raised.exception.reason)
         self.assertIn("勾选“对手信息”", raised.exception.reason)
 
+    def test_unmatched_raw_file_is_rejected_by_strict_yaml_gate(self):
+        function_globals = standardize.standardize.__globals__
+        original = function_globals["read_rows"]
+        route = {
+            "decision": "unmatched",
+            "reader_id": "generic_excel",
+            "candidate_fingerprints": ["excel:near-match"],
+        }
+        try:
+            function_globals["read_rows"] = lambda _path: (
+                "excel",
+                "",
+                [["交易日期", "金额"], ["2026-01-01", "100"]],
+                route,
+            )
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(standardize.YamlRouteRequiredError) as raised:
+                    standardize.standardize("未匹配流水.xlsx", out_dir=tmp)
+        finally:
+            function_globals["read_rows"] = original
+
+        self.assertEqual(raised.exception.code, "YAML_ROUTE_REQUIRED")
+        self.assertEqual(raised.exception.route_info["decision"], "unmatched")
+        self.assertIn("禁止使用通用 Reader", raised.exception.reason)
+
+    def test_ambiguous_raw_file_is_rejected_by_strict_yaml_gate(self):
+        function_globals = standardize.standardize.__globals__
+        original = function_globals["read_rows"]
+        route = {
+            "decision": "ambiguous",
+            "candidate_fingerprints": [
+                {"fingerprint_id": "pdf:first"},
+                {"id": "pdf:second"},
+            ],
+        }
+        try:
+            function_globals["read_rows"] = lambda _path: (
+                "pdf",
+                "银行交易明细",
+                [["交易日期", "金额"], ["2026-01-01", "100"]],
+                route,
+            )
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(standardize.YamlRouteRequiredError) as raised:
+                    standardize.standardize("多匹配流水.pdf", out_dir=tmp)
+        finally:
+            function_globals["read_rows"] = original
+
+        self.assertIn("命中多个已发布 YAML 指纹", raised.exception.reason)
+        self.assertIn("pdf:first、pdf:second", raised.exception.reason)
+
     def test_icbc_personal_pdfium_extracts_owner_without_watermark_accounts(self):
         samples = (
             (
@@ -294,6 +345,8 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             / "广州沛瑾家具"
             / "广州沛瑾家具有限公司@李果红_中国工商银行_TF_1.xlsx"
         )
+        if not excel.exists():
+            self.skipTest("本地未提供工行卡明细样本")
         with tempfile.TemporaryDirectory() as tmp:
             csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
@@ -328,7 +381,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             sheet.append(["2026-01-01", "", "", "100"])
             workbook.save(excel)
 
-            csv_path, _json_path, report = standardize.standardize(str(excel), out_dir=tmp)
+            csv_path, _json_path, report = standardize.standardize(
+                str(excel), out_dir=tmp, strict_yaml_route=False
+            )
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
                 rows = list(csv.DictReader(f))
 
@@ -966,7 +1021,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 ws.append([row[key] for key in rows[0].keys()])
             wb.save(src)
 
-            csv_path, json_path, report = standardize.standardize(str(src), out_dir=str(out_dir))
+            csv_path, json_path, report = standardize.standardize(
+                str(src), out_dir=str(out_dir), strict_yaml_route=False
+            )
 
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
                 out_rows = list(csv.DictReader(f))
@@ -1001,7 +1058,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             ws.append(row)
             wb.save(src)
 
-            csv_path, _json_path, report = standardize.standardize(str(src), out_dir=str(out_dir))
+            csv_path, _json_path, report = standardize.standardize(
+                str(src), out_dir=str(out_dir), strict_yaml_route=False
+            )
 
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
                 out_rows = list(csv.DictReader(f))
@@ -1228,7 +1287,9 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 ])
             wb.save(src)
 
-            csv_path, _json_path, report = standardize.standardize(str(src), out_dir=str(out_dir))
+            csv_path, _json_path, report = standardize.standardize(
+                str(src), out_dir=str(out_dir), strict_yaml_route=False
+            )
 
             with open(csv_path, encoding="utf-8-sig", newline="") as f:
                 out_rows = list(csv.DictReader(f))

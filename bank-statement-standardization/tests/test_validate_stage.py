@@ -76,6 +76,47 @@ class ValidateStageTests(unittest.TestCase):
             with self.assertRaisesRegex(validate_stage.ValidationError, "文件路由与标准化 CSV 不一致"):
                 validate_stage.validate_standardize(str(work), file_routes={})
 
+    def test_stage_1_rejects_unmatched_raw_file_marked_done(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            work = root / "work"
+            work.mkdir()
+            columns = sorted(validate_stage.STD_REQUIRED)
+            row = {column: "1" for column in columns}
+            row.update({
+                "交易唯一编号": "TX-1",
+                "交易时间": "2026-01-01",
+                "来源文件名": "流水.pdf",
+                "来源行号": "1",
+            })
+            output = work / "流水__pdf__standardized.csv"
+            with output.open("w", encoding="utf-8-sig", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=columns)
+                writer.writeheader()
+                writer.writerow(row)
+            stage_1_results = {
+                "files": {
+                    "md5:test": {
+                        "name": "流水.pdf",
+                        "status": "DONE",
+                        "output": str(output.relative_to(root)),
+                        "route": {
+                            "fingerprint_id": "",
+                            "series_family": "",
+                            "router_bank": "未识别",
+                            "yaml_match_status": "unmatched",
+                        },
+                    }
+                }
+            }
+
+            with self.assertRaisesRegex(validate_stage.ValidationError, "未唯一命中 YAML"):
+                validate_stage.validate_standardize(
+                    str(work),
+                    stage_1_results=stage_1_results,
+                    run_dir=str(root),
+                )
+
     def test_portfolio_allows_missing_daily_csv_when_report_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)

@@ -78,6 +78,8 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 每个 Run 固定生成 `manifest.json`、`stage_1_results.json` 和 `qc_results.json`：Manifest 只保存阶段状态和阶段一兜底信息；阶段一逐文件结果与 QC 结果分别独立保存。
 
+生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
+
 ## 快速开始（方式 B · 任意大模型）
 
 1. 只有 Stage 1 失败后才允许 AI 兜底；读取 `fallback/stage_1_standardize/fallback_request.json`，只处理其中 `files` 列出的 `BLOCKED/ERROR` 文件。

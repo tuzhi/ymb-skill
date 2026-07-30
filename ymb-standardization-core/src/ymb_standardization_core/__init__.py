@@ -4,12 +4,19 @@
 """
 
 from .contracts import RouteDecision, StandardizationContext
-from .core import NotABankStatement, SourceFormatQualityError, standardize, standardize_file
+from .core import (
+    NotABankStatement,
+    SourceFormatQualityError,
+    YamlRouteRequiredError,
+    standardize,
+    standardize_file,
+)
 from .models import ReadResult
 
 __all__ = [
     "NotABankStatement",
     "SourceFormatQualityError",
+    "YamlRouteRequiredError",
     "RouteDecision",
     "ReadResult",
     "StandardizationContext",

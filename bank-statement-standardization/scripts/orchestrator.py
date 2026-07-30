@@ -81,6 +81,15 @@ def valid_yaml_route(route):
     return status != "matched" or bool(str(route.get("fingerprint_id") or "").strip())
 
 
+def reusable_stage_1_route(route, source_name):
+    """原始文件只复用唯一命中 YAML 的结果；声明式标准化 CSV 是明确例外。"""
+    if not valid_yaml_route(route):
+        return False
+    if str(source_name or "").lower().endswith("__standardized.csv"):
+        return route.get("yaml_match_status") in {"matched", "unmatched"}
+    return route.get("yaml_match_status") == "matched"
+
+
 def read_json_if_exists(path, default=None):
     if not os.path.isfile(path):
         return default
@@ -914,7 +923,7 @@ class Runner:
                     reason = "parent_file_not_done"
                 elif not versions_match:
                     reason = "skill_version_mismatch"
-                elif not valid_yaml_route(parent_record.get("route")):
+                elif not reusable_stage_1_route(parent_record.get("route"), name):
                     reason = "parent_route_invalid"
                 else:
                     parent_output = self.resolve_result_output(parent_dir, parent_record.get("output"))

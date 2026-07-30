@@ -928,7 +928,7 @@
       pattern: '(?s)^.*无.*$'
       replacement: ''
   reader_id: pdfplumber_table
-- id: md5:8626b51d2fac7f18ec01c5042e1b2731
+- id: md5:a45eacad2710cb4976c2606901bc45c0
   file_type: pdf
   bank: 兴业银行
   account_type: 个人
@@ -953,25 +953,33 @@
         交易用途: null
         对方户名: null
         对方账户/对方银行: null
-      optional:
         交易时间TransactionTime:
           field: 交易时间
+          match: reader_header
         记账日期Accounting Date:
           field: 交易日期
+          match: reader_header
         摘要TransactionType:
           field: 银行备注
+          match: reader_header
         支/收Expenditure/Income:
           field: 收支方向
+          match: reader_header
         交易金额TransactionAmount:
           field: 交易金额
+          match: reader_header
         账户余额Account Balance:
           field: 账户余额
+          match: reader_header
         交易用途TransactionUsage:
           field: 账户方附言
+          match: reader_header
         对方户名Counterparty'sAccount Name:
           field: 对手名称
+          match: reader_header
         对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank:
           field: null
+          match: reader_header
   reader_options:
     word_filters:
       drop_chars:
@@ -3032,3 +3040,60 @@
         附言: 账户方附言
         摘要: 银行备注
   reader_id: openpyxl_grid
+- id: md5:6ad5ced0dfc4ac24cc57fec75b908069
+  file_type: pdf
+  bank: 中信银行
+  account_type: 个人
+  series_family: citic_personal_transaction_details_openpdf
+  source_order: chronological
+  fingerprint:
+    metadata:
+      all:
+        Producer: 'iText® Core 7.2.5 (AGPL version), pdfHTML 4.0.4 (AGPL version) ©2000-2023 iText Group NV; modified using iText® 5.5.13.1 ©2000-2019 iText Group NV (AGPL-version); modified using ESS-PDF 2.1.0(1566)'
+    style:
+      all:
+      - text: 账户交易明细
+        font: SimSunBold
+        size_min: 14
+        size_max: 16
+        top_max: 60
+        centered: true
+    identity:
+      any:
+      - 中信银行官方网站
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[：:]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[：:]\s*(\d{16,19})'
+    columns:
+      all:
+        交易日期: 交易日期
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        交易摘要: 银行备注
+        对方账号: 对手账户
+        对方户名: 对手名称
+    row_anchor:
+      column: 交易日期
+      pattern: ^20\d{6}$
+  reader_options:
+    repeated_header:
+      end_markers:
+      - date
+      - receivable
+      - balance
+      - Recipient
+    word_filters:
+      drop_words_below_page_bottom: 25
+      stop_line_contains_any:
+      - 声明：
+    amount_columns:
+    - 收入金额
+    - 支出金额
+    - 账户余额
+    extract_patterns:
+    - column: 交易日期
+      pattern: 20\d{6}
+  reader_id: pdfplumber_coordinate_table

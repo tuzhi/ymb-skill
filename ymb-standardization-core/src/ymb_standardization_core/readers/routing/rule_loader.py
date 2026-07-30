@@ -22,6 +22,7 @@ class RouteRule:
     style_all: list
     date_format_any: list
     optional_columns: dict = field(default_factory=dict)
+    required_reader_headers: dict = field(default_factory=dict)
     series_family: str = ""
     text_table_layout: str = ""
     source_order: str = ""
@@ -365,6 +366,30 @@ def _columns_required(fingerprint):
     return required
 
 
+def _required_column_config(source, raw_config):
+    if isinstance(raw_config, dict):
+        config = dict(raw_config)
+        match = str(config.get("match") or "route_text").strip()
+        if match not in {"route_text", "reader_header"}:
+            raise ValueError(
+                f"fingerprint.columns.required.{source}.match must be "
+                "route_text or reader_header"
+            )
+        raw_field = config.get("field")
+        return {
+            "field": None if raw_field is None else str(raw_field).strip(),
+            "match": match,
+        }
+    if raw_config is None or isinstance(raw_config, str):
+        return {
+            "field": None if raw_config is None else str(raw_config).strip(),
+            "match": "route_text",
+        }
+    raise ValueError(
+        f"fingerprint.columns.required.{source} must be null, string, or dict"
+    )
+
+
 def _optional_columns(fingerprint):
     columns = (fingerprint or {}).get("columns") or {}
     optional = columns.get("optional") or {}
@@ -397,7 +422,74 @@ def _optional_columns(fingerprint):
 
 
 def _column_markers(fingerprint):
-    return [str(key).strip() for key in _columns_required(fingerprint).keys() if str(key).strip()]
+    markers = []
+    for key, raw_config in _columns_required(fingerprint).items():
+        source = str(key).strip()
+        if not source:
+            continue
+        if _required_column_config(source, raw_config)["match"] == "route_text":
+            markers.append(source)
+    return markers
+
+
+def _required_reader_headers(fingerprint):
+    headers = {}
+    for key, raw_config in _columns_required(fingerprint).items():
+        source = str(key).strip()
+        if not source:
+            continue
+        config = _required_column_config(source, raw_config)
+        if config["match"] == "reader_header":
+            headers[source] = config["field"]
+    return headers
+
+
+def apply_required_reader_header_gate(route_info, rows):
+    """Reader 完成后复核无法在路由前文本中可靠识别的必需表头。"""
+    required = dict((route_info or {}).get("required_reader_headers") or {})
+    if not required or (route_info or {}).get("decision") != "matched":
+        return route_info
+
+    def normalize(value):
+        text = (
+            str(value or "")
+            .replace("‑", "-")
+            .replace("行", "行")
+            .replace("易", "易")
+        )
+        return re.sub(r"\s+", "", text).strip()
+
+    actual = {
+        normalize(value)
+        for value in ((rows or [[]])[0] or [])
+        if normalize(value)
+    }
+    missing = [
+        source
+        for source in required
+        if normalize(source) not in actual
+    ]
+    if not missing:
+        return {
+            **route_info,
+            "required_columns_evidence": list(dict.fromkeys(
+                list(route_info.get("required_columns_evidence") or []) + list(required)
+            )),
+            "columns_evidence": list(dict.fromkeys(
+                list(route_info.get("columns_evidence") or []) + list(required)
+            )),
+        }
+    return {
+        **route_info,
+        "decision": "matched_incomplete",
+        "missing_required_columns": list(dict.fromkeys(
+            list(route_info.get("missing_required_columns") or []) + missing
+        )),
+        "missing_hints": list(dict.fromkeys(
+            list(route_info.get("missing_hints") or [])
+            + [f"原始表格缺少必需列“{source}”，请重新导出完整流水" for source in missing]
+        )),
+    }
 
 
 def _column_mapping(fingerprint):
@@ -406,7 +498,7 @@ def _column_mapping(fingerprint):
         source = str(key).strip()
         if not source:
             continue
-        mapping[source] = None if value is None else str(value).strip()
+        mapping[source] = _required_column_config(source, value)["field"]
     for source, config in _optional_columns(fingerprint).items():
         mapping[source] = config.get("field")
     if not isinstance(mapping, dict):
@@ -735,6 +827,7 @@ def build_pdf_route_rules(items):
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
             optional_columns=_optional_columns(fingerprint),
+            required_reader_headers=_required_reader_headers(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),
@@ -777,6 +870,7 @@ def build_excel_route_rules(items):
             identity_any=fingerprint.get("identity", {}).get("any", []),
             column_markers=_column_markers(fingerprint),
             optional_columns=_optional_columns(fingerprint),
+            required_reader_headers=_required_reader_headers(fingerprint),
             metadata_all=fingerprint.get("metadata", {}).get("all", {}),
             style_all=fingerprint.get("style", {}).get("all", []),
             date_format_any=fingerprint.get("date_format", {}).get("any", []),

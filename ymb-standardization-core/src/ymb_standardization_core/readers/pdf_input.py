@@ -12,6 +12,9 @@ from ymb_standardization_core.readers.pdf.coordinate_table import _coordinate_me
 from ymb_standardization_core.readers.pdf.line_table import _extract_pdf_tables_from_horizontal_lines
 from ymb_standardization_core.readers.pdf.table import _extract_pdf_tables_default
 from ymb_standardization_core.readers.pdf.text_lines import _extract_pdf_text_table_rows
+from ymb_standardization_core.readers.routing.rule_loader import (
+    apply_required_reader_header_gate,
+)
 from ymb_standardization_core.transforms import annotate_payment_order_state
 
 
@@ -167,6 +170,9 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             route_info.get("reader_id", ""),
             reader_options,
         )
+        route_info = apply_required_reader_header_gate(route_info, table_rows)
+        if route_info.get("decision") == "matched_incomplete":
+            return preamble or "", [], route_info
         table_rows = annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") == "pdfplumber_coordinate_table" and table_rows:
             metadata_preamble = _coordinate_metadata_preamble(reader_pdf, reader_options)

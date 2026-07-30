@@ -22,9 +22,12 @@ ROUTER_SPEC = importlib.util.spec_from_file_location(
 router = importlib.util.module_from_spec(ROUTER_SPEC)
 ROUTER_SPEC.loader.exec_module(router)
 
-from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
-from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules  # noqa: E402
-from ymb_standardization_core.readers.routing.rule_loader import PdfRouteRule  # noqa: E402
+from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402
+    PdfRouteRule,
+    apply_required_reader_header_gate,
+    fingerprint_md5,
+    load_pdf_route_rules,
+)
 from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
 from ymb_standardization_core.readers.pdf import common, coordinate_table, table  # noqa: E402
 from ymb_standardization_core.readers.pdf_input import (  # noqa: E402
@@ -636,6 +639,38 @@ class PdfRouterDecisionTests(unittest.TestCase):
         finally:
             router.load_pdf_route_rules = original
 
+    def test_required_reader_headers_are_checked_after_pdf_reader(self):
+        route = {
+            "decision": "matched",
+            "required_reader_headers": {
+                "交易时间TransactionTime": "交易时间",
+                "账户余额Account Balance": "账户余额",
+            },
+            "required_columns_evidence": ["交易金额"],
+            "columns_evidence": ["交易金额"],
+        }
+
+        complete = apply_required_reader_header_gate(
+            route,
+            [[
+                "交易时间TransactionTime",
+                "账户余额Account Balance",
+            ]],
+        )
+        incomplete = apply_required_reader_header_gate(
+            route,
+            [["交易时间TransactionTime"]],
+        )
+
+        self.assertEqual(complete["decision"], "matched")
+        self.assertIn("账户余额Account Balance", complete["required_columns_evidence"])
+        self.assertEqual(incomplete["decision"], "matched_incomplete")
+        self.assertEqual(
+            incomplete["missing_required_columns"],
+            ["账户余额Account Balance"],
+        )
+        self.assertIn("请重新导出完整流水", incomplete["missing_hints"][0])
+
     def test_specialized_route_without_yaml_fingerprint_falls_back_to_generic(self):
         original = router.load_pdf_route_rules
         try:
@@ -1080,10 +1115,25 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["fingerprint_id"], "md5:8626b51d2fac7f18ec01c5042e1b2731")
+        self.assertEqual(result["fingerprint_id"], "md5:a45eacad2710cb4976c2606901bc45c0")
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["bank"], "兴业银行")
         self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["optional_columns_evidence"], [])
+        self.assertEqual(
+            set(result["required_reader_headers"]),
+            {
+                "交易时间TransactionTime",
+                "记账日期Accounting Date",
+                "摘要TransactionType",
+                "支/收Expenditure/Income",
+                "交易金额TransactionAmount",
+                "账户余额Account Balance",
+                "交易用途TransactionUsage",
+                "对方户名Counterparty'sAccount Name",
+                "对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank",
+            },
+        )
         self.assertEqual(result["word_filters"], {"drop_chars": [{"rotated": True}]})
         self.assertEqual(result["preamble_extractors"], [
             {"field": "本方名称", "pattern": r"户\s*名[：:]\s*([^\s]+)"},

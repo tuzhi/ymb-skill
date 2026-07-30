@@ -8,7 +8,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, 
                    identity_evidence, columns_evidence, route_evidence=None,
                    decision="matched", required_columns_evidence=None,
                    optional_columns_evidence=None, missing_required_columns=None,
-                   missing_hints=None):
+                   missing_hints=None, required_reader_headers=None):
     return {
         "id": id,
         "fingerprint_id": id,
@@ -25,6 +25,7 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, 
         "optional_columns_evidence": optional_columns_evidence or [],
         "missing_required_columns": missing_required_columns or [],
         "missing_hints": missing_hints or [],
+        "required_reader_headers": required_reader_headers or {},
         "word_filters": route_evidence.get("word_filters", {}) if route_evidence else {},
         "direction_from_column": route_evidence.get("direction_from_column", {}) if route_evidence else {},
         "drop_rows": route_evidence.get("drop_rows", []) if route_evidence else [],
@@ -143,8 +144,13 @@ def route_pdf(text, table_row_count, page_count, context=None, rules=None):
             optional_columns_evidence=match.get("optional_columns_evidence"),
             missing_required_columns=match.get("missing_required_columns"),
             missing_hints=match.get("missing_hints"),
+            required_reader_headers=rule.required_reader_headers,
             route_evidence={
-                "reader_header_candidates": rule.column_markers + list(rule.optional_columns),
+                "reader_header_candidates": (
+                    rule.column_markers
+                    + list(rule.required_reader_headers)
+                    + list(rule.optional_columns)
+                ),
                 "word_filters": rule.word_filters,
                 "direction_from_column": rule.direction_from_column,
                 "drop_rows": rule.drop_rows,
