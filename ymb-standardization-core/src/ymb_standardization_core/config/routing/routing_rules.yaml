@@ -794,7 +794,7 @@
       anchor_pattern: '^\d+$'
       continuation: until_next_anchor_across_pages
   reader_id: pdfplumber_table
-- id: md5:6cadae92bf0342082ec8ce1556cf1ac0
+- id: md5:cccf7815c4118910b72612de7a9a8d0b
   file_type: pdf
   bank: 浙江网商银行
   account_type: 对公
@@ -811,17 +811,17 @@
       all:
         企业名称: 本方名称
         企业账号: 本方账户
-        借方交易笔数: 支出金额
-        借方交易金额: 支出金额
-        贷方交易笔数: 收入金额
-        贷方交易金额: 收入金额
+        借方交易笔数: 收入金额
+        借方交易金额: 收入金额
+        贷方交易笔数: 支出金额
+        贷方交易金额: 支出金额
         序号: null
         账务流水号: null
         提交时间: null
         交易时间: 交易时间
         交易名称: 银行备注
-        借方金额（收）: 支出金额
-        贷方金额（支）: 收入金额
+        借方金额（收）: 收入金额
+        贷方金额（支）: 支出金额
         余额: 账户余额
         对方户名: 对手名称
         对方账号: 对手账户
@@ -1879,7 +1879,7 @@
         交易对手账号: 对手账户
         附言: 账户方附言
   reader_id: openpyxl_grid
-- id: md5:6710c75ca4aa84eec738981247cc152a
+- id: md5:ae6ac09468721643e8ad8a570466e610
   file_type: excel
   bank: 浙江网商银行
   account_type: 对公
@@ -1894,16 +1894,16 @@
       all:
         企业名称: 本方名称
         企业账号: 本方账户
-        借方交易笔数: 支出金额
-        借方交易金额: 支出金额
-        贷方交易笔数: 收入金额
-        贷方交易金额: 收入金额
+        借方交易笔数: 收入金额
+        借方交易金额: 收入金额
+        贷方交易笔数: 支出金额
+        贷方交易金额: 支出金额
         账务流水号: null
         提交时间: null
         交易时间: 交易时间
         交易名称: 银行备注
-        借方金额（收）: 支出金额
-        贷方金额（支）: 收入金额
+        借方金额（收）: 收入金额
+        贷方金额（支）: 支出金额
         余额: 账户余额
         对方户名: 对手名称
         对方账号: 对手账户
@@ -3097,3 +3097,55 @@
     - column: 交易日期
       pattern: 20\d{6}
   reader_id: pdfplumber_coordinate_table
+- id: md5:a7eb1c4ea91df7bda637c52c12212351
+  file_type: pdf
+  bank: 支付宝
+  account_type: 未知
+  reader_id: pdfplumber_table
+  fingerprint:
+    identity:
+      any:
+      - 余额收支流水证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '兹证明[:：]?\s*[^（(\s]+[（(]([^）)]+)[）)]\s*在其支付宝账号'
+    - field: 本方账户
+      pattern: '兹证明[:：]?\s*([^\s（(]+)[（(]'
+    - field: 账户类型线索
+      pattern: '兹证明[:：]?\s*[^\s（(]+[（(]([^）)]*(?:公司|合作社|个体工商户|商行|经营部|中心|工厂|厂))'
+      template: 对公
+    columns:
+      all:
+        序号:
+          field: null
+          match: reader_header
+        入账时间:
+          field: 交易时间
+          match: reader_header
+        支付宝交易号:
+          field: null
+          match: reader_header
+        商户订单号:
+          field: 账户方附言
+          match: reader_header
+        业务类型:
+          field: 交易渠道
+          match: reader_header
+        对方账户名称:
+          field: 对手名称
+          match: reader_header
+        对方支付宝账号/银行卡号:
+          field: 对手账户
+          match: reader_header
+        收支余额:
+          field: 交易金额
+          match: reader_header
+        账户余额:
+          field: 账户余额
+          match: reader_header
+        备注:
+          field: 银行备注
+          match: reader_header
+  reader_options:
+    source_order: descending
+    require_monetary_value: true

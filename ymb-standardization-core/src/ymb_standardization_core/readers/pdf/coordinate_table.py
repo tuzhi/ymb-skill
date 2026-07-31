@@ -48,7 +48,7 @@ def _coordinate_header(words, candidate_headers):
         if best is None or len(by_text) > len(best[1]):
             best = (top, by_text)
     if not best:
-        return None, None, None
+        return None, None, None, None
     top, by_text = best
     headers = [header for header in candidate_headers if header in by_text]
     starts = [float(by_text[header].get("x0", 0)) for header in headers]
@@ -56,14 +56,58 @@ def _coordinate_header(words, candidate_headers):
         pairs = sorted(zip(headers, starts), key=lambda item: item[1])
         headers = [header for header, _start in pairs]
         starts = [start for _header, start in pairs]
-    return top, headers, starts
+    spans = [
+        (
+            float(by_text[header].get("x0", 0)),
+            float(by_text[header].get("x1", by_text[header].get("x0", 0))),
+        )
+        for header in headers
+    ]
+    return top, headers, starts, spans
 
 
-def _coordinate_boundaries(page_width, starts):
-    return [0] + [(left + right) / 2 for left, right in zip(starts, starts[1:])] + [page_width + 10]
+def _coordinate_boundaries(page_width, starts, header_spans=None):
+    if not header_spans or len(header_spans) != len(starts):
+        middle = [
+            (left + right) / 2
+            for left, right in zip(starts, starts[1:])
+        ]
+        return [0] + middle + [page_width + 10]
+
+    middle = []
+    for index, (left_span, right_span) in enumerate(
+        zip(header_spans, header_spans[1:]),
+    ):
+        left_x0, left_x1 = left_span
+        right_x0, right_x1 = right_span
+        left_width = max(0, left_x1 - left_x0)
+        right_width = max(0, right_x1 - right_x0)
+        gap = right_x0 - left_x1
+        if 0 <= gap <= min(left_width, right_width):
+            # 相邻表头形成可信窄缝时，使用两个文字框之间空隙的中点。
+            boundary = (left_x1 + right_x0) / 2
+        elif gap < 0:
+            # 表头框重叠时没有可靠空隙，退化为两个表头中心点的中点。
+            left_center = (left_x0 + left_x1) / 2
+            right_center = (right_x0 + right_x1) / 2
+            boundary = (left_center + right_center) / 2
+        else:
+            # 短表头会留下很宽的视觉空隙，不能用空隙中点代表真实列边界。
+            boundary = (starts[index] + starts[index + 1]) / 2
+        middle.append(boundary)
+    return [0] + middle + [page_width + 10]
 
 
-def _coordinate_index(x, boundaries):
+def _coordinate_index(x, boundaries, header_spans=None):
+    # 表头文字框是列的高置信核心区。正文文字起点若唯一落入某个表头范围，
+    # 优先归入该列，避免右对齐短文本越过“相邻表头起点中点”而落入下一列。
+    span_hits = [
+        index
+        for index, (left, right) in enumerate(header_spans or [])
+        if left <= x <= right
+    ]
+    if len(span_hits) == 1:
+        return span_hits[0]
     for index in range(len(boundaries) - 1):
         if boundaries[index] <= x < boundaries[index + 1]:
             return index
@@ -134,7 +178,7 @@ def _coordinate_metadata_preamble(pdf, route_info):
         return ""
     page = pdf.pages[0]
     words = _coordinate_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
-    header_top, _headers, _starts = _coordinate_header(
+    header_top, _headers, _starts, _spans = _coordinate_header(
         words,
         (route_info or {}).get("reader_header_candidates") or [],
     )
@@ -373,17 +417,27 @@ def _extract_pdf_coordinate_table_rows(
     all_rows = []
     output_headers = None
     output_starts = None
+    output_spans = None
     row_anchor = row_anchor or {}
     for page in pdf.pages:
         words = _coordinate_page_words(page, word_filters=word_filters)
-        header_top, page_headers, page_starts = _coordinate_header(words, candidate_headers)
+        header_top, page_headers, page_starts, page_spans = _coordinate_header(
+            words,
+            candidate_headers,
+        )
         if page_starts is not None:
             headers = page_headers
             starts = page_starts
+            spans = page_spans
             body_top_min = header_top + 5
-        elif output_headers is not None and output_starts is not None:
+        elif (
+            output_headers is not None
+            and output_starts is not None
+            and output_spans is not None
+        ):
             headers = output_headers
             starts = output_starts
+            spans = output_spans
             body_top_min = 0
         else:
             continue
@@ -392,12 +446,18 @@ def _extract_pdf_coordinate_table_rows(
         if output_headers is None:
             output_headers = headers
             output_starts = starts
+            output_spans = spans
             all_rows.append(headers)
         elif headers != output_headers:
             continue
         else:
             output_starts = starts
-        boundaries = _coordinate_boundaries(page.width, starts)
+            output_spans = spans
+        boundaries = _coordinate_boundaries(
+            page.width,
+            starts,
+            header_spans=spans,
+        )
         first_anchor_top = min(
             (
                 float(word.get("top", 0))
@@ -454,7 +514,11 @@ def _extract_pdf_coordinate_table_rows(
                 top = float(word.get("top", 0))
                 if not (start_top < top <= end_top):
                     continue
-                col = _coordinate_index(float(word.get("x0", 0)), boundaries)
+                col = _coordinate_index(
+                    float(word.get("x0", 0)),
+                    boundaries,
+                    header_spans=spans,
+                )
                 if col is None or col >= len(cells):
                     continue
                 cells[col].append((top, float(word.get("x0", 0)), str(word.get("text") or "").strip()))

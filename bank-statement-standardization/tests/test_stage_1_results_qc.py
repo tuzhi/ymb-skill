@@ -77,6 +77,8 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             results = runner.load_stage_1_results()["files"]
             by_name = {record["name"]: record for record in results.values()}
             self.assertEqual(by_name["正常.pdf"]["status"], "DONE")
+            self.assertEqual(by_name["正常.pdf"]["recognized_type"], "测试银行")
+            self.assertEqual(by_name["正常.pdf"]["record_count"], 1)
             self.assertEqual(by_name["失败.pdf"]["status"], "ERROR")
             self.assertTrue(
                 (Path(runner.run_dir) / by_name["正常.pdf"]["output"]).is_file()
@@ -129,6 +131,8 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(result["rerun"], [])
             record = next(iter(child.load_stage_1_results()["files"].values()))
             self.assertEqual(record["status"], "DONE")
+            self.assertEqual(record["recognized_type"], "测试银行")
+            self.assertEqual(record["record_count"], 1)
             self.assertNotIn("route_artifact", child.manifest["stage_1_standardize"])
 
     def test_child_run_does_not_reuse_legacy_unmatched_raw_result(self):

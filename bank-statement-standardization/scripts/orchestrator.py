@@ -90,6 +90,15 @@ def reusable_stage_1_route(route, source_name):
     return route.get("yaml_match_status") == "matched"
 
 
+def recognized_type(report):
+    """返回供任务详情展示的保守文件识别类型。"""
+    image = report.get("文件画像") if isinstance(report, dict) else {}
+    image = image if isinstance(image, dict) else {}
+    bank = str(image.get("router_bank") or "未识别").strip()
+    account_type = str(image.get("账户类型") or "").strip()
+    return " · ".join(value for value in (bank, account_type) if value)
+
+
 def read_json_if_exists(path, default=None):
     if not os.path.isfile(path):
         return default
@@ -962,6 +971,12 @@ class Runner:
                             "status": DONE,
                             "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
                             "route": dict(parent_record.get("route") or {}),
+                            "recognized_type": str(
+                                parent_record.get("recognized_type")
+                                or (parent_record.get("route") or {}).get("router_bank")
+                                or "未识别"
+                            ),
+                            "record_count": row_count,
                         }
                         processed.append({"input": path, "csv": target_csv, "rows": row_count, "reused": True})
                         result_status = DONE
@@ -1015,6 +1030,8 @@ class Runner:
                         "status": DONE,
                         "output": normalize_relpath(os.path.relpath(csv_path, self.run_dir)),
                         "route": route_summary,
+                        "recognized_type": recognized_type(report),
+                        "record_count": row_count,
                     }
                     processed.append({
                         "input": path,

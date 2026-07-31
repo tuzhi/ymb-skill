@@ -253,6 +253,18 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["bank"], "浙江网商银行")
         self.assertEqual(route["account_type"], "对公")
+        self.assertEqual(
+            route["fingerprint_id"],
+            "md5:ae6ac09468721643e8ad8a570466e610",
+        )
+        self.assertEqual(
+            route["column_mapping"]["借方金额（收）"],
+            "收入金额",
+        )
+        self.assertEqual(
+            route["column_mapping"]["贷方金额（支）"],
+            "支出金额",
+        )
 
     def test_historydetail_debit_credit_excel_route_does_not_infer_bank(self):
         module = load_input_router()

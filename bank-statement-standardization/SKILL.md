@@ -43,7 +43,7 @@ python "<skill目录>\scripts\orchestrator.py" run --folder "<客户流水文件
 核心输出契约：
 
 - `runs/<run-id>/manifest.json` 是本次运行的阶段状态事实源：顶层记录 `client / parent_run_id / rerun_reason`，阶段内只记录阶段状态、阶段完整耗时和阶段一 AI 兜底信息；不承载逐文件结果、QC、字段映射正文、输入诊断正文或业务分析结果。
-- `runs/<run-id>/stage_1_results.json` 是阶段一逐文件结果事实源，以内容 MD5 为 key，记录文件名、`PENDING / DONE / BLOCKED / ERROR`、标准化产物和最小 route。它替代 `stage_1_routes.json`，Manifest 不再保存 `route_artifact`。
+- `runs/<run-id>/stage_1_results.json` 是阶段一逐文件结果事实源，以内容 MD5 为 key，记录文件名、`PENDING / DONE / BLOCKED / ERROR`、识别类型、标准交易笔数、标准化产物和最小 route。它替代 `stage_1_routes.json`，Manifest 不再保存 `route_artifact`。
 - `runs/<run-id>/qc_results.json` 独立保存文件级和客户级 QC 结果；规则执行阶段、作用域、软硬级别和 handler 只由代码注册表维护。
 - 最终交付物只展示 `qc_results.json` 的状态和失败规则摘要，完整 QC 事实仍保留在独立结果文件中。
 - 阶段一主流程要求每个 `DONE` 记录对应一个可验收的标准化 CSV 和四字段 route：`fingerprint_id / series_family / router_bank / yaml_match_status`。`inferred_bank` 只允许在阶段一内部推断和单文件审计报告中使用，不跨阶段持久化。单文件 `mapping.json` 降级为可选审计产物，不再作为阶段验收或阶段二输入。

@@ -157,6 +157,32 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(raised.exception.route_info["decision"], "unmatched")
         self.assertIn("禁止使用通用 Reader", raised.exception.reason)
 
+    def test_unmatched_non_statement_excel_is_excluded_before_yaml_gate(self):
+        function_globals = standardize.standardize.__globals__
+        original = function_globals["read_rows"]
+        route = {
+            "decision": "unmatched",
+            "reader_id": "generic_excel",
+        }
+        try:
+            function_globals["read_rows"] = lambda _path: (
+                "excel",
+                "",
+                [["客户名称", "交易金额"], ["测试客户", "100"]],
+                route,
+            )
+            with tempfile.TemporaryDirectory() as tmp:
+                with self.assertRaises(standardize.NotABankStatement) as raised:
+                    standardize.standardize("反欺诈核查.xlsx", out_dir=tmp)
+        finally:
+            function_globals["read_rows"] = original
+
+        self.assertNotIsInstance(
+            raised.exception,
+            standardize.YamlRouteRequiredError,
+        )
+        self.assertIn("交易时间列", str(raised.exception))
+
     def test_ambiguous_raw_file_is_rejected_by_strict_yaml_gate(self):
         function_globals = standardize.standardize.__globals__
         original = function_globals["read_rows"]

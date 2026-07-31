@@ -1380,43 +1380,6 @@ def standardize(path, out_dir=None, bank=None,
             "图片型/扫描件 PDF，未抽取到文本（需先 OCR 转文本）" if file_kind == "pdf"
             else "空文件或无可解析内容")
 
-    route_decision = str(route_info.get("decision") or "").strip()
-    fingerprint_id = str(
-        route_info.get("fingerprint_id") or route_info.get("id") or ""
-    ).strip()
-    if strict_yaml_route and file_kind in {"excel", "pdf"} and (
-        route_decision != "matched" or not fingerprint_id
-    ):
-        kind_name = "PDF" if file_kind == "pdf" else "Excel"
-        if route_decision == "ambiguous":
-            candidates = (
-                route_info.get("candidate_fingerprints")
-                or route_info.get("candidates")
-                or []
-            )
-            candidate_ids = []
-            for candidate in candidates:
-                candidate_id = (
-                    candidate.get("fingerprint_id") or candidate.get("id")
-                    if isinstance(candidate, dict)
-                    else candidate
-                )
-                candidate_id = str(candidate_id or "").strip()
-                if candidate_id and candidate_id not in candidate_ids:
-                    candidate_ids.append(candidate_id)
-            detail = f"（候选：{'、'.join(candidate_ids)}）" if candidate_ids else ""
-            reason = (
-                f"原始{kind_name}命中多个已发布 YAML 指纹{detail}，"
-                "禁止生成正式标准化产物；请收窄 YAML 规则并测试发布后重跑"
-            )
-        else:
-            reason = (
-                f"原始{kind_name}未唯一命中已发布 YAML 指纹，"
-                "禁止使用通用 Reader 生成正式标准化产物；"
-                "请创建或维护 YAML 草稿并测试发布后重跑"
-            )
-        raise YamlRouteRequiredError(reason, route_info=route_info)
-
     if header_row is None:
         header_idx, hits = find_header_row(rows)
         route_header_keys = {
@@ -1582,6 +1545,46 @@ def standardize(path, out_dir=None, bank=None,
                 missing.append("交易时间列")
             why = "、".join(missing) or f"仅命中 {hits} 个标准列"
             raise NotABankStatement(f"未识别为银行流水（{why}），疑似发票/名册等非流水文件")
+
+    # 先完成“是否像流水”的结构判断，再执行严格 YAML 门禁。
+    # 这样报告、名册等衍生工作簿仍会按非流水文件跳过，而真正具备流水结构、
+    # 但未唯一命中 YAML 的原始 Excel/PDF 仍会被生产 Stage 1 阻断。
+    route_decision = str(route_info.get("decision") or "").strip()
+    fingerprint_id = str(
+        route_info.get("fingerprint_id") or route_info.get("id") or ""
+    ).strip()
+    if strict_yaml_route and file_kind in {"excel", "pdf"} and (
+        route_decision != "matched" or not fingerprint_id
+    ):
+        kind_name = "PDF" if file_kind == "pdf" else "Excel"
+        if route_decision == "ambiguous":
+            candidates = (
+                route_info.get("candidate_fingerprints")
+                or route_info.get("candidates")
+                or []
+            )
+            candidate_ids = []
+            for candidate in candidates:
+                candidate_id = (
+                    candidate.get("fingerprint_id") or candidate.get("id")
+                    if isinstance(candidate, dict)
+                    else candidate
+                )
+                candidate_id = str(candidate_id or "").strip()
+                if candidate_id and candidate_id not in candidate_ids:
+                    candidate_ids.append(candidate_id)
+            detail = f"（候选：{'、'.join(candidate_ids)}）" if candidate_ids else ""
+            reason = (
+                f"原始{kind_name}命中多个已发布 YAML 指纹{detail}，"
+                "禁止生成正式标准化产物；请收窄 YAML 规则并测试发布后重跑"
+            )
+        else:
+            reason = (
+                f"原始{kind_name}未唯一命中已发布 YAML 指纹，"
+                "禁止使用通用 Reader 生成正式标准化产物；"
+                "请创建或维护 YAML 草稿并测试发布后重跑"
+            )
+        raise YamlRouteRequiredError(reason, route_info=route_info)
 
     # 金额结构判定
     has_income = "收入金额" in field_to_cols

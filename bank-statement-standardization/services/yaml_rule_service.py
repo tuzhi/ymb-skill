@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 import json
 import os
 import tempfile
@@ -87,11 +87,7 @@ class YamlRuleService:
             self._write_meta({"status": DRAFT, "test": None})
             return self._draft()
 
-    def test_draft(
-        self,
-        run_id: str,
-        file_ids: Iterable[str] | None = None,
-    ) -> RuleTestResult:
+    def test_draft(self, run_id: str) -> RuleTestResult:
         with _DRAFT_LOCK:
             content = self._require_draft().read_text(encoding="utf-8")
             draft_version = routing_rules_version(content)
@@ -108,16 +104,10 @@ class YamlRuleService:
                     draft_version=draft_version,
                     summary=self._summarize_test_results([]),
                 )
-                self._record_test_result(result, [])
+                self._record_test_result(result)
                 return result
             input_dir = self._run_input(run_id)
-            selected = {
-                value if str(value).startswith("md5:") else f"md5:{value}"
-                for value in (str(item).strip() for item in (file_ids or []))
-                if value
-            }
             results = []
-            seen = set()
             passed = True
             error = None
             tested_supported = 0
@@ -125,9 +115,6 @@ class YamlRuleService:
                 if not path.is_file():
                     continue
                 file_id = self._file_md5(path)
-                if selected and file_id not in selected:
-                    continue
-                seen.add(file_id)
                 relative_path = path.relative_to(input_dir).as_posix()
                 file_type = "pdf" if path.suffix.lower() == ".pdf" else "excel"
                 if path.suffix.lower() not in {".pdf", ".xlsx", ".xlsm", ".xls"}:
@@ -170,10 +157,6 @@ class YamlRuleService:
                         "passed": False,
                         "error": str(exc),
                     })
-            missing = selected - seen
-            if missing:
-                passed = False
-                error = f"file_ids 不存在：{sorted(missing)}"
             if not results:
                 passed = False
                 error = error or "没有可测试的文件"
@@ -190,7 +173,7 @@ class YamlRuleService:
                 draft_version=draft_version,
                 summary=self._summarize_test_results(results),
             )
-            self._record_test_result(result, sorted(selected))
+            self._record_test_result(result)
             return result
 
     def publish_draft(self) -> RuleVersion:
@@ -242,17 +225,12 @@ class YamlRuleService:
             raise FileNotFoundError(f"Run 输入快照不存在：{run_id}")
         return input_dir
 
-    def _record_test_result(
-        self,
-        result: RuleTestResult,
-        selected_file_ids: list[str],
-    ) -> None:
+    def _record_test_result(self, result: RuleTestResult) -> None:
         payload = {
             "test_id": result.test_id,
             "source_run_id": result.run_id,
             "draft_version": result.draft_version,
             "passed": result.passed,
-            "file_ids": selected_file_ids,
             "summary": result.summary,
             "files": result.files,
             "error": result.error,

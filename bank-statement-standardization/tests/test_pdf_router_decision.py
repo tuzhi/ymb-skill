@@ -34,10 +34,34 @@ from ymb_standardization_core.readers.pdf_input import (  # noqa: E402
     _prepare_pdf_reader_view,
     read_pdf_rows,
 )
+from ymb_standardization_core import core as standardization_core  # noqa: E402
 from ymb_standardization_core.transforms import repeated_header_bottom  # noqa: E402
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    def test_coordinate_boundaries_use_gap_between_header_boxes(self):
+        boundaries = coordinate_table._coordinate_boundaries(
+            841.875,
+            [316.23752, 385.46252, 495.78751],
+            header_spans=[
+                (316.23752, 379.23752),
+                (385.46252, 448.46252),
+                (495.78751, 513.78751),
+            ],
+        )
+
+        self.assertAlmostEqual(boundaries[1], 382.35002, places=5)
+        self.assertAlmostEqual(boundaries[2], 440.625015, places=5)
+
+    def test_coordinate_boundaries_use_header_centers_when_boxes_overlap(self):
+        boundaries = coordinate_table._coordinate_boundaries(
+            300,
+            [100, 170],
+            header_spans=[(100, 180), (170, 230)],
+        )
+
+        self.assertEqual(boundaries, [0, 170.0, 310])
+
     def test_pdf_reader_view_applies_yaml_filters_to_every_page(self):
         calls = []
 
@@ -308,27 +332,30 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 "程旭/江西嘟咔熊网商银行对账单2025.1.1-2025.12.31.pdf",
                 1088,
                 ["1", "2025010111120520154700490932671", "2025-01-0100:01:52"],
+                ("77", "0.73"),
             ),
             (
                 "程旭/鼎信网商银行2025.1.1-2025.7.31交易明细.pdf",
                 1402,
                 ["1", "2025010111120520156900087157781", "2025-01-0100:01:52"],
+                ("151", "0.24"),
             ),
             (
                 "程旭/鼎信网商银行2025.8.1-2025.12.31交易明细.pdf",
                 2371,
                 ["1", "2025080111120520156900426641531", "2025-08-0100:01:52"],
+                ("1342", "5.33"),
             ),
         ]
 
-        for relative_path, expected_rows, expected_prefix in cases:
+        for relative_path, expected_rows, expected_prefix, income_example in cases:
             with self.subTest(relative_path=relative_path):
                 path = TESTDATA_ROOT / relative_path
 
                 _preamble, rows, route_info = read_pdf_rows(str(path))
 
                 self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
-                self.assertEqual(route_info["fingerprint_id"], "md5:6cadae92bf0342082ec8ce1556cf1ac0")
+                self.assertEqual(route_info["fingerprint_id"], "md5:cccf7815c4118910b72612de7a9a8d0b")
                 self.assertEqual(rows[0], route_info["reader_headers"])
                 self.assertEqual(rows[0], [
                     "序号",
@@ -346,6 +373,38 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 ])
                 self.assertEqual(len(rows) - 1, expected_rows)
                 self.assertEqual(rows[1][:3], expected_prefix)
+                self.assertEqual(
+                    route_info["column_mapping"]["借方金额（收）"],
+                    "收入金额",
+                )
+                self.assertEqual(
+                    route_info["column_mapping"]["贷方金额（支）"],
+                    "支出金额",
+                )
+
+                header = rows[0]
+                serial, amount = income_example
+                example = next(row for row in rows[1:] if row[0] == serial)
+                self.assertEqual(example[header.index("借方金额（收）")], amount)
+                self.assertEqual(example[header.index("贷方金额（支）")], "")
+
+                records = []
+                for row in rows[1:]:
+                    record = {}
+                    for index, source_field in enumerate(header):
+                        target_field = route_info["column_mapping"].get(source_field)
+                        if target_field:
+                            record[target_field] = row[index]
+                    records.append(record)
+                continuity_rows = standardization_core.continuity_rows(records)
+                order, _strategy = standardization_core.best_continuity_order(
+                    continuity_rows,
+                )
+                ordered_rows = [continuity_rows[index] for index in order]
+                self.assertEqual(
+                    standardization_core.balance_break_indices(ordered_rows),
+                    [],
+                )
 
     def test_pdfplumber_coordinate_table_reader_uses_composite_header_from_columns(self):
         path = TESTDATA_ROOT / "陈国付103135" / "26060214275857136186.pdf"
@@ -1191,10 +1250,63 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:6cadae92bf0342082ec8ce1556cf1ac0'})
+        self.assertIn(result["fingerprint_id"], {'md5:cccf7815c4118910b72612de7a9a8d0b'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "浙江网商银行")
         self.assertEqual(result["account_type"], "对公")
+
+    def test_alipay_balance_proof_pdf_route(self):
+        text = (
+            "支付宝支付科技有限公司 余额收支流水证明 "
+            "兹证明：jiujiangouge@163.com（九江欧歌服饰有限公司）在其支付宝账号 "
+            "序号 入账时间 支付宝交易号 商户订单号 业务类型 对方账户名称 "
+            "对方支付宝账号/银行卡号 收支余额 账户余额 备注"
+        )
+
+        result = router.route_pdf(text, 1, 1)
+
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(
+            result["fingerprint_id"],
+            "md5:a7eb1c4ea91df7bda637c52c12212351",
+        )
+        self.assertEqual(result["reader_id"], "pdfplumber_table")
+        self.assertEqual(result["bank"], "支付宝")
+        self.assertEqual(result["account_type"], "未知")
+        self.assertEqual(result["source_order"], "descending")
+        self.assertEqual(
+            result["column_mapping"],
+            {
+                "序号": None,
+                "入账时间": "交易时间",
+                "支付宝交易号": None,
+                "商户订单号": "账户方附言",
+                "业务类型": "交易渠道",
+                "对方账户名称": "对手名称",
+                "对方支付宝账号/银行卡号": "对手账户",
+                "收支余额": "交易金额",
+                "账户余额": "账户余额",
+                "备注": "银行备注",
+            },
+        )
+        self.assertEqual(
+            result["preamble_extractors"],
+            [
+                {
+                    "field": "本方名称",
+                    "pattern": r"兹证明[:：]?\s*[^（(\s]+[（(]([^）)]+)[）)]\s*在其支付宝账号",
+                },
+                {
+                    "field": "本方账户",
+                    "pattern": r"兹证明[:：]?\s*([^\s（(]+)[（(]",
+                },
+                {
+                    "field": "账户类型线索",
+                    "pattern": r"兹证明[:：]?\s*[^\s（(]+[（(]([^）)]*(?:公司|合作社|个体工商户|商行|经营部|中心|工厂|厂))",
+                    "template": "对公",
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":

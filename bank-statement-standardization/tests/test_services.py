@@ -266,15 +266,8 @@ class YamlRuleServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "必须先通过"):
                 service.publish_draft()
 
-            selected_id = service._file_md5(run_input / "主账户.xlsx")
-            with mock.patch.object(yaml_service_module, "read_rows", side_effect=route_for):
-                selected = service.test_draft("run-directory", [selected_id])
-            self.assertTrue(selected.passed)
-            self.assertEqual(selected.summary["total"], 1)
-            self.assertEqual(
-                [item["relative_path"] for item in selected.files],
-                ["主账户.xlsx"],
-            )
+            with self.assertRaises(TypeError):
+                service.test_draft("run-directory", ["md5:not-supported"])
 
 
 if __name__ == "__main__":
