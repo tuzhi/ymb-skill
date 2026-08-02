@@ -5,25 +5,32 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-本包同时提供两种使用方式，**支持各类大模型分发**：
+v1.4.1 采用一个可安装 Skill、一个确定性 Coordinator 和两个按需 AI 角色：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
-| A. 脚本自动执行 | Claude / 任意有 Python 的环境 | `scripts/orchestrator.py` + `runtime/`（确定性、可复算） |
-| B. 纯提示词 | 任意大模型（GPT、Gemini、文心、通义、Kimi、DeepSeek…） | `references/` 四份提示词 + 三份附件，复制即用 |
+| 正常流水线 | 任意有 Python 的环境 | `scripts/orchestrator.py` + `runtime/`，零 AI |
+| Stage 1 未知异常 | 支持独立会话的 AI 宿主 | `roles/fallback.md`，按需诊断和提出草稿 |
+| 高语义风险修复 | 与 Fallback 隔离的新会话 | `roles/audit.md`，只复核、不修复 |
 
-两种方式产出的字段口径完全一致，可混用。
+密码、无效源文件和 Stage 2～4 失败不启动 AI；最终成功仍只由原 Pipeline、QC 和 Validator 判定。
 
 ## 目录结构
 
 ```
 bank-statement-standardization/
-├── SKILL.md                 # Agent Skill harness：入口、状态机、AI 兜底、写入边界
+├── SKILL.md                 # 极薄入口：执行程序并按 RunResult 路由
+├── agents/openai.yaml       # Skill UI 元数据
 ├── README.md                # 本文件
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
-│   └── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
+│   ├── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
+│   └── fallback_coordinator.py # Fallback/Audit 结构化交接与 Child Run 授权
+├── harness/                 # 确定性 Coordinator、角色契约和 Policy Gate
+├── roles/                   # 仅由 Coordinator 指定的新会话按需读取
+│   ├── fallback.md          # Stage 1 诊断与 routing 草稿协议
+│   └── audit.md             # 高语义风险修复独立复核协议
 ├── runtime/                 # 确定性业务实现，不作为独立生产入口
 │   ├── standardize.py       # stage_1_standardize 运行时适配层
 │   ├── integrate.py         # stage_2_integrate
@@ -31,12 +38,13 @@ bank-statement-standardization/
 │   ├── tag.py               # stage_3_tag
 │   ├── deliverable.py       # stage_4_package，仅组装上游既有产物
 │   ├── validators.py        # 阶段一与最终交付验收
-│   └── contracts.py         # 跨阶段公开契约
+│   ├── contracts.py         # 跨阶段公开契约
+│   └── run_result.py        # DELIVER / REQUEST_USER / AI_FALLBACK / REPORT_ERROR
 ├── tools/                   # 仓库维护工具，不进入 Skill 分发包
 │   ├── qa/                  # 支持矩阵、基准与全量测试工具
 │   ├── rules/               # tag_rules.csv 生成工具
 │   └── release/             # Skill 发布打包工具
-├── references/              # 可移植提示词包（任意大模型可用）
+├── references/              # 源码维护资料；正常路径不加载、不进生产 zip
 │   ├── prompt-1a-输入读取与文件识别.md、prompt-1-字段映射.md ~ prompt-5-交付物组装.md
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
@@ -45,13 +53,15 @@ bank-statement-standardization/
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
+主 `SKILL.md` 不引用或预读 `roles/`；只有 Coordinator 生成独立会话 task 时，`role_prompt_ref` 才指向对应角色协议。
+
 开发用大体积数据与源码分离，默认放在仓库同级的
 `../ymb-skill-data/{testdata,testoutput,原始流水数据}`。如需使用其他位置，设置
 `YMB_STANDARDIZATION_DATA_ROOT`；QA 工具和真实样本测试会从该根目录读取。
 
 源码仓库中，共享标准化内核位于仓库根目录的 `ymb-standardization-core/`；`runtime/standardize.py` 负责 Stage 1 的运行时装配。执行 `tools/release/package_skill.py` 打包时会把共享 core 写入 zip 内的 `bank-statement-standardization/packages/ymb_standardization_core/`，保证 WorkBuddy 单独安装后仍可运行。
 
-## 快速开始（方式 A · 脚本）
+## 快速开始
 
 ```bash
 # 源码仓库迭代时安装标准化运行依赖
@@ -76,16 +86,17 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
-每个 Run 固定生成 `manifest.json`、`stage_1_results.json` 和 `qc_results.json`：Manifest 只保存阶段状态和阶段一兜底信息；阶段一逐文件结果与 QC 结果分别独立保存。
+每个 Run 固定生成 `manifest.json`、`run_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`token_usage.json` 只统计 Fallback/Audit 宿主回传的用量，不代表入口会话的总 Token。正常 stdout 只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，可直接完成结果说明，无需为此回读 manifest/QC。完整事件与回执留在 Run 目录。
 
 生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
 
-## 快速开始（方式 B · 任意大模型）
+## Stage 1 按需 Fallback
 
-1. 只有 Stage 1 失败后才允许 AI 兜底；读取 `fallback/stage_1_standardize/fallback_request.json`，只处理其中 `files` 列出的 `BLOCKED/ERROR` 文件。
-2. 加密 PDF/Excel 无法打开时，读取 `references/prompt-1a-输入读取与文件识别.md`，向用户确认密码并写入 `_file_hints.yaml`；字段映射失败时再读取 `references/prompt-1-字段映射.md`。
-3. 兜底必须形成确定性提示、参数或补丁，并创建带 `parent_run_id` 的新 Run 重新验收；Stage 2～4不使用 AI 兜底。
-4. 交给外部模型前请按 `附件C` 做脱敏。
+1. `next_action=AI_FALLBACK` 时，RunResult 的 `action` 才指向 `fallback_coordinator.py next`；AI 只读取生成 task 的紧凑 input refs。
+2. Fallback 与 Audit 必须使用不同 `session_id`；提交角色结果后 CLI 自动推进，不要求入口 Skill 再调用一次 `next`。
+3. AI 只返回 JSON 建议；Python 校验身份、范围、checksum、routing 语法与当前 Run 冲突，再写入 Run 内 snapshot。
+4. Audit 接受后 CLI 自动创建显式 Child Run，并直接返回 Child Run 的 RunResult；父 Run 保持 ERROR，正式 YAML 不自动发布。
+5. 密码问题不进入 AI；RunResult 的 `action` 声明 `retry-password`、候选文件和 stdin 传输，用户回复后创建确定性 Child Run。
 
 ## 安装到各类大模型客户端（Skill 安装说明）
 
@@ -96,7 +107,7 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 时，在部署阶段执行一次 `python -m pip install -r requirements.txt`。`requirements.txt`
 是从 `pyproject.toml` 同步出来的兼容安装清单，不作为第二事实源。
 
-> 通用原理：把整个 `bank-statement-standardization/` 目录放进客户端的「skills 目录」，
+> 通用原理：只把 `bank-statement-standardization/` 放进客户端的「skills 目录」，
 > 客户端读取 `SKILL.md` 的 `description`，在用户提到流水标准化/字段映射/流水合并去重/余额校验/
 > 交易打标/尽调底表等场景时自动调用。下面给出各客户端的目录位置与命令。
 
@@ -127,7 +138,7 @@ WorkBuddy 通过「技能/插件」目录加载 Agent Skill：
 mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbuddy/skills/
 ```
 - 若 WorkBuddy 提供图形界面：进入「设置 → 技能/Skills → 导入」，选择本目录或下方的
-  `bank-statement-standardization.zip` 单文件导入或解压安装。
+  `bank-statement-standardization_v1.4.1.zip` 单文件导入或解压安装。
 - 导入后在对话中上传客户流水文件夹路径，请它「生成《客户名_已清洗_待分析.xlsx》」。
 
 ### 4) OpenClaw
@@ -141,14 +152,14 @@ mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skil
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 单文件 `.zip` 分发（推荐发给同事/批量部署）
-本仓库可打包生成 `bank-statement-standardization.zip`。三种装法：
+本仓库可打包生成 `bank-statement-standardization_v1.4.1.zip`。三种装法：
 ```bash
 # 通用：解压到目标客户端的 skills 目录（以 Kimi 为例）
-unzip bank-statement-standardization.zip -d ~/.kimi/skills/
+unzip bank-statement-standardization_v1.4.1.zip -d ~/.kimi/skills/
 ```
 - 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：在本目录运行 `python tools/release/package_skill.py`，产物写入 `dist/bank-statement-standardization.zip`。
-  归档使用运行时白名单，只包含正式入口、`runtime/`、资源、参考资料和共享 core。
+- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并生成一个 `bank-statement-standardization_v1.4.1.zip`。
+  归档使用运行时白名单，只包含 Skill 入口、依赖清单、运行代码、资源和共享 core；源码维护文档不进 zip。
 
 ### 安装自检（任意客户端通用）
 ```bash
@@ -165,7 +176,7 @@ python scripts/orchestrator.py run --folder "<某客户文件夹>"
   `python -m pip install -r requirements.txt`。若仍看到 `pandas==2.0.3`，说明客户端还在使用旧版技能包，
   需要重新导入新版。
   （`pandas openpyxl xlrd pdfplumber`）。
-- **离线/内网环境**：脚本全程本地运行、不联网；纯提示词路径（`references/`）连 Python 都不需要。
+- **离线/内网环境**：确定性流水线全程本地运行、不联网；AI Fallback 取决于宿主是否提供隔离会话。
 - **目录名因客户端而异**：上面的 `~/.kimi`、`~/.workbuddy`、`~/.openclaw` 为常见约定；
   若你的版本不同，以该客户端文档中「skills/技能/插件目录」为准，把整个目录原样拷进去即可——
   本技能不依赖任何客户端特有配置。

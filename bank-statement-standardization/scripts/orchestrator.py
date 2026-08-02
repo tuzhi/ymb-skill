@@ -26,17 +26,18 @@ from runtime import deliverable as P
 from runtime import integrate as I
 from runtime import portfolio_balance as PB
 from runtime import qc as Q
+from runtime import run_result as R
 from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
 from runtime.contracts import YAML_ROUTE_FIELDS, IntegrationContext, StageResult, yaml_route_summary
+from ymb_standardization_core.readers.routing.rule_loader import build_routing_rules_snapshot
 
 
 DONE = "DONE"
 ERROR = "ERROR"
 BLOCKED = "BLOCKED"
 PENDING = "PENDING"
-MAX_AI_FALLBACK_RETRY = 2
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
 MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
@@ -79,6 +80,49 @@ def valid_yaml_route(route):
     if status not in {"matched", "unmatched", "ambiguous", "failed"}:
         return False
     return status != "matched" or bool(str(route.get("fingerprint_id") or "").strip())
+
+
+def failure_route_summary(route_info):
+    """只保留路由诊断所需字段，避免把原文件正文写入 evidence。"""
+    route = dict(route_info or {})
+    candidates = []
+    for item in route.get("candidate_fingerprints") or route.get("candidates") or []:
+        candidate = item if isinstance(item, dict) else {"fingerprint_id": item}
+        candidate_id = str(candidate.get("fingerprint_id") or candidate.get("id") or "")
+        if candidate_id and candidate_id not in candidates:
+            candidates.append(candidate_id)
+    def compact_values(value, limit=30):
+        if isinstance(value, dict):
+            return {
+                str(key)[:120]: str(item)[:240]
+                for key, item in list(value.items())[:limit]
+            }
+        if not isinstance(value, (list, tuple)):
+            return []
+        return [str(item)[:240] for item in list(value)[:limit]]
+
+    return {
+        "fingerprint_id": str(route.get("fingerprint_id") or route.get("id") or ""),
+        "series_family": str(route.get("series_family") or ""),
+        "router_bank": str(route.get("bank") or "未识别"),
+        "yaml_match_status": str(route.get("decision") or "unmatched"),
+        "reader_id": str(route.get("reader_id") or ""),
+        "candidate_fingerprints": candidates,
+        "identity_evidence": compact_values(route.get("identity_evidence")),
+        "columns_evidence": compact_values(route.get("columns_evidence")),
+        "metadata_evidence": compact_values(route.get("metadata_evidence")),
+        "missing_required_columns": compact_values(route.get("missing_required_columns")),
+    }
+
+
+def has_open_password_hint(path):
+    try:
+        from ymb_standardization_core.file_hints import load_file_hints_for_path
+
+        hints = load_file_hints_for_path(path).for_file(path)
+        return bool(hints.get("open_password"))
+    except Exception:
+        return False
 
 
 def reusable_stage_1_route(route, source_name):
@@ -152,7 +196,18 @@ def load_parent_run_context(run_root, parent_run_id):
         fallback_dir = os.path.join(parent_dir, "fallback", stage_id)
         fallback_request = read_json_if_exists(os.path.join(fallback_dir, "fallback_request.json"), {})
         if status == ERROR and not parent_error:
-            parent_error = str(fallback_request.get("error") or "")
+            evidence = {}
+            evidence_ref = str(fallback_request.get("evidence_ref") or "")
+            if evidence_ref:
+                evidence_path = os.path.abspath(os.path.join(parent_dir, evidence_ref))
+                if os.path.commonpath([parent_dir, evidence_path]) == parent_dir:
+                    evidence = read_json_if_exists(evidence_path, {})
+            parent_error = str(
+                evidence.get("error_summary")
+                or fallback_request.get("error")
+                or fallback_request.get("message")
+                or ""
+            )
         inherited_fallbacks.append({
             "stage": stage_id,
             "name": spec.get("name", ""),
@@ -174,6 +229,8 @@ def load_parent_run_context(run_root, parent_run_id):
         "parent_client": stage_manifest.get("client") or legacy_run_manifest.get("client", ""),
         "parent_status": legacy_run_manifest.get("status") or parent_status,
         "parent_error": legacy_run_manifest.get("error") or parent_error,
+        "password_attempt": int(stage_manifest.get("password_attempt") or 0),
+        "ai_repair_attempt": int(stage_manifest.get("ai_repair_attempt") or 0),
         "inherited_fallbacks": inherited_fallbacks,
     }
 
@@ -411,6 +468,8 @@ class Runner:
         self.manifest_path = os.path.join(self.run_dir, "manifest.json")
         self.stage_1_results_path = os.path.join(self.run_dir, "stage_1_results.json")
         self.qc_results_path = os.path.join(self.run_dir, "qc_results.json")
+        self.run_result_path = os.path.join(self.run_dir, "run_result.json")
+        self.token_usage_path = os.path.join(self.run_dir, "token_usage.json")
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
@@ -435,11 +494,54 @@ class Runner:
         self.manifest["client"] = args.client
         self.manifest["parent_run_id"] = args.parent_run_id or ""
         self.manifest["rerun_reason"] = args.rerun_reason or ""
-        self.manifest["routing_rules_version"] = S.routing_rules_version()
+        self.manifest["password_attempt"] = int(
+            (parent_context or {}).get("password_attempt") or 0
+        ) + int(getattr(args, "password_attempt_increment", 0) or 0)
+        self.manifest["ai_repair_attempt"] = int(
+            (parent_context or {}).get("ai_repair_attempt") or 0
+        ) + int(getattr(args, "ai_repair_attempt_increment", 0) or 0)
+        self.routing_rules_snapshot = None
+        snapshot_source = str(getattr(args, "routing_rules_snapshot", "") or "").strip()
+        if snapshot_source:
+            if not parent_context:
+                raise RuntimeError("Run 内 routing snapshot 只允许用于显式 Child Run")
+            source_path = os.path.abspath(snapshot_source)
+            parent_root = os.path.abspath(parent_context["parent_run_dir"])
+            if os.path.commonpath([parent_root, source_path]) != parent_root:
+                raise RuntimeError("routing snapshot 必须位于直接父 Run 内")
+            expected_sha256 = str(getattr(args, "routing_rules_sha256", "") or "")
+            if not expected_sha256 or sha256(source_path) != expected_sha256:
+                raise RuntimeError("routing snapshot checksum 无效")
+            content = open(source_path, "r", encoding="utf-8").read()
+            self.routing_rules_snapshot = build_routing_rules_snapshot(content)
+            snapshot_dir = os.path.join(self.run_dir, "routing")
+            os.makedirs(snapshot_dir, exist_ok=True)
+            snapshot_path = os.path.join(snapshot_dir, "routing_rules.yaml")
+            with open(snapshot_path, "w", encoding="utf-8") as stream:
+                stream.write(content)
+            self.manifest["routing_rules_snapshot"] = {
+                "path": self.run_relative_ref(snapshot_path),
+                "sha256": expected_sha256,
+                "scope": "run_only",
+            }
+            self.manifest["routing_rules_version"] = S.routing_rules_version(content)
+        else:
+            self.manifest["routing_rules_version"] = S.routing_rules_version()
         self.manifest["skipped_inputs"] = []
         self.write_manifest()
         Q.atomic_write_json(self.stage_1_results_path, {"files": {}})
         Q.atomic_write_json(self.qc_results_path, Q.empty_results())
+        R.atomic_write_json(self.token_usage_path, {
+            "contract_version": 1,
+            "run_id": self.run_id,
+            "measurement_scope": "fallback_and_audit_sessions_only",
+            "ai_session_count": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cached_input_tokens": 0,
+            "sessions": [],
+        })
+        self.run_result = None
 
     def copy_stage_manifest(self):
         if not os.path.isfile(self.template_manifest_path):
@@ -475,6 +577,59 @@ class Runner:
             self.manifest[stage_id]["duration_seconds"] = duration_seconds
         self.write_manifest()
 
+    def write_run_result(
+        self,
+        *,
+        status,
+        next_action,
+        reason_code="",
+        artifact_refs=(),
+        context_ref="",
+        message="",
+        action=None,
+        summary=None,
+    ):
+        run_id = getattr(self, "run_id", os.path.basename(os.path.abspath(self.run_dir)))
+        result = R.RunResult(
+            run_id=run_id,
+            status=status,
+            next_action=next_action,
+            reason_code=reason_code,
+            artifact_refs=tuple(artifact_refs),
+            context_ref=context_ref,
+            message=message,
+            action=dict(action or {}),
+            summary=dict(summary or {}),
+        )
+        result_path = getattr(self, "run_result_path", os.path.join(self.run_dir, "run_result.json"))
+        self.run_result_path = result_path
+        self.run_result = R.write_run_result(result_path, result)
+        return self.run_result
+
+    def coordinator_action(self, operation, **extra):
+        action = {
+            "handler": "fallback_coordinator",
+            "entrypoint": os.path.join(SKILL_DIR, "scripts", "fallback_coordinator.py"),
+            "operation": operation,
+            "run_dir": os.path.realpath(self.run_dir),
+        }
+        action.update(extra)
+        return action
+
+    def password_file_refs(self, failed_files):
+        refs = {
+            str(item.get("relative_path") or "").strip()
+            for item in failed_files
+            if isinstance(item, dict) and str(item.get("relative_path") or "").strip()
+        }
+        if refs:
+            return sorted(refs)
+        return sorted(
+            os.path.relpath(path, self.input_dir).replace(os.sep, "/")
+            for path in glob.glob(os.path.join(self.input_dir, "**", "*"), recursive=True)
+            if os.path.isfile(path) and os.path.basename(path) != "_file_hints.yaml"
+        )
+
     def mark_stage_ai_fallback_used(self, stage_id, artifacts=None):
         if stage_id not in self.manifest:
             raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
@@ -504,7 +659,8 @@ class Runner:
         event.update(extra)
         with open(self.event_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
-        print(f"[{level}][{code}] {message}")
+        if bool(getattr(self.args, "verbose", False)):
+            print(f"[{level}][{code}] {message}")
         if level == "WARNING":
             self.warning_events.append(event)
 
@@ -525,7 +681,7 @@ class Runner:
         )
 
     def qc_results_file(self):
-        run_dir = getattr(self, "run_dir", os.path.dirname(self.out_dir))
+        run_dir = getattr(self, "run_dir", "") or os.path.dirname(self.out_dir)
         return getattr(
             self,
             "qc_results_path",
@@ -546,6 +702,43 @@ class Runner:
 
     def load_qc_results(self):
         return Q.load_results(self.qc_results_file())
+
+    def delivery_summary(self):
+        """生成成功交付所需的紧凑事实，避免宿主回读 manifest/QC。"""
+        stage_files = self.load_stage_1_results()["files"]
+        processed_file_count = sum(
+            1
+            for record in stage_files.values()
+            if isinstance(record, dict) and record.get("status") == DONE
+        )
+        skipped_file_count = len(self.manifest.get("skipped_inputs") or [])
+        qc_results = self.load_qc_results()
+
+        warnings = []
+        seen = set()
+        rule_groups = [qc_results.get("customer") or {}]
+        rule_groups.extend(
+            rules or {}
+            for _file_id, rules in sorted((qc_results.get("files") or {}).items())
+        )
+        for rules in rule_groups:
+            for _rule_id, value in sorted(rules.items()):
+                if not isinstance(value, dict):
+                    continue
+                if value.get("level") != Q.SOFT or value.get("passed") is not False:
+                    continue
+                message = str(value.get("message") or "QC 软性告警").strip()
+                if message and message not in seen:
+                    seen.add(message)
+                    warnings.append(message)
+
+        return {
+            "input_file_count": processed_file_count + skipped_file_count,
+            "processed_file_count": processed_file_count,
+            "qc_status": str(qc_results.get("status") or ""),
+            "warning_count": len(warnings),
+            "warning_summary": warnings[:5],
+        }
 
     def write_qc_results(self, data):
         Q.atomic_write_json(self.qc_results_file(), data)
@@ -608,6 +801,62 @@ class Runner:
 
     def fallback_dir(self, stage_id):
         return os.path.join(self.run_dir, "fallback", stage_id)
+
+    def run_relative_ref(self, path):
+        root = os.path.abspath(self.run_dir)
+        resolved = os.path.abspath(path)
+        if os.path.commonpath([root, resolved]) != root:
+            raise RuntimeError(f"Run artifact 路径越界：{path}")
+        return normalize_relpath(os.path.relpath(resolved, root))
+
+    def input_relative_path(self, path):
+        input_root = os.path.abspath(
+            getattr(self, "input_dir", getattr(self.args, "folder", self.run_dir))
+        )
+        resolved = os.path.abspath(path)
+        if os.path.commonpath([input_root, resolved]) != input_root:
+            return os.path.basename(resolved)
+        return normalize_relpath(os.path.relpath(resolved, input_root))
+
+    def compact_evidence_bundle(self, stage_id, reason_code, failed_files, error):
+        def compact_text(value, limit):
+            text = str(value or "")
+            return text if len(text) <= limit else text[:limit] + "…"
+
+        qc = self.load_qc_results()
+        failed_qc = []
+        for file_id, rules in (qc.get("files") or {}).items():
+            for rule_id, value in (rules or {}).items():
+                if value.get("passed"):
+                    continue
+                failed_qc.append({
+                    "file_id": file_id,
+                    "rule_id": rule_id,
+                    "level": value.get("level", ""),
+                    "message": compact_text(value.get("message", ""), 500),
+                })
+        compact_files = [
+            {
+                "file_id": item.get("file_id", ""),
+                "name": item.get("name", ""),
+                "relative_path": item.get("relative_path", ""),
+                "status": item.get("status", ""),
+                "reason_code": item.get("reason_code", ""),
+                "message": compact_text(item.get("message", ""), 1000),
+                "route": item.get("route", {}),
+            }
+            for item in failed_files
+        ]
+        return {
+            "contract_version": 1,
+            "run_id": self.run_id,
+            "stage_id": stage_id,
+            "reason_code": reason_code,
+            "failed_files": compact_files,
+            "qc_summary": failed_qc,
+            "skipped_inputs": list(self.manifest.get("skipped_inputs") or []),
+            "error_summary": compact_text(error, 2000),
+        }
 
     def latest_artifact(self, pattern):
         hits = sorted(glob.glob(os.path.join(self.work_dir(), pattern)))
@@ -1007,6 +1256,7 @@ class Runner:
                     out_dir=work,
                     account_type=self.args.account_type,
                     write_mapping=False,
+                    route_rules=getattr(self, "routing_rules_snapshot", None),
                 ))
                 row_count = int(report["标准化统计"]["交易笔数"])
                 V.validate_standardized_file(csv_path)
@@ -1021,8 +1271,10 @@ class Runner:
                 if post_blocked:
                     stage_results["files"][file_id] = {
                         "name": name,
+                        "relative_path": self.input_relative_path(path),
                         "status": BLOCKED,
                         "message": self.file_qc_failure_message(file_id),
+                        "reason_code": R.QC_HARD_FAILURE,
                     }
                 else:
                     stage_results["files"][file_id] = {
@@ -1038,6 +1290,21 @@ class Runner:
                         "csv": csv_path,
                         "rows": row_count,
                     })
+            except S.YamlRouteRequiredError as exc:
+                route = failure_route_summary(getattr(exc, "route_info", {}))
+                reason_code = (
+                    R.ROUTE_AMBIGUOUS
+                    if route.get("yaml_match_status") == "ambiguous"
+                    else R.ROUTE_UNMATCHED
+                )
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "relative_path": self.input_relative_path(path),
+                    "status": ERROR,
+                    "message": exc.reason,
+                    "reason_code": reason_code,
+                    "route": route,
+                }
             except S.SourceFormatQualityError as exc:
                 self.run_file_qc(
                     file_id,
@@ -1046,18 +1313,31 @@ class Runner:
                 )
                 stage_results["files"][file_id] = {
                     "name": name,
+                    "relative_path": self.input_relative_path(path),
                     "status": BLOCKED,
                     "message": exc.reason,
+                    "reason_code": R.INPUT_SOURCE_INVALID,
                 }
             except S.NotABankStatement as exc:
                 skipped.append((name, exc.reason))
                 stage_results["files"].pop(file_id, None)
                 self.remove_file_qc(file_id)
             except Exception as exc:
+                password_attempt = max(
+                    int(self.manifest.get("password_attempt") or 0),
+                    1 if has_open_password_hint(path) else 0,
+                )
+                failure = R.classify_failure(
+                    "stage_1_standardize",
+                    exc,
+                    password_attempt=password_attempt,
+                )
                 stage_results["files"][file_id] = {
                     "name": name,
+                    "relative_path": self.input_relative_path(path),
                     "status": ERROR,
                     "message": str(exc),
+                    "reason_code": failure.reason_code,
                 }
             result_status = (
                 stage_results["files"].get(file_id, {}).get("status")
@@ -1286,10 +1566,15 @@ class Runner:
                 "orchestrator_handler": self.stage_handler_name(stage_id),
                 "error": str(exc),
             })
+            self.write_run_result(
+                status=ERROR,
+                next_action=R.REPORT_ERROR,
+                reason_code=R.DOWNSTREAM_STAGE_FAILURE,
+                context_ref="manifest.json",
+                message=f"{stage_id} 失败，确定性流水线已停止",
+            )
             return
 
-        fallback_dir = self.fallback_dir(stage_id)
-        os.makedirs(fallback_dir, exist_ok=True)
         failed_files = []
         try:
             for file_id, record in self.load_stage_1_results()["files"].items():
@@ -1298,51 +1583,140 @@ class Runner:
                 failed_files.append({
                     "file_id": file_id,
                     "name": record.get("name", ""),
+                    "relative_path": record.get("relative_path", ""),
                     "status": record.get("status", ""),
                     "message": record.get("message", ""),
+                    "reason_code": record.get("reason_code", ""),
+                    "route": record.get("route", {}),
                 })
         except Exception:
             failed_files = []
-        fallback_request = {
-            "client": self.args.client,
-            "stage": stage_id,
-            "name": spec.get("name", ""),
-            "ai_fallback_refs": spec.get("ai_fallback_refs", []),
-            "error": str(exc),
-            "files": failed_files,
-            "created_at": now(),
-            "instruction": (
-                "AI 只处理 files 中的 BLOCKED/ERROR 文件；产生的脚本、补丁、参数文件"
-                "必须保存在本目录，并追加记录到运行时 manifest 的 ai_fallback_artifacts。"
-            ),
-        }
-        fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
-        with open(fallback_request_path, "w", encoding="utf-8") as f:
-            json.dump(fallback_request, f, ensure_ascii=False, indent=2)
-        fallback_artifacts = ["fallback_request.json"]
-        self.emit(
-            "WARNING",
-            "AI_FALLBACK_REQUIRED",
-            f"阶段 {stage_id} 失败，需要 AI 按 ai_fallback_refs 读取兜底资料；未产生确定性修正前不自动重跑",
-            stage=stage_id,
-            ai_fallback_refs=spec.get("ai_fallback_refs", []),
-            ai_fallback_dir=fallback_dir,
-            max_retry=MAX_AI_FALLBACK_RETRY,
-            error=str(exc),
+        failure = R.classify_failure(
+            stage_id,
+            exc,
+            failed_files,
+            password_attempt=int(self.manifest.get("password_attempt") or 0),
+            skipped_inputs=self.manifest.get("skipped_inputs") or [],
         )
-        self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
+        if (
+            failure.next_action == R.AI_FALLBACK
+            and int(self.manifest.get("ai_repair_attempt") or 0) >= R.MAX_AI_REPAIR_ATTEMPTS
+        ):
+            failure = R.FailureRoute(
+                failure.reason_code,
+                R.REPORT_ERROR,
+                "AI 修复次数已达上限",
+            )
+        self.manifest[stage_id]["reason_code"] = failure.reason_code
         self.update_stage_status(
             stage_id,
             ERROR,
             duration_seconds=duration_seconds,
         )
+
+        if failure.next_action != R.AI_FALLBACK:
+            event_code = (
+                "USER_INPUT_REQUIRED"
+                if failure.next_action == R.REQUEST_USER
+                else "STAGE_ERROR"
+            )
+            self.emit(
+                "WARNING" if failure.next_action == R.REQUEST_USER else "ERROR",
+                event_code,
+                failure.message,
+                stage=stage_id,
+                reason_code=failure.reason_code,
+            )
+            self.receipt(stage_id, "error", {
+                "orchestrator_handler": self.stage_handler_name(stage_id),
+                "reason_code": failure.reason_code,
+                "next_action": failure.next_action,
+                "error": str(exc),
+            })
+            action = {}
+            if failure.reason_code in {R.INPUT_PASSWORD_REQUIRED, R.INPUT_PASSWORD_INVALID}:
+                action = self.coordinator_action(
+                    "retry-password",
+                    file_refs=self.password_file_refs(failed_files),
+                    input_transport="stdin",
+                )
+            elif failure.next_action == R.REQUEST_USER:
+                action = {
+                    "handler": "user",
+                    "operation": "provide_supported_input",
+                }
+            self.write_run_result(
+                status=ERROR,
+                next_action=failure.next_action,
+                reason_code=failure.reason_code,
+                artifact_refs=("stage_1_results.json", "qc_results.json"),
+                context_ref="stage_1_results.json",
+                message=failure.message,
+                action=action,
+            )
+            return
+
+        fallback_dir = self.fallback_dir(stage_id)
+        os.makedirs(fallback_dir, exist_ok=True)
+        evidence_path = os.path.join(fallback_dir, "evidence_bundle.json")
+        evidence = self.compact_evidence_bundle(
+            stage_id,
+            failure.reason_code,
+            failed_files,
+            exc,
+        )
+        R.atomic_write_json(evidence_path, evidence)
+        fallback_request = {
+            "contract_version": "bank-statement-standardization.fallback-request/v2",
+            "run_id": self.run_id,
+            "client": self.args.client,
+            "stage_id": stage_id,
+            "name": spec.get("name", ""),
+            "reason_code": failure.reason_code,
+            "attempt": int(self.manifest.get("ai_repair_attempt") or 0) + 1,
+            "max_attempts": R.MAX_AI_REPAIR_ATTEMPTS,
+            "next_action": R.AI_FALLBACK,
+            "evidence_ref": self.run_relative_ref(evidence_path),
+            "message": failure.message,
+            "files": [
+                {"file_id": item.get("file_id", ""), "name": item.get("name", "")}
+                for item in failed_files
+            ],
+            "created_at": now(),
+        }
+        fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
+        R.atomic_write_json(fallback_request_path, fallback_request)
+        fallback_artifacts = ["fallback_request.json", "evidence_bundle.json"]
+        self.emit(
+            "WARNING",
+            "AI_FALLBACK_REQUIRED",
+            f"阶段 {stage_id} 失败，需要独立 Fallback 会话处理紧凑 evidence",
+            stage=stage_id,
+            reason_code=failure.reason_code,
+            ai_fallback_dir=fallback_dir,
+            max_retry=R.MAX_AI_REPAIR_ATTEMPTS,
+        )
+        self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
         self.receipt(stage_id, "error", {
             "orchestrator_handler": self.stage_handler_name(stage_id),
-            "ai_fallback_refs": spec.get("ai_fallback_refs", []),
+            "reason_code": failure.reason_code,
+            "next_action": R.AI_FALLBACK,
             "ai_fallback_used": True,
             "ai_fallback_artifacts": fallback_artifacts,
             "error": str(exc),
         })
+        self.write_run_result(
+            status=ERROR,
+            next_action=R.AI_FALLBACK,
+            reason_code=failure.reason_code,
+            artifact_refs=(
+                self.run_relative_ref(fallback_request_path),
+                self.run_relative_ref(evidence_path),
+            ),
+            context_ref=self.run_relative_ref(fallback_request_path),
+            message=failure.message,
+            action=self.coordinator_action("next"),
+        )
 
     def run_manifest_stages(self):
         while True:
@@ -1427,6 +1801,15 @@ class Runner:
                 final,
             )
             self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{final['deliverable']}")
+            deliverable_ref = self.run_relative_ref(final["deliverable"])
+            self.write_run_result(
+                status=DONE,
+                next_action=R.DELIVER,
+                artifact_refs=(deliverable_ref,),
+                context_ref="manifest.json",
+                message="全部 Pipeline、QC 和 Validator 已通过",
+                summary=self.delivery_summary(),
+            )
             if self.warning_events:
                 bundle = self.bundle_path("WARNING")
                 self.emit("INFO", "WARNING_BUNDLE_READY", f"告警任务已完成归档：{bundle}")
@@ -1438,6 +1821,14 @@ class Runner:
             bundle = self.bundle_path("ERROR")
             self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}；错误包：{bundle}")
             self.bundle("ERROR")
+            if self.run_result is None:
+                self.write_run_result(
+                    status=ERROR,
+                    next_action=R.REPORT_ERROR,
+                    reason_code=R.UNKNOWN,
+                    context_ref="traceback.txt",
+                    message="流水线在生成结构化失败路由前中止",
+                )
             return 1
 
 
@@ -1462,11 +1853,20 @@ def main():
                     help="可选：重跑原因，例如 ai_fallback_after_stage_failure")
     ap.add_argument("--error-bundle-mode", choices=["full", "safe"], default="full",
                     help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full")
+    ap.add_argument("--verbose", action="store_true", help="同时把阶段事件打印到 stdout")
+    ap.add_argument("--password-attempt-increment", type=int, default=0, help=argparse.SUPPRESS)
+    ap.add_argument("--ai-repair-attempt-increment", type=int, default=0, help=argparse.SUPPRESS)
+    ap.add_argument("--routing-rules-snapshot", help=argparse.SUPPRESS)
+    ap.add_argument("--routing-rules-sha256", help=argparse.SUPPRESS)
     args = ap.parse_args()
     args.client_arg_provided = bool(args.client)
     if not args.client:
         args.client = os.path.basename(os.path.abspath(args.folder).rstrip(os.sep)) or "未命名客户"
-    return Runner(args).execute()
+    runner = Runner(args)
+    status = runner.execute()
+    result = read_json_if_exists(runner.run_result_path, {})
+    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+    return status
 
 
 if __name__ == "__main__":

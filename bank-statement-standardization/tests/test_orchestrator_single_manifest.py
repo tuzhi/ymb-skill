@@ -42,6 +42,17 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertEqual(manifest["client"], "斑马商业")
             self.assertEqual(manifest["parent_run_id"], "")
             self.assertEqual(manifest["rerun_reason"], "")
+            self.assertEqual(manifest["password_attempt"], 0)
+            self.assertEqual(manifest["ai_repair_attempt"], 0)
+            usage = json.loads(
+                (Path(runner.run_dir) / "token_usage.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(usage["ai_session_count"], 0)
+            self.assertEqual(
+                usage["measurement_scope"],
+                "fallback_and_audit_sessions_only",
+            )
+            self.assertNotIn("skill_contracts", usage)
             self.assertFalse((Path(runner.run_dir) / "run_manifest.json").exists())
             for stage_id, stage in manifest.items():
                 if not stage_id.startswith("stage_"):
@@ -164,13 +175,51 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest[stage_id]["status"], "ERROR")
             self.assertTrue(manifest[stage_id]["ai_fallback_used"])
-            self.assertEqual(manifest[stage_id]["ai_fallback_artifacts"], ["fallback_request.json"])
+            self.assertEqual(
+                manifest[stage_id]["ai_fallback_artifacts"],
+                ["fallback_request.json", "evidence_bundle.json"],
+            )
             request_path = Path(runner.fallback_dir(stage_id)) / "fallback_request.json"
             request = json.loads(request_path.read_text(encoding="utf-8"))
-            self.assertEqual(request["error"], "阶段一测试失败")
+            self.assertNotIn("error", request)
+            evidence = json.loads(
+                (request_path.parent / "evidence_bundle.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(evidence["error_summary"], "阶段一测试失败")
             self.assertEqual(request["client"], "斑马商业")
+            self.assertEqual(request["next_action"], "AI_FALLBACK")
+            self.assertNotIn("fallback_skill", request)
             self.assertNotIn("script", request)
             self.assertNotIn("validator", request)
+            run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            self.assertEqual(run_result["action"]["handler"], "fallback_coordinator")
+            self.assertEqual(run_result["action"]["operation"], "next")
+            self.assertEqual(run_result["action"]["run_dir"], str(Path(runner.run_dir).resolve()))
+
+    def test_password_failure_requests_user_without_ai_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "加密流水.pdf").write_bytes(b"%PDF-1.4\n")
+            runner = orchestrator.Runner(
+                runner_args(root / "runs", source, client="斑马商业")
+            )
+
+            runner.handle_stage_failure(
+                "stage_1_standardize",
+                runner.manifest["stage_1_standardize"],
+                RuntimeError("PDFPasswordIncorrect: password required"),
+            )
+
+            result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            self.assertEqual(result["next_action"], "REQUEST_USER")
+            self.assertEqual(result["reason_code"], "INPUT_PASSWORD_REQUIRED")
+            self.assertEqual(result["action"]["operation"], "retry-password")
+            self.assertEqual(result["action"]["file_refs"], ["加密流水.pdf"])
+            self.assertEqual(result["action"]["input_transport"], "stdin")
+            self.assertFalse(Path(runner.fallback_dir("stage_1_standardize")).exists())
+            self.assertFalse(runner.manifest["stage_1_standardize"]["ai_fallback_used"])
 
     def test_downstream_failure_does_not_record_ai_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -196,6 +245,9 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 self.assertNotIn("ai_fallback_used", manifest[stage_id])
                 self.assertNotIn("ai_fallback_artifacts", manifest[stage_id])
                 self.assertFalse(Path(runner.fallback_dir(stage_id)).exists())
+                result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+                self.assertEqual(result["next_action"], "REPORT_ERROR")
+                self.assertEqual(result["reason_code"], "DOWNSTREAM_STAGE_FAILURE")
                 events = Path(runner.event_path).read_text(encoding="utf-8")
                 self.assertIn('"code": "STAGE_ERROR"', events)
                 self.assertNotIn('"code": "AI_FALLBACK_REQUIRED"', events)
@@ -349,6 +401,30 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "sheets": ["整合打标流水"],
             }
             runner.warning_events = []
+            runner.manifest = {"skipped_inputs": []}
+            (Path(tmp) / "stage_1_results.json").write_text(
+                json.dumps({
+                    "files": {
+                        "md5:a": {"status": "DONE"},
+                        "md5:b": {"status": "DONE"},
+                    }
+                }),
+                encoding="utf-8",
+            )
+            (Path(tmp) / "qc_results.json").write_text(
+                json.dumps({
+                    "status": "PASS_WITH_WARNINGS",
+                    "files": {},
+                    "customer": {
+                        "customer.coverage_two_years": {
+                            "level": "SOFT",
+                            "passed": False,
+                            "message": "覆盖不足两年",
+                        }
+                    },
+                }),
+                encoding="utf-8",
+            )
             runner.run_manifest_stages = Mock()
             runner.receipt = Mock()
             runner.emit = Mock()
@@ -360,6 +436,18 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             validate_final.assert_not_called()
             details = runner.receipt.call_args.args[2]
             self.assertEqual(details, runner.final_validation_result)
+            run_result = json.loads(
+                (Path(tmp) / "run_result.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(run_result["next_action"], "DELIVER")
+            self.assertEqual(run_result["summary"], {
+                "input_file_count": 2,
+                "processed_file_count": 2,
+                "qc_status": "PASS_WITH_WARNINGS",
+                "warning_count": 1,
+                "warning_summary": ["覆盖不足两年"],
+            })
+            self.assertFalse((Path(tmp) / "fallback").exists())
 
     def test_stage_4_runs_final_delivery_validation_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:

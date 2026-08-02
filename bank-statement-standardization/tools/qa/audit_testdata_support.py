@@ -191,7 +191,7 @@ def metadata_checks(path, hints_root=None):
                 "创建人=修改人": "是（XLS 仅提供创建人:%s，按一致处理）" % creator if creator else "是（XLS 未提供创建人/修改人，按一致处理）",
             }
         if ext == ".pdf":
-            from ymb_standardization_core.readers.router import _open_pdf
+            from ymb_standardization_core.readers.pdf_input import _open_pdf
 
             with _open_pdf(path, open_password=open_password) as pdf:
                 metadata = pdf.metadata or {}

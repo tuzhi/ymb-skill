@@ -7,6 +7,7 @@
 """
 import argparse
 import os
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -16,18 +17,29 @@ CORE_PACKAGE_SOURCE_RELATIVE = Path("ymb-standardization-core")
 CORE_PACKAGE_ARCHIVE_RELATIVE = Path("packages") / "ymb_standardization_core"
 INCLUDED_TOP_LEVEL_FILES = {
     "SKILL.md",
-    "README.md",
     "requirements.txt",
-    "版本说明.md",
-    "测试验证报告.md",
 }
 INCLUDED_TOP_LEVEL_DIRS = {
+    "agents",
     "assets",
-    "references",
+    "harness",
+    "roles",
     "runtime",
     "scripts",
     "services",
 }
+HARNESS_SKILL_NAME = "bank-statement-standardization"
+
+
+def workspace_version(repo_root):
+    pyproject = Path(repo_root).resolve() / "pyproject.toml"
+    if not pyproject.is_file():
+        raise FileNotFoundError(f"workspace pyproject.toml not found: {pyproject}")
+    with pyproject.open("rb") as stream:
+        version = str(tomllib.load(stream).get("project", {}).get("version") or "").strip()
+    if not version:
+        raise ValueError("pyproject.toml 缺少 project.version")
+    return version
 
 
 def _is_excluded(relative_path):
@@ -75,9 +87,12 @@ def package_skill(skill_dir, output=None):
     if not (root / "SKILL.md").is_file():
         raise FileNotFoundError(f"SKILL.md not found in skill directory: {root}")
 
-    dist_dir = root / "dist"
-    dist_dir.mkdir(exist_ok=True)
-    archive = Path(output).resolve() if output else dist_dir / f"{root.name}.zip"
+    if output:
+        archive = Path(output).resolve()
+    else:
+        dist_dir = root / "dist"
+        dist_dir.mkdir(exist_ok=True)
+        archive = dist_dir / f"{root.name}.zip"
     archive.parent.mkdir(parents=True, exist_ok=True)
 
     top = root.name
@@ -94,7 +109,7 @@ def package_skill(skill_dir, output=None):
         repo_root = root.parent
         core_project = repo_root / CORE_PACKAGE_SOURCE_RELATIVE
         core_source = core_project / "src"
-        if core_source.is_dir():
+        if root.name == "bank-statement-standardization" and core_source.is_dir():
             pyproject = core_project / "pyproject.toml"
             if pyproject.is_file():
                 zf.write(
@@ -118,6 +133,27 @@ def package_skill(skill_dir, output=None):
     return archive
 
 
+def package_harness_skill(repo_root, output_dir):
+    repo_root = Path(repo_root).resolve()
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "harness-skill-hashes.json").unlink(missing_ok=True)
+    version = workspace_version(repo_root)
+    obsolete_names = (
+        f"{HARNESS_SKILL_NAME}.zip",
+        "bank-statement-fallback.zip",
+        "bank-statement-audit.zip",
+        f"bank-statement-fallback_v{version}.zip",
+        f"bank-statement-audit_v{version}.zip",
+    )
+    for name in obsolete_names:
+        (output_dir / name).unlink(missing_ok=True)
+    return package_skill(
+        repo_root / HARNESS_SKILL_NAME,
+        output=output_dir / f"{HARNESS_SKILL_NAME}_v{version}.zip",
+    )
+
+
 def main():
     default_root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description="把 Codex/WorkBuddy skill 打包到 dist/*.zip")
@@ -126,7 +162,11 @@ def main():
     parser.add_argument("--output", help="optional output .zip path")
     args = parser.parse_args()
 
-    archive = package_skill(args.skill_dir, output=args.output)
+    selected_root = Path(args.skill_dir).resolve()
+    if selected_root == default_root and not args.output:
+        archive = package_harness_skill(default_root.parent, default_root / "dist")
+    else:
+        archive = package_skill(args.skill_dir, output=args.output)
     print(archive)
 
 

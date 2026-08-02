@@ -775,7 +775,7 @@ def read_rows_csv(path):
     return "\n".join(preamble), out
 
 
-def read_rows(path):
+def read_rows(path, route_rules=None):
     """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
     from ymb_standardization_core.file_hints import load_file_hints_for_path
     from ymb_standardization_core.readers import input_router
@@ -783,7 +783,17 @@ def read_rows(path):
     file_hints = load_file_hints_for_path(path)
     hints = file_hints.for_file(path)
     input_router.configure_readers(read_rows_excel, read_rows_csv, NotABankStatement)
-    result = input_router.read_rows(path, hints=hints)
+    selected_rules = route_rules
+    if route_rules is not None and hasattr(route_rules, "pdf_rules"):
+        selected_rules = (
+            route_rules.pdf_rules
+            if os.path.splitext(path)[1].lower() == ".pdf"
+            else route_rules.excel_rules
+        )
+    if selected_rules is None:
+        result = input_router.read_rows(path, hints=hints)
+    else:
+        result = input_router.read_rows(path, hints=hints, route_rules=selected_rules)
     route_info = dict(result.route_info or {})
     hints_audit = file_hints.audit_for_file(path)
     if hints_audit:
@@ -1339,14 +1349,17 @@ def adopt_standardized_input(path, out_dir=None, write_mapping=True):
 
 def standardize(path, out_dir=None, bank=None,
                 account_type=None, header_row=None, overrides=None, write_mapping=True,
-                strict_yaml_route=True):
+                strict_yaml_route=True, route_rules=None):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
     if is_standardized_input_name(path):
         return adopt_standardized_input(path, out_dir=out_dir, write_mapping=write_mapping)
 
-    file_kind, preamble, rows, route_info = read_rows(path)
+    if route_rules is None:
+        file_kind, preamble, rows, route_info = read_rows(path)
+    else:
+        file_kind, preamble, rows, route_info = read_rows(path, route_rules=route_rules)
     route_info = dict(route_info or {})
 
     if route_info.get("decision") == "matched_incomplete":
@@ -2018,15 +2031,17 @@ def standardize_file(context: StandardizationContext):
     """按公开上下文执行单文件标准化。"""
     if not isinstance(context, StandardizationContext):
         raise TypeError("context must be StandardizationContext")
-    return standardize(
-        context.path,
-        out_dir=context.out_dir,
-        bank=context.bank,
-        account_type=context.account_type,
-        header_row=context.header_row,
-        overrides=dict(context.overrides),
-        write_mapping=context.write_mapping,
-    )
+    kwargs = {
+        "out_dir": context.out_dir,
+        "bank": context.bank,
+        "account_type": context.account_type,
+        "header_row": context.header_row,
+        "overrides": dict(context.overrides),
+        "write_mapping": context.write_mapping,
+    }
+    if context.route_rules is not None:
+        kwargs["route_rules"] = context.route_rules
+    return standardize(context.path, **kwargs)
 
 
 def main():

@@ -17,6 +17,7 @@ for path in (SKILL_ROOT, CORE_PACKAGE):
 
 from services import StatementService, YamlRuleService  # noqa: E402
 from services import yaml_rule_service as yaml_service_module  # noqa: E402
+from scripts import fallback_coordinator as coordinator_cli  # noqa: E402
 from ymb_standardization_core.contracts import RouteDecision  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402
     routing_rules_version,
@@ -97,6 +98,220 @@ class StatementServiceTests(unittest.TestCase):
                 service.delete_run(parent.run_id)
             service.delete_run(child.run_id)
             service.delete_run(parent.run_id)
+
+    def test_password_child_run_writes_hints_without_consuming_ai_attempt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = root / "parent-run"
+            input_dir = parent / "input"
+            input_dir.mkdir(parents=True)
+            (input_dir / "加密流水.pdf").write_bytes(b"%PDF-1.4\n")
+            (parent / "manifest.json").write_text(json.dumps({
+                "client": "客户甲",
+                "password_attempt": 0,
+                "ai_repair_attempt": 0,
+                "stage_1_standardize": {
+                    "status": "ERROR",
+                    "ai_fallback_used": False,
+                    "ai_fallback_artifacts": [],
+                },
+            }, ensure_ascii=False), encoding="utf-8")
+            (parent / "stage_1_results.json").write_text(
+                json.dumps({"files": {}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            service = StatementService(root, submit=lambda execute: None)
+
+            child = service.start_run(
+                None,
+                [],
+                parent_run_id="parent-run",
+                file_passwords={"加密流水.pdf": "secret"},
+            )
+
+            child_dir = root / child.run_id
+            manifest = json.loads((child_dir / "manifest.json").read_text(encoding="utf-8"))
+            hints = (child_dir / "input" / "_file_hints.yaml").read_text(encoding="utf-8")
+            self.assertIn("open_password: secret", hints)
+            self.assertEqual(manifest["password_attempt"], 1)
+            self.assertEqual(manifest["ai_repair_attempt"], 0)
+            self.assertEqual(manifest["rerun_reason"], "password_retry")
+            self.assertNotIn("secret", (child_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    def test_password_retry_cli_reads_secret_from_stdin_not_argv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent = Path(tmp) / "parent-run"
+            parent.mkdir()
+            service = mock.Mock()
+            service.start_run.return_value = SimpleNamespace(
+                run_id="child-run",
+                parent_run_id="parent-run",
+            )
+            service.get_run.return_value = SimpleNamespace(
+                status="DONE",
+                run_result={"next_action": "DELIVER"},
+            )
+            argv = [
+                "fallback_coordinator.py",
+                "retry-password",
+                "--run-dir",
+                str(parent),
+                "--file",
+                "加密流水.pdf",
+                "--password-stdin",
+            ]
+            output = io.StringIO()
+            with (
+                mock.patch.object(coordinator_cli, "StatementService", return_value=service),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stdin", io.StringIO("secret\n")),
+                mock.patch.object(sys, "stdout", output),
+            ):
+                self.assertEqual(coordinator_cli.main(), 0)
+
+            self.assertNotIn("secret", argv)
+            self.assertEqual(json.loads(output.getvalue())["next_action"], "DELIVER")
+            service.start_run.assert_called_once_with(
+                None,
+                [],
+                parent_run_id="parent-run",
+                file_passwords={"加密流水.pdf": "secret"},
+            )
+
+    def test_coordinator_submit_advances_without_returning_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "parent-run"
+            run.mkdir()
+            coordinator = mock.Mock()
+            coordinator.next.return_value = {
+                "contract_version": 1,
+                "run_id": "parent-run",
+                "status": "NEED_AUDIT",
+            }
+            argv = [
+                "fallback_coordinator.py",
+                "submit",
+                "--run-dir",
+                str(run),
+                "--role",
+                "fallback",
+                "--session-id",
+                "fallback-session",
+                "--result",
+                str(run / "result.json"),
+            ]
+            (run / "result.json").write_text("{}", encoding="utf-8")
+            output = io.StringIO()
+            with (
+                mock.patch.object(coordinator_cli, "FallbackCoordinator", return_value=coordinator),
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(sys, "stdout", output),
+            ):
+                self.assertEqual(coordinator_cli.main(), 0)
+
+            coordinator.submit.assert_called_once()
+            coordinator.next.assert_called_once_with()
+            self.assertEqual(json.loads(output.getvalue())["status"], "NEED_AUDIT")
+
+    def test_coordinator_auto_starts_child_and_returns_child_run_result(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "parent-run"
+            run.mkdir()
+            coordinator = SimpleNamespace(
+                run_dir=run,
+                run_id="parent-run",
+                attempt_root=run / "fallback" / "stage_1_standardize" / "attempt-01",
+                next=lambda: {
+                    "status": "CHILD_RUN_READY",
+                    "child_run_request": "fallback/stage_1_standardize/attempt-01/child_run_request.json",
+                },
+            )
+            coordinator.attempt_root.mkdir(parents=True)
+            service = mock.Mock()
+            service.start_child_run_from_request.return_value = SimpleNamespace(run_id="child-run")
+            service.get_run.return_value = SimpleNamespace(
+                run_result={"run_id": "child-run", "status": "DONE", "next_action": "DELIVER"},
+            )
+            with mock.patch.object(coordinator_cli, "StatementService", return_value=service):
+                result = coordinator_cli._advance(coordinator)
+                repeated = coordinator_cli._advance(coordinator)
+
+            self.assertEqual(result["next_action"], "DELIVER")
+            self.assertEqual(repeated, result)
+            service.start_child_run_from_request.assert_called_once_with(
+                "parent-run",
+                "fallback/stage_1_standardize/attempt-01/child_run_request.json",
+            )
+
+    def test_authorized_routing_snapshot_creates_isolated_child_run(self):
+        production = (
+            CORE_PACKAGE
+            / "ymb_standardization_core"
+            / "config"
+            / "routing"
+            / "routing_rules.yaml"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = root / "parent-run"
+            (parent / "input").mkdir(parents=True)
+            (parent / "input" / "流水.csv").write_text("raw", encoding="utf-8")
+            (parent / "manifest.json").write_text(json.dumps({
+                "client": "客户甲",
+                "password_attempt": 0,
+                "ai_repair_attempt": 0,
+                "stage_1_standardize": {
+                    "status": "ERROR",
+                    "ai_fallback_used": True,
+                    "ai_fallback_artifacts": ["fallback_request.json"],
+                },
+            }, ensure_ascii=False), encoding="utf-8")
+            (parent / "stage_1_results.json").write_text(
+                json.dumps({"files": {}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            attempt = parent / "fallback" / "stage_1_standardize" / "attempt-01"
+            snapshot = attempt / "repair" / "routing_rules.yaml"
+            snapshot.parent.mkdir(parents=True)
+            snapshot.write_text(production.read_text(encoding="utf-8"), encoding="utf-8")
+            gate = attempt / "policy_gate.json"
+            gate.write_text(json.dumps({
+                "status": "ACCEPTED",
+            }), encoding="utf-8")
+            audit = attempt / "audit_result.json"
+            audit.write_text(json.dumps({
+                "status": "ACCEPTED",
+            }), encoding="utf-8")
+            receipts = attempt / "session-receipts"
+            receipts.mkdir()
+            service = StatementService(root, submit=lambda execute: None)
+            (receipts / "audit.json").write_text(json.dumps({
+                "output_sha256": service._sha256_path(audit),
+            }), encoding="utf-8")
+            request = attempt / "child_run_request.json"
+            request.write_text(json.dumps({
+                "parent_run_id": "parent-run",
+                "routing_rules_snapshot": snapshot.relative_to(parent).as_posix(),
+                "routing_rules_sha256": service._sha256_path(snapshot),
+                "authorized_by": {
+                    "policy_gate": gate.relative_to(parent).as_posix(),
+                    "audit": audit.relative_to(parent).as_posix(),
+                },
+            }), encoding="utf-8")
+
+            child = service.start_child_run_from_request(
+                "parent-run",
+                request.relative_to(parent).as_posix(),
+            )
+
+            child_manifest = json.loads(
+                (root / child.run_id / "manifest.json").read_text(encoding="utf-8")
+            )
+            parent_manifest = json.loads((parent / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(child_manifest["parent_run_id"], "parent-run")
+            self.assertEqual(child_manifest["ai_repair_attempt"], 1)
+            self.assertEqual(child_manifest["routing_rules_snapshot"]["scope"], "run_only")
+            self.assertEqual(parent_manifest["stage_1_standardize"]["status"], "ERROR")
 
 
 class YamlRuleServiceTests(unittest.TestCase):

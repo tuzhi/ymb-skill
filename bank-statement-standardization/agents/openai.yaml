@@ -1,0 +1,4 @@
+interface:
+  display_name: "银行流水标准化"
+  short_description: "脚本优先执行流水标准化并按 RunResult 路由"
+  default_prompt: "使用 $bank-statement-standardization 执行流水标准化并返回验证后的交付结果。"

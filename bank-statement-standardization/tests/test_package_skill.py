@@ -24,6 +24,9 @@ class PackageSkillTest(unittest.TestCase):
             package_skill.package_skill(SKILL_ROOT, output=archive)
             with zipfile.ZipFile(archive) as zf:
                 names = set(zf.namelist())
+                requirements = zf.read(
+                    "bank-statement-standardization/requirements.txt"
+                ).decode("utf-8")
 
         self.assertIn(
             "bank-statement-standardization/packages/ymb_standardization_core/pyproject.toml",
@@ -43,6 +46,17 @@ class PackageSkillTest(unittest.TestCase):
             "bank-statement-standardization/services/statement_service.py",
             names,
         )
+        self.assertIn("PyYAML>=6,<7", requirements)
+        self.assertIn(
+            "bank-statement-standardization/harness/coordinator.py",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/agents/openai.yaml",
+            names,
+        )
+        self.assertIn("bank-statement-standardization/roles/fallback.md", names)
+        self.assertIn("bank-statement-standardization/roles/audit.md", names)
 
     def test_package_excludes_runtime_raw_data_and_independent_tools(self):
         package_skill = self.load_package_module()
@@ -67,8 +81,41 @@ class PackageSkillTest(unittest.TestCase):
         self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/qc.py")))
         self.assertTrue(package_skill._is_included(Path("services/statement_service.py")))
+        self.assertTrue(package_skill._is_included(Path("harness/coordinator.py")))
+        self.assertTrue(package_skill._is_included(Path("roles/fallback.md")))
+        self.assertTrue(package_skill._is_included(Path("roles/audit.md")))
+        self.assertTrue(package_skill._is_included(Path("agents/openai.yaml")))
         self.assertFalse(package_skill._is_included(Path("tools/qa/run_full_test.py")))
         self.assertFalse(package_skill._is_included(Path("AGENTS.md")))
+        self.assertFalse(package_skill._is_included(Path("references/prompt-1-字段映射.md")))
+        self.assertFalse(package_skill._is_included(Path("README.md")))
+        self.assertFalse(package_skill._is_included(Path("版本说明.md")))
+        self.assertFalse(package_skill._is_included(Path("测试验证报告.md")))
+
+    def test_packages_one_versioned_harness_skill(self):
+        package_skill = self.load_package_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "harness-skill-hashes.json").write_text("stale", encoding="utf-8")
+            stale_names = (
+                "bank-statement-standardization.zip",
+                "bank-statement-fallback.zip",
+                "bank-statement-audit.zip",
+                "bank-statement-fallback_v1.4.1.zip",
+                "bank-statement-audit_v1.4.1.zip",
+            )
+            for name in stale_names:
+                (Path(tmp) / name).write_text("stale", encoding="utf-8")
+            archive = package_skill.package_harness_skill(SKILL_ROOT.parent, tmp)
+            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.1.zip")
+            with zipfile.ZipFile(archive) as zf:
+                names = set(zf.namelist())
+            self.assertIn("bank-statement-standardization/SKILL.md", names)
+            self.assertIn("bank-statement-standardization/roles/fallback.md", names)
+            self.assertIn("bank-statement-standardization/roles/audit.md", names)
+            self.assertFalse(any(name.startswith("bank-statement-fallback/") for name in names))
+            self.assertFalse((Path(tmp) / "harness-skill-hashes.json").exists())
+            for name in stale_names:
+                self.assertFalse((Path(tmp) / name).exists())
 
 
 if __name__ == "__main__":

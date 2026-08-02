@@ -5,15 +5,17 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 import hashlib
 import json
 import mimetypes
 import os
 import shutil
 import tempfile
+import yaml
 
 from scripts.orchestrator import Runner, load_parent_run_context
+from runtime import run_result as R
 
 from .models import ArtifactStream, RunDetail, RunReference
 
@@ -55,6 +57,9 @@ class StatementService:
         files: Iterable[Any],
         parent_run_id: str | None = None,
         remove_file_ids: Iterable[str] | None = None,
+        file_passwords: Mapping[str, str] | None = None,
+        routing_rules_snapshot: str | os.PathLike[str] | None = None,
+        routing_rules_sha256: str | None = None,
     ) -> RunReference:
         uploads = list(files or [])
         removed = list(remove_file_ids or [])
@@ -64,6 +69,8 @@ class StatementService:
             raise ValueError("remove_file_ids 只能用于增量运行")
         if parent_run_id and client_name:
             raise ValueError("增量运行的 client_name 必须从父 Run 继承")
+        if (file_passwords or routing_rules_snapshot) and not parent_run_id:
+            raise ValueError("密码或 routing snapshot 只能用于显式 Child Run")
 
         staging = Path(tempfile.mkdtemp(prefix="statement-input-"))
         try:
@@ -71,6 +78,11 @@ class StatementService:
                 if self.get_run(parent_run_id).status == "RUNNING":
                     raise RuntimeError("RUNNING 状态的 Run 不能作为父运行")
                 parent = load_parent_run_context(str(self.run_root), parent_run_id)
+                if (
+                    file_passwords
+                    and int(parent.get("password_attempt") or 0) >= R.MAX_PASSWORD_ATTEMPTS
+                ):
+                    raise RuntimeError("密码尝试次数已达上限")
                 parent_input = Path(parent["parent_run_dir"]) / "input"
                 if not parent_input.is_dir():
                     raise RuntimeError(f"父 Run 缺少输入快照：{parent_run_id}")
@@ -78,6 +90,7 @@ class StatementService:
                 self._remove_files(staging, removed)
 
             changed = self._copy_uploads(staging, uploads)
+            password_retry = self._write_file_passwords(staging, file_passwords or {})
             if not any(path.is_file() for path in staging.rglob("*")):
                 raise ValueError("当前有效文件集合不能为空")
 
@@ -88,9 +101,20 @@ class StatementService:
                 client_arg_provided=bool(client_name),
                 error_bundle_mode="full",
                 parent_run_id=parent_run_id,
-                rerun_reason=self._rerun_reason(parent_run_id, changed, removed),
+                rerun_reason=self._rerun_reason(
+                    parent_run_id,
+                    changed,
+                    removed,
+                    password_retry=password_retry,
+                    ai_repair=bool(routing_rules_snapshot),
+                ),
                 account_type=None,
                 file_sleep_seconds=0,
+                verbose=False,
+                password_attempt_increment=1 if password_retry else 0,
+                ai_repair_attempt_increment=1 if routing_rules_snapshot else 0,
+                routing_rules_snapshot=str(routing_rules_snapshot or ""),
+                routing_rules_sha256=str(routing_rules_sha256 or ""),
             )
             runner = Runner(args)
         finally:
@@ -144,8 +168,58 @@ class StatementService:
             qc=qc,
             analysis=self._analysis(run_dir),
             artifacts=self._artifact_entries(run_dir),
+            run_result=_read_json(run_dir / "run_result.json", {}),
             fallback=public_fallback,
             error=error,
+        )
+
+    def start_child_run_from_request(
+        self,
+        parent_run_id: str,
+        request_ref: str,
+    ) -> RunReference:
+        parent_dir = self._run_dir(parent_run_id)
+        request_path = (parent_dir / request_ref).resolve()
+        if parent_dir not in request_path.parents or not request_path.is_file():
+            raise FileNotFoundError("child_run_request 不存在或路径越界")
+        request = _read_json(request_path, {})
+        if request.get("parent_run_id") != parent_run_id:
+            raise ValueError("child_run_request parent_run_id 不匹配")
+        authorized = request.get("authorized_by") or {}
+        gate_path = (parent_dir / str(authorized.get("policy_gate") or "")).resolve()
+        audit_path = (parent_dir / str(authorized.get("audit") or "")).resolve()
+        for path in (gate_path, audit_path):
+            if parent_dir not in path.parents or not path.is_file():
+                raise ValueError("Child Run 授权证据缺失或越界")
+        gate = _read_json(gate_path, {})
+        audit = _read_json(audit_path, {})
+        if gate.get("status") != "ACCEPTED":
+            raise RuntimeError("Policy Gate 未授权高风险修复")
+        if audit.get("status") != "ACCEPTED":
+            raise RuntimeError("Audit 未授权 Child Run")
+        receipt_path = audit_path.parent / "session-receipts" / "audit.json"
+        receipt = _read_json(receipt_path, {})
+        if receipt.get("output_sha256") != self._sha256_path(audit_path):
+            raise RuntimeError("Audit checksum 无效")
+
+        snapshot = (parent_dir / str(request.get("routing_rules_snapshot") or "")).resolve()
+        if parent_dir not in snapshot.parents or not snapshot.is_file():
+            raise ValueError("routing snapshot 缺失或越界")
+        expected_sha256 = str(request.get("routing_rules_sha256") or "")
+        if not expected_sha256 or self._sha256_path(snapshot) != expected_sha256:
+            raise RuntimeError("routing snapshot checksum 无效")
+        parent_manifest = _read_json(parent_dir / "manifest.json", {})
+        if (
+            int(parent_manifest.get("ai_repair_attempt") or 0)
+            >= R.MAX_AI_REPAIR_ATTEMPTS
+        ):
+            raise RuntimeError("AI 修复次数已达上限")
+        return self.start_run(
+            None,
+            [],
+            parent_run_id=parent_run_id,
+            routing_rules_snapshot=snapshot,
+            routing_rules_sha256=expected_sha256,
         )
 
     def get_artifact(self, run_id: str, artifact_id: str) -> ArtifactStream:
@@ -184,6 +258,14 @@ class StatementService:
         if self.run_root not in path.parents or not path.is_dir():
             raise FileNotFoundError(f"Run 不存在：{run_id}")
         return path
+
+    @staticmethod
+    def _sha256_path(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     @staticmethod
     def _copy_uploads(staging: Path, uploads: list[Any]) -> bool:
@@ -279,12 +361,58 @@ class StatementService:
         parent_run_id: str | None,
         changed: bool,
         remove_file_ids: Iterable[str] | None,
+        *,
+        password_retry: bool = False,
+        ai_repair: bool = False,
     ) -> str:
         if not parent_run_id:
             return ""
+        if password_retry:
+            return "password_retry"
+        if ai_repair:
+            return "ai_fallback_after_stage_1_failure"
         if changed or list(remove_file_ids or []):
             return "incremental_input_changed"
         return "resume_parent_run"
+
+    @staticmethod
+    def _write_file_passwords(staging: Path, passwords: Mapping[str, str]) -> bool:
+        if not passwords:
+            return False
+        hints_path = staging / "_file_hints.yaml"
+        payload: dict[str, Any] = {"file_info": {}}
+        if hints_path.is_file():
+            loaded = yaml.safe_load(hints_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(loaded, dict) or not isinstance(loaded.get("file_info", {}), dict):
+                raise ValueError("现有 _file_hints.yaml 结构无效")
+            payload = loaded
+            payload.setdefault("file_info", {})
+        for raw_relative, raw_password in passwords.items():
+            relative = Path(str(raw_relative).replace("\\", "/"))
+            password = str(raw_password)
+            if relative.is_absolute() or ".." in relative.parts or not password:
+                raise ValueError("密码提示必须使用有效的客户目录内相对路径和非空密码")
+            target = (staging / relative).resolve()
+            if staging.resolve() not in target.parents or not target.is_file():
+                raise FileNotFoundError(f"密码对应文件不存在：{relative.as_posix()}")
+            current = payload["file_info"].get(relative.as_posix()) or {}
+            if not isinstance(current, dict):
+                raise ValueError(f"文件 hints 结构无效：{relative.as_posix()}")
+            payload["file_info"][relative.as_posix()] = {
+                **current,
+                "open_password": password,
+            }
+        descriptor, temporary = tempfile.mkstemp(prefix="._file_hints.", dir=staging)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                yaml.safe_dump(payload, stream, allow_unicode=True, sort_keys=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, hints_path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        return True
 
     def _status(self, run_id: str, stages: dict[str, Any]) -> str:
         active = self._active_runs.get(run_id)
@@ -342,7 +470,12 @@ class StatementService:
         artifact_dir = run_dir / "artifacts"
         if artifact_dir.is_dir():
             candidates.extend(path for path in artifact_dir.rglob("*") if path.is_file())
-        for name in ("stage_1_results.json", "qc_results.json"):
+        for name in (
+            "run_result.json",
+            "stage_1_results.json",
+            "qc_results.json",
+            "token_usage.json",
+        ):
             path = run_dir / name
             if path.is_file():
                 candidates.append(path)

@@ -603,7 +603,11 @@ class TagOptimizedTest(unittest.TestCase):
              "支出金额": "", "账户余额": "180404.59"},
         ])
 
-        with patch("tag._is_alipay_rows", wraps=tag_module._is_alipay_rows) as is_alipay_rows:
+        with patch.object(
+            tag_module,
+            "_is_alipay_rows",
+            wraps=tag_module._is_alipay_rows,
+        ) as is_alipay_rows:
             _apply_transaction_relations(df)
 
         # 支付宝订单策略一次、银行冲正策略一次；不再按相邻交易重复构造 DataFrame。
