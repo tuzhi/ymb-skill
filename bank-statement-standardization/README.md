@@ -5,7 +5,7 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.1 采用一个可安装 Skill、一个确定性 Coordinator 和两个按需 AI 角色：
+v1.4.2 采用一个可安装 Skill、一个确定性 Coordinator 和两个按需 AI 角色：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -25,6 +25,7 @@ bank-statement-standardization/
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
+│   ├── skill_entry.py       # WorkBuddy 内联入口：校验 args 后直接启动 Orchestrator
 │   ├── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
 │   └── fallback_coordinator.py # Fallback/Audit 结构化交接与 Child Run 授权
 ├── harness/                 # 确定性 Coordinator、角色契约和 Policy Gate
@@ -138,8 +139,9 @@ WorkBuddy 通过「技能/插件」目录加载 Agent Skill：
 mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbuddy/skills/
 ```
 - 若 WorkBuddy 提供图形界面：进入「设置 → 技能/Skills → 导入」，选择本目录或下方的
-  `bank-statement-standardization_v1.4.1.zip` 单文件导入或解压安装。
-- 导入后在对话中上传客户流水文件夹路径，请它「生成《客户名_已清洗_待分析.xlsx》」。
+  `bank-statement-standardization_v1.4.2.zip` 单文件导入或解压安装。
+- 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
+  Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
 
 ### 4) OpenClaw
 OpenClaw 兼容 Claude Code 的 skills/插件加载：
@@ -152,13 +154,13 @@ mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skil
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 单文件 `.zip` 分发（推荐发给同事/批量部署）
-本仓库可打包生成 `bank-statement-standardization_v1.4.1.zip`。三种装法：
+本仓库可打包生成 `bank-statement-standardization_v1.4.2.zip`。三种装法：
 ```bash
 # 通用：解压到目标客户端的 skills 目录（以 Kimi 为例）
-unzip bank-statement-standardization_v1.4.1.zip -d ~/.kimi/skills/
+unzip bank-statement-standardization_v1.4.2.zip -d ~/.kimi/skills/
 ```
 - 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并生成一个 `bank-statement-standardization_v1.4.1.zip`。
+- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并生成一个 `bank-statement-standardization_v1.4.2.zip`。
   归档使用运行时白名单，只包含 Skill 入口、依赖清单、运行代码、资源和共享 core；源码维护文档不进 zip。
 
 ### 安装自检（任意客户端通用）

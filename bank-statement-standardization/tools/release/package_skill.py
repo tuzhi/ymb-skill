@@ -143,11 +143,16 @@ def package_harness_skill(repo_root, output_dir):
         f"{HARNESS_SKILL_NAME}.zip",
         "bank-statement-fallback.zip",
         "bank-statement-audit.zip",
-        f"bank-statement-fallback_v{version}.zip",
-        f"bank-statement-audit_v{version}.zip",
     )
     for name in obsolete_names:
         (output_dir / name).unlink(missing_ok=True)
+    for pattern in (
+        f"{HARNESS_SKILL_NAME}_v*.zip",
+        "bank-statement-fallback_v*.zip",
+        "bank-statement-audit_v*.zip",
+    ):
+        for obsolete in output_dir.glob(pattern):
+            obsolete.unlink()
     return package_skill(
         repo_root / HARNESS_SKILL_NAME,
         output=output_dir / f"{HARNESS_SKILL_NAME}_v{version}.zip",

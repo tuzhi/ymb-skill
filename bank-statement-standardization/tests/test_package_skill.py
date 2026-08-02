@@ -52,6 +52,10 @@ class PackageSkillTest(unittest.TestCase):
             names,
         )
         self.assertIn(
+            "bank-statement-standardization/scripts/skill_entry.py",
+            names,
+        )
+        self.assertIn(
             "bank-statement-standardization/agents/openai.yaml",
             names,
         )
@@ -76,6 +80,7 @@ class PackageSkillTest(unittest.TestCase):
         package_skill = self.load_package_module()
 
         self.assertTrue(package_skill._is_included(Path("scripts/orchestrator.py")))
+        self.assertTrue(package_skill._is_included(Path("scripts/skill_entry.py")))
         self.assertFalse((SKILL_ROOT / "scripts" / "standardize.py").exists())
         self.assertTrue(package_skill._is_included(Path("runtime/standardize.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
@@ -100,16 +105,22 @@ class PackageSkillTest(unittest.TestCase):
                 "bank-statement-standardization.zip",
                 "bank-statement-fallback.zip",
                 "bank-statement-audit.zip",
+                "bank-statement-standardization_v1.4.1.zip",
                 "bank-statement-fallback_v1.4.1.zip",
                 "bank-statement-audit_v1.4.1.zip",
+                "bank-statement-fallback_v1.4.2.zip",
+                "bank-statement-audit_v1.4.2.zip",
             )
             for name in stale_names:
                 (Path(tmp) / name).write_text("stale", encoding="utf-8")
             archive = package_skill.package_harness_skill(SKILL_ROOT.parent, tmp)
-            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.1.zip")
+            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.2.zip")
             with zipfile.ZipFile(archive) as zf:
                 names = set(zf.namelist())
+                skill = zf.read("bank-statement-standardization/SKILL.md").decode("utf-8")
             self.assertIn("bank-statement-standardization/SKILL.md", names)
+            self.assertIn("!`", skill)
+            self.assertIn("$ARGUMENTS", skill)
             self.assertIn("bank-statement-standardization/roles/fallback.md", names)
             self.assertIn("bank-statement-standardization/roles/audit.md", names)
             self.assertFalse(any(name.startswith("bank-statement-fallback/") for name in names))
