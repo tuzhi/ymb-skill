@@ -13,6 +13,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 from ymb_standardization_core.readers.pdf_input import read_pdf_rows
+from ymb_standardization_core.readers.routing.evidence import build_excel_routing_evidence
 from ymb_standardization_core.readers.routing.rule_loader import (
     apply_required_reader_header_gate,
     load_excel_route_rules,
@@ -112,7 +113,7 @@ def _excel_candidate(rule, match):
     }
 
 
-def _excel_fallback(sheet, candidate_fingerprints=None):
+def _excel_fallback(sheet, candidate_fingerprints=None, routing_evidence=None):
     return {
         "reader_id": "openpyxl_grid",
         "decision": "unmatched",
@@ -124,6 +125,7 @@ def _excel_fallback(sheet, candidate_fingerprints=None):
         "identity_evidence": [],
         "columns_evidence": [sheet],
         "candidate_fingerprints": candidate_fingerprints or [],
+        "routing_evidence": routing_evidence or {},
     }
 
 
@@ -155,6 +157,7 @@ def _choose_specific_candidate(candidates):
 def route_excel(rows, sheet, context=None, rules=None):
     candidates = []
     candidate_fingerprints = []
+    routing_evidence = build_excel_routing_evidence(rows, context=context, sheet=sheet)
     for rule in load_excel_route_rules() if rules is None else rules:
         candidate = rule.fingerprint_candidate(rows, context=context)
         if candidate:
@@ -163,12 +166,16 @@ def route_excel(rows, sheet, context=None, rules=None):
         if match:
             candidates.append(_excel_candidate(rule, match))
     if len(candidates) == 1:
-        return candidates[0]
+        return {**candidates[0], "routing_evidence": routing_evidence}
     if not candidates:
-        return _excel_fallback(sheet, candidate_fingerprints=candidate_fingerprints)
+        return _excel_fallback(
+            sheet,
+            candidate_fingerprints=candidate_fingerprints,
+            routing_evidence=routing_evidence,
+        )
     specific = _choose_specific_candidate(candidates)
     if specific:
-        return specific
+        return {**specific, "routing_evidence": routing_evidence}
     return {
         "reader_id": "none",
         "decision": "ambiguous",
@@ -177,6 +184,7 @@ def route_excel(rows, sheet, context=None, rules=None):
         "column_mapping": {},
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints,
+        "routing_evidence": routing_evidence,
     }
 
 

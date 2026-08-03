@@ -1,0 +1,41 @@
+{
+  "contract_version": 1,
+  "run_id": "",
+  "stage_id": "stage_1_standardize",
+  "role": "fallback",
+  "status": "",
+  "classification": "",
+  "affected_file_ids": [],
+  "repair_type": "",
+  "repair_payload": {
+    "operation": "",
+    "target_rule_id": "",
+    "rule": {
+      "file_type": "",
+      "bank": "",
+      "account_type": "",
+      "fingerprint": {
+        "identity": {
+          "any": []
+        },
+        "date_format": {
+          "any": []
+        },
+        "columns": {
+          "all": {},
+          "optional": {}
+        },
+        "metadata": {
+          "all": {}
+        },
+        "style": {
+          "all": []
+        }
+      },
+      "reader_id": ""
+    }
+  },
+  "user_request": "",
+  "reason": "",
+  "limitations": []
+}

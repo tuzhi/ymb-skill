@@ -91,10 +91,13 @@ def main() -> int:
         result = _advance(coordinator)
     elif args.command == "submit":
         coordinator = FallbackCoordinator(args.run_dir)
+        result_path = Path(args.result).resolve()
+        if coordinator.run_dir in result_path.parents:
+            raise ValueError("--result 必须是 Run 目录外的临时文件，不得预写角色 output_path")
         coordinator.submit(
             args.role,
             session_id=args.session_id,
-            payload=_read_object(args.result),
+            payload=_read_object(str(result_path)),
             usage=_read_object(args.usage) if args.usage else {},
         )
         result = _advance(coordinator)

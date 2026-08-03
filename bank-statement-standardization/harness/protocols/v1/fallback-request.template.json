@@ -1,0 +1,15 @@
+{
+  "contract_version": "bank-statement-standardization.fallback-request/v2",
+  "run_id": "",
+  "client": "",
+  "stage_id": "stage_1_standardize",
+  "name": "",
+  "reason_code": "",
+  "attempt": 0,
+  "max_attempts": 0,
+  "next_action": "AI_FALLBACK",
+  "evidence_ref": "",
+  "message": "",
+  "files": [],
+  "created_at": ""
+}

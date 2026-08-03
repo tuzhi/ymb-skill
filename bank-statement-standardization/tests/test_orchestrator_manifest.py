@@ -17,6 +17,21 @@ spec.loader.exec_module(orchestrator)
 
 
 class OrchestratorManifestTest(unittest.TestCase):
+    def test_failure_route_summary_preserves_nested_routing_evidence(self):
+        evidence = {
+            "identity_candidates": ["测试银行企业账户收支明细"],
+            "header_candidates": [["交易时间", "发生金额", "交易后余额"]],
+            "metadata": {"sheet": "企业流水"},
+        }
+
+        summary = orchestrator.failure_route_summary({
+            "decision": "unmatched",
+            "reader_id": "openpyxl_grid",
+            "routing_evidence": evidence,
+        })
+
+        self.assertEqual(summary["routing_evidence"], evidence)
+
     def _write_standardized_csv(self, path, source_name):
         columns = list(orchestrator.V.STD_REQUIRED)
         row = {column: "1" for column in columns}

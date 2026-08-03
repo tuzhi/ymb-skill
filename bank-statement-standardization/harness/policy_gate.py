@@ -13,6 +13,8 @@ from runtime.run_result import atomic_write_json
 from services.yaml_rule_service import YamlRuleService
 from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5, routing_rules_path
 
+from .protocols import render_protocol
+
 
 REQUIRED_RULE_FIELDS = {
     "file_type",
@@ -20,6 +22,26 @@ REQUIRED_RULE_FIELDS = {
     "account_type",
     "fingerprint",
     "reader_id",
+}
+ALLOWED_ACCOUNT_TYPES = {"个人", "对公", "未知"}
+ALLOWED_FINGERPRINT_FIELDS = {
+    "identity",
+    "date_format",
+    "columns",
+    "metadata",
+    "style",
+}
+ALLOWED_STYLE_FIELDS = {
+    "text",
+    "font",
+    "size_min",
+    "size_max",
+    "bold",
+    "row_max",
+    "col_max",
+    "top_max",
+    "centered",
+    "center_tolerance",
 }
 
 
@@ -37,6 +59,82 @@ def _read_json(path: Path, default: Any) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _only_fields(value: Mapping[str, Any], allowed: set[str], name: str) -> None:
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise ValueError(f"{name} 包含不支持字段：{unknown}")
+
+
+def _validate_string_list(value: object, name: str) -> None:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip()
+        for item in value
+    ):
+        raise ValueError(f"{name} 必须是非空字符串数组")
+
+
+def _validate_mapping_keys(value: Mapping[str, Any], name: str) -> None:
+    if any(not str(key).strip() for key in value):
+        raise ValueError(f"{name} 不能包含空字段名")
+
+
+def _validate_fingerprint(value: object) -> None:
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError("routing rule.fingerprint 必须是非空 object")
+    _only_fields(value, ALLOWED_FINGERPRINT_FIELDS, "fingerprint")
+
+    identity = value.get("identity") or {}
+    if not isinstance(identity, Mapping):
+        raise ValueError("fingerprint.identity 必须是 object")
+    _only_fields(identity, {"any"}, "fingerprint.identity")
+    _validate_string_list(identity.get("any") or [], "fingerprint.identity.any")
+
+    date_format = value.get("date_format") or {}
+    if not isinstance(date_format, Mapping):
+        raise ValueError("fingerprint.date_format 必须是 object")
+    _only_fields(date_format, {"any"}, "fingerprint.date_format")
+    _validate_string_list(date_format.get("any") or [], "fingerprint.date_format.any")
+
+    columns = value.get("columns") or {}
+    if not isinstance(columns, Mapping):
+        raise ValueError("fingerprint.columns 必须是 object")
+    _only_fields(columns, {"all", "optional"}, "fingerprint.columns")
+    for key in ("all", "optional"):
+        if not isinstance(columns.get(key) or {}, Mapping):
+            raise ValueError(f"fingerprint.columns.{key} 必须是 object")
+        _validate_mapping_keys(columns.get(key) or {}, f"fingerprint.columns.{key}")
+
+    metadata = value.get("metadata") or {}
+    if not isinstance(metadata, Mapping):
+        raise ValueError("fingerprint.metadata 必须是 object")
+    _only_fields(metadata, {"all"}, "fingerprint.metadata")
+    if not isinstance(metadata.get("all") or {}, Mapping):
+        raise ValueError("fingerprint.metadata.all 必须是 object")
+    _validate_mapping_keys(metadata.get("all") or {}, "fingerprint.metadata.all")
+
+    style = value.get("style") or {}
+    if not isinstance(style, Mapping):
+        raise ValueError("fingerprint.style 必须是 object")
+    _only_fields(style, {"all"}, "fingerprint.style")
+    style_rules = style.get("all") or []
+    if not isinstance(style_rules, list) or any(not isinstance(item, Mapping) for item in style_rules):
+        raise ValueError("fingerprint.style.all 必须是 object 数组")
+    for item in style_rules:
+        if not item:
+            raise ValueError("fingerprint.style.all[] 不能为空")
+        _only_fields(item, ALLOWED_STYLE_FIELDS, "fingerprint.style.all[]")
+
+    has_matcher = bool(
+        identity.get("any")
+        or date_format.get("any")
+        or columns.get("all")
+        or metadata.get("all")
+        or style_rules
+    )
+    if not has_matcher:
+        raise ValueError("routing rule.fingerprint 至少需要一个稳定匹配条件")
+
+
 def _merge_rule(production_content: str, payload: Mapping[str, Any]) -> str:
     rules = yaml.safe_load(production_content) or []
     if not isinstance(rules, list) or any(not isinstance(item, dict) for item in rules):
@@ -51,6 +149,11 @@ def _merge_rule(production_content: str, payload: Mapping[str, Any]) -> str:
         raise ValueError(f"routing rule 缺少字段：{missing}")
     if rule.get("file_type") not in {"pdf", "excel"}:
         raise ValueError("routing rule.file_type 只允许 pdf 或 excel")
+    if rule.get("account_type") not in ALLOWED_ACCOUNT_TYPES:
+        raise ValueError("routing rule.account_type 只允许个人、对公或未知")
+    if not str(rule.get("bank") or "").strip():
+        raise ValueError("routing rule.bank 不能为空")
+    _validate_fingerprint(rule.get("fingerprint"))
     expected_rule_id = fingerprint_md5(rule.get("fingerprint") or {})
     declared_rule_id = str(rule.get("id") or "")
     if declared_rule_id and declared_rule_id != expected_rule_id:
@@ -169,8 +272,7 @@ def evaluate_routing_draft(
         check("syntax_and_target", False, str(exc))
 
     accepted = all(item["passed"] for item in checks)
-    output = {
-        "contract_version": 1,
+    output = render_protocol("policy-gate", {
         "run_id": run_dir.name,
         "stage_id": "stage_1_standardize",
         "status": "ACCEPTED" if accepted else "REJECTED",
@@ -181,6 +283,6 @@ def evaluate_routing_draft(
             if accepted else ""
         ),
         "snapshot_sha256": _sha256(snapshot_path) if accepted else "",
-    }
+    })
     atomic_write_json(attempt_root / "policy_gate.json", output)
     return output

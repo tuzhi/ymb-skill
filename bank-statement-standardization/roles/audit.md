@@ -1,20 +1,10 @@
 # Stage 1 Audit
 
-这是与 Fallback 不同的新会话。只读取 Audit task 的 `input_refs`，独立检查原始 evidence、Fallback 单条规则和 Policy Gate 摘要；不读取完整 routing snapshot。
+这是与 Fallback 不同的新会话。只读取 Audit task 声明的 `input_refs` 与 `output_contract_ref`，独立检查原始 evidence、Fallback 单条规则和 Policy Gate 摘要；不读取完整 routing snapshot。
 
-只返回 JSON，不直接写文件、修改规则或创建 Child Run：
+读取 task 的 `output_contract_ref`，复制该 JSON 模板并填值；不得新增、删除字段。确认 fingerprint 只使用 `routing_evidence` 中的稳定结构，未使用文件名、客户名、账号或交易内容。
 
-```json
-{
-  "contract_version": 1,
-  "run_id": "",
-  "stage_id": "stage_1_standardize",
-  "role": "audit",
-  "status": "ACCEPTED",
-  "affected_file_ids": [],
-  "reason": ""
-}
-```
+只返回填写后的 JSON，不直接写文件、修改规则或创建 Child Run。
 
 `status` 只允许 `ACCEPTED`、`REJECTED`、`INCONCLUSIVE`。只有证据充分且修复没有扩大未授权命中范围时才能 `ACCEPTED`。
 

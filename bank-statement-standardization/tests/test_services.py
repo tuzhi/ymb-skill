@@ -183,6 +183,7 @@ class StatementServiceTests(unittest.TestCase):
             run = Path(tmp) / "parent-run"
             run.mkdir()
             coordinator = mock.Mock()
+            coordinator.run_dir = run.resolve()
             coordinator.next.return_value = {
                 "contract_version": 1,
                 "run_id": "parent-run",
@@ -198,9 +199,9 @@ class StatementServiceTests(unittest.TestCase):
                 "--session-id",
                 "fallback-session",
                 "--result",
-                str(run / "result.json"),
+                str(Path(tmp) / "result.json"),
             ]
-            (run / "result.json").write_text("{}", encoding="utf-8")
+            (Path(tmp) / "result.json").write_text("{}", encoding="utf-8")
             output = io.StringIO()
             with (
                 mock.patch.object(coordinator_cli, "FallbackCoordinator", return_value=coordinator),
@@ -212,6 +213,35 @@ class StatementServiceTests(unittest.TestCase):
             coordinator.submit.assert_called_once()
             coordinator.next.assert_called_once_with()
             self.assertEqual(json.loads(output.getvalue())["status"], "NEED_AUDIT")
+
+    def test_coordinator_submit_rejects_prewrite_inside_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp) / "parent-run"
+            run.mkdir()
+            result_path = run / "fallback" / "attempt-01" / "fallback_result.json"
+            result_path.parent.mkdir(parents=True)
+            result_path.write_text("{}", encoding="utf-8")
+            coordinator = mock.Mock()
+            coordinator.run_dir = run.resolve()
+            argv = [
+                "fallback_coordinator.py",
+                "submit",
+                "--run-dir",
+                str(run),
+                "--role",
+                "fallback",
+                "--session-id",
+                "fallback-session",
+                "--result",
+                str(result_path),
+            ]
+            with (
+                mock.patch.object(coordinator_cli, "FallbackCoordinator", return_value=coordinator),
+                mock.patch.object(sys, "argv", argv),
+                self.assertRaisesRegex(ValueError, "Run 目录外"),
+            ):
+                coordinator_cli.main()
+            coordinator.submit.assert_not_called()
 
     def test_coordinator_auto_starts_child_and_returns_child_run_result(self):
         with tempfile.TemporaryDirectory() as tmp:

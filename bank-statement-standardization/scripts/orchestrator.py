@@ -31,6 +31,7 @@ from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
 from runtime.contracts import YAML_ROUTE_FIELDS, IntegrationContext, StageResult, yaml_route_summary
+from harness.protocols import render_protocol
 from ymb_standardization_core.readers.routing.rule_loader import build_routing_rules_snapshot
 
 
@@ -101,6 +102,20 @@ def failure_route_summary(route_info):
             return []
         return [str(item)[:240] for item in list(value)[:limit]]
 
+    def compact_structure(value, depth=0):
+        if depth >= 4:
+            return str(value)[:240]
+        if isinstance(value, dict):
+            return {
+                str(key)[:120]: compact_structure(item, depth + 1)
+                for key, item in list(value.items())[:30]
+            }
+        if isinstance(value, (list, tuple)):
+            return [compact_structure(item, depth + 1) for item in list(value)[:30]]
+        if isinstance(value, (bool, int, float)) or value is None:
+            return value
+        return str(value)[:240]
+
     return {
         "fingerprint_id": str(route.get("fingerprint_id") or route.get("id") or ""),
         "series_family": str(route.get("series_family") or ""),
@@ -112,6 +127,7 @@ def failure_route_summary(route_info):
         "columns_evidence": compact_values(route.get("columns_evidence")),
         "metadata_evidence": compact_values(route.get("metadata_evidence")),
         "missing_required_columns": compact_values(route.get("missing_required_columns")),
+        "routing_evidence": compact_structure(route.get("routing_evidence") or {}),
     }
 
 
@@ -847,8 +863,7 @@ class Runner:
             }
             for item in failed_files
         ]
-        return {
-            "contract_version": 1,
+        return render_protocol("evidence-bundle", {
             "run_id": self.run_id,
             "stage_id": stage_id,
             "reason_code": reason_code,
@@ -856,7 +871,7 @@ class Runner:
             "qc_summary": failed_qc,
             "skipped_inputs": list(self.manifest.get("skipped_inputs") or []),
             "error_summary": compact_text(error, 2000),
-        }
+        })
 
     def latest_artifact(self, pattern):
         hits = sorted(glob.glob(os.path.join(self.work_dir(), pattern)))
@@ -1666,8 +1681,7 @@ class Runner:
             exc,
         )
         R.atomic_write_json(evidence_path, evidence)
-        fallback_request = {
-            "contract_version": "bank-statement-standardization.fallback-request/v2",
+        fallback_request = render_protocol("fallback-request", {
             "run_id": self.run_id,
             "client": self.args.client,
             "stage_id": stage_id,
@@ -1683,7 +1697,7 @@ class Runner:
                 for item in failed_files
             ],
             "created_at": now(),
-        }
+        })
         fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
         R.atomic_write_json(fallback_request_path, fallback_request)
         fallback_artifacts = ["fallback_request.json", "evidence_bundle.json"]

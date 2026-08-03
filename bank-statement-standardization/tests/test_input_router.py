@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import re
 import sys
 import tempfile
@@ -32,6 +33,34 @@ def load_input_router():
     return module
 
 class InputRouterTests(unittest.TestCase):
+    def test_unmatched_excel_exposes_only_structural_routing_evidence(self):
+        module = load_input_router()
+        rows = [
+            ["测试银行企业账户收支明细"],
+            ["本企业名称", "本企业账号", "交易发生时间", "发生金额", "交易后余额"],
+            ["测试客户秘密", "6222021234567890", "2026-01-02 09:10:00", 100, 1100],
+        ]
+        context = {
+            "metadata": {"sheet": "企业流水", "creator": "Harness"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [
+                {"text": "测试银行企业账户收支明细", "bold": True, "row": 1, "col": 1},
+                {"text": "本企业名称", "bold": True, "row": 2, "col": 1},
+                {"text": "测试客户秘密", "row": 3, "col": 1},
+            ],
+        }
+
+        route = module.route_excel(rows, "企业流水", context=context, rules=[])
+        evidence = route["routing_evidence"]
+        encoded = json.dumps(evidence, ensure_ascii=False)
+
+        self.assertEqual(route["decision"], "unmatched")
+        self.assertEqual(evidence["identity_candidates"], ["测试银行企业账户收支明细"])
+        self.assertEqual(evidence["header_candidates"], [rows[1]])
+        self.assertEqual(evidence["date_patterns"], ["yyyy-mm-dd hh:mm:ss"])
+        self.assertNotIn("测试客户秘密", encoded)
+        self.assertNotIn("6222021234567890", encoded)
+
     def test_directional_payer_payee_biff_xls_route(self):
         module = load_input_router()
         header = [

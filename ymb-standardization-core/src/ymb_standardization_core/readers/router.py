@@ -1,6 +1,7 @@
 """PDF 模板路由决策。Reader 实现位于 readers.pdf。"""
 
 from ymb_standardization_core.readers.registry import pdf_reader_registry
+from ymb_standardization_core.readers.routing.evidence import build_pdf_routing_evidence
 from ymb_standardization_core.readers.routing.rule_loader import load_pdf_route_rules
 
 
@@ -51,7 +52,13 @@ def _pdf_candidate(id, reader_id, file_type, bank, account_type, series_family, 
     }
 
 
-def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=None):
+def _pdf_fallback(
+    evidence,
+    table_row_count,
+    page_count,
+    candidate_fingerprints=None,
+    routing_evidence=None,
+):
     reader_id = "pdfplumber_table" if table_row_count else "none"
     return {
         "reader_id": reader_id,
@@ -63,6 +70,7 @@ def _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=
         "dedupe_chars": False,
         "column_mapping": {},
         "candidate_fingerprints": candidate_fingerprints or [],
+        "routing_evidence": routing_evidence or {},
     }
 
 
@@ -91,14 +99,27 @@ def _choose_specific_candidate(candidates):
     return None
 
 
-def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candidate_fingerprints=None):
+def _decide_pdf_route(
+    candidates,
+    evidence,
+    table_row_count,
+    page_count,
+    candidate_fingerprints=None,
+    routing_evidence=None,
+):
     if len(candidates) == 1:
-        return candidates[0]
+        return {**candidates[0], "routing_evidence": routing_evidence or {}}
     if not candidates:
-        return _pdf_fallback(evidence, table_row_count, page_count, candidate_fingerprints=candidate_fingerprints)
+        return _pdf_fallback(
+            evidence,
+            table_row_count,
+            page_count,
+            candidate_fingerprints=candidate_fingerprints,
+            routing_evidence=routing_evidence,
+        )
     specific = _choose_specific_candidate(candidates)
     if specific:
-        return specific
+        return {**specific, "routing_evidence": routing_evidence or {}}
     return {
         "reader_id": "none",
         "decision": "ambiguous",
@@ -107,6 +128,7 @@ def _decide_pdf_route(candidates, evidence, table_row_count, page_count, candida
         "column_mapping": {},
         "candidates": candidates,
         "candidate_fingerprints": candidate_fingerprints or [],
+        "routing_evidence": routing_evidence or {},
     }
 
 
@@ -121,6 +143,10 @@ def route_pdf(text, table_row_count, page_count, context=None, rules=None):
     }
     candidates = []
     candidate_fingerprints = []
+    routing_evidence = build_pdf_routing_evidence(
+        context=context,
+        reader_id="pdfplumber_table" if table_row_count else "none",
+    )
 
     for rule in load_pdf_route_rules() if rules is None else rules:
         candidate = rule.fingerprint_candidate(text, context=context)
@@ -181,6 +207,7 @@ def route_pdf(text, table_row_count, page_count, context=None, rules=None):
         table_row_count,
         page_count,
         candidate_fingerprints=candidate_fingerprints,
+        routing_evidence=routing_evidence,
     )
 
 

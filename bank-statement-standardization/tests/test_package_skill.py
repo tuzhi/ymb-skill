@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 import zipfile
@@ -52,6 +53,26 @@ class PackageSkillTest(unittest.TestCase):
             names,
         )
         self.assertIn(
+            "bank-statement-standardization/harness/protocols/v1/"
+            "fallback-result.template.json",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/harness/protocols/v1/"
+            "audit-result.template.json",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/harness/protocols/v1/"
+            "retry-decision.template.json",
+            names,
+        )
+        self.assertIn(
+            "bank-statement-standardization/packages/ymb_standardization_core/"
+            "ymb_standardization_core/readers/routing/evidence.py",
+            names,
+        )
+        self.assertIn(
             "bank-statement-standardization/scripts/skill_entry.py",
             names,
         )
@@ -87,6 +108,9 @@ class PackageSkillTest(unittest.TestCase):
         self.assertTrue(package_skill._is_included(Path("runtime/qc.py")))
         self.assertTrue(package_skill._is_included(Path("services/statement_service.py")))
         self.assertTrue(package_skill._is_included(Path("harness/coordinator.py")))
+        self.assertTrue(package_skill._is_included(
+            Path("harness/protocols/v1/fallback-result.template.json")
+        ))
         self.assertTrue(package_skill._is_included(Path("roles/fallback.md")))
         self.assertTrue(package_skill._is_included(Path("roles/audit.md")))
         self.assertTrue(package_skill._is_included(Path("agents/openai.yaml")))
@@ -114,13 +138,23 @@ class PackageSkillTest(unittest.TestCase):
             for name in stale_names:
                 (Path(tmp) / name).write_text("stale", encoding="utf-8")
             archive = package_skill.package_harness_skill(SKILL_ROOT.parent, tmp)
-            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.2.zip")
+            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.4.zip")
             with zipfile.ZipFile(archive) as zf:
                 names = set(zf.namelist())
                 skill = zf.read("bank-statement-standardization/SKILL.md").decode("utf-8")
+                manifest = json.loads(zf.read(
+                    "bank-statement-standardization/assets/manifest.template.json"
+                ))
             self.assertIn("bank-statement-standardization/SKILL.md", names)
             self.assertIn("!`", skill)
             self.assertIn("$ARGUMENTS", skill)
+            self.assertIn("allowed-tools: Bash, Agent", skill)
+            self.assertIn('subagent_type="general-purpose"', skill)
+            self.assertIn("不得使用 `fork`", skill)
+            self.assertIn("不得设置 `resume`", skill)
+            self.assertIn("`subAgent.sessionId`", skill)
+            self.assertIn("元数据缺失时停止", skill)
+            self.assertEqual(manifest["skill"]["version"], "1.4.4")
             self.assertIn("bank-statement-standardization/roles/fallback.md", names)
             self.assertIn("bank-statement-standardization/roles/audit.md", names)
             self.assertFalse(any(name.startswith("bank-statement-fallback/") for name in names))

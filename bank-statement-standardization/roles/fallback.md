@@ -1,22 +1,10 @@
 # Stage 1 Fallback
 
-这是独立 AI 会话。只读取 task 的 `input_refs`，不要继承入口会话历史，不要读取整份原始流水、完整日志、源码或其他资料。
+这是独立 AI 会话。只读取 task 声明的 `input_refs` 与 `output_contract_ref`，不要继承入口会话历史，不要读取整份原始流水、完整日志、源码或其他资料。
+
+读取 task 的 `output_contract_ref`，复制该 JSON 模板并填值；不得新增、删除字段。Routing 草稿只允许使用 `evidence_bundle.json` 中的 `routing_evidence`（标题/表头/metadata/style/date pattern）；不得把文件名、客户名、账号或交易内容写进 fingerprint。证据不能支持的字段保持空值。
 
 只返回一个 JSON object，由宿主提交给 Coordinator；不要直接写文件。
-
-公共字段：
-
-```json
-{
-  "contract_version": 1,
-  "run_id": "",
-  "stage_id": "stage_1_standardize",
-  "role": "fallback",
-  "status": "",
-  "classification": "",
-  "affected_file_ids": []
-}
-```
 
 `status` 只允许：
 
@@ -28,24 +16,13 @@
 
 Routing 草稿只返回单条规则，由 Python 合并、测试和落盘：
 
-```json
-{
-  "status": "REPAIR_PROPOSED",
-  "repair_type": "ROUTING_RULE_DRAFT",
-  "repair_payload": {
-    "operation": "append",
-    "rule": {
-      "file_type": "pdf",
-      "bank": "",
-      "account_type": "",
-      "fingerprint": {},
-      "reader_id": ""
-    }
-  },
-  "limitations": []
-}
-```
+- `operation` 只允许 `append` 或 `replace`；新指纹使用 `append`。
+- `account_type` 只允许 `个人`、`对公`、`未知`。
+- fingerprint 只允许模板声明的 `identity.any`、`date_format.any`、`columns.all/optional`、`metadata.all`、`style.all`。
+- metadata 必须写在 `metadata.all`；style 必须写在 `style.all`，不使用 `metadata.sheet`、`style.any`、`title_pattern`、`header_columns` 等自定义字段。
+- style 精确字号用相同的 `size_min/size_max`，行列位置使用 `row_max/col_max`。
+- 不要自行增加或计算 `rule.id`；Python 会根据 fingerprint 计算 MD5。`operation=replace` 时填写 `target_rule_id`。
 
-不要自行计算 `rule.id`；Python 会根据 fingerprint 计算 MD5。`operation=replace` 时另加 `target_rule_id` 指向被收窄的现有规则。
+若 task 包含上一 attempt 的 result、拒绝结果或 Policy Gate，只修正其中明确指出的契约或门禁错误，不读取源码和生产规则。
 
 证据不能唯一支持银行、模板、字段或 reader 时，返回 `INSUFFICIENT_EVIDENCE`；不要猜测。不要提出密码、源码补丁、临时脚本或依赖安装。

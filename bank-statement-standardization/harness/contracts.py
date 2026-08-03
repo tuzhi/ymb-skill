@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Mapping
+
+from .protocols import normalize_protocol, render_protocol
 
 
 CONTRACT_VERSION = 1
@@ -18,6 +20,10 @@ UNSUPPORTED = "UNSUPPORTED"
 MAINTAINER_REQUIRED = "MAINTAINER_REQUIRED"
 CHILD_RUN_READY = "CHILD_RUN_READY"
 STOPPED = "STOPPED"
+ROLE_RESULT_PROTOCOLS = {
+    FALLBACK: "fallback-result",
+    AUDIT: "audit-result",
+}
 
 
 @dataclass(frozen=True)
@@ -29,15 +35,27 @@ class RoleTask:
     role_prompt_ref: str
     input_refs: tuple[str, ...]
     output_path: str
+    output_contract_ref: str
     fresh_session_required: bool = True
     inherit_chat_history: bool = False
     stage_id: str = STAGE_ID
     contract_version: int = CONTRACT_VERSION
 
     def to_dict(self) -> dict[str, Any]:
-        value = asdict(self)
-        value["input_refs"] = list(self.input_refs)
-        return value
+        return render_protocol("role-task", {
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "attempt": self.attempt,
+            "role": self.role,
+            "role_prompt_ref": self.role_prompt_ref,
+            "input_refs": list(self.input_refs),
+            "output_path": self.output_path,
+            "output_contract_ref": self.output_contract_ref,
+            "fresh_session_required": self.fresh_session_required,
+            "inherit_chat_history": self.inherit_chat_history,
+            "stage_id": self.stage_id,
+            "contract_version": self.contract_version,
+        })
 
 
 def _validate_common(payload: Mapping[str, Any], task: RoleTask) -> None:
@@ -59,10 +77,11 @@ def _string_list(value: object, name: str) -> list[str]:
 
 
 def validate_role_payload(role: str, payload: Mapping[str, Any], task: RoleTask) -> dict[str, Any]:
-    if not isinstance(payload, Mapping):
-        raise ValueError("角色输出必须是 JSON object")
-    _validate_common(payload, task)
-    value = dict(payload)
+    protocol = ROLE_RESULT_PROTOCOLS.get(role)
+    if protocol is None:
+        raise ValueError(f"未知角色：{role}")
+    value = normalize_protocol(protocol, payload)
+    _validate_common(value, task)
     affected = _string_list(value.get("affected_file_ids", []), "affected_file_ids")
 
     if role == FALLBACK:
@@ -87,6 +106,4 @@ def validate_role_payload(role: str, payload: Mapping[str, Any], task: RoleTask)
     elif role == AUDIT:
         if value.get("status") not in {"ACCEPTED", "REJECTED", "INCONCLUSIVE"}:
             raise ValueError("Audit status 无效")
-    else:
-        raise ValueError(f"未知角色：{role}")
     return value

@@ -10,9 +10,9 @@ import tempfile
 from threading import RLock
 import uuid
 
-# 导入运行时适配层以定位仓库/分发包中的 core，并完成 Excel reader 注册。
+# 导入运行时适配层以定位仓库/分发包中的 core。
 from runtime import standardize as _standardize  # noqa: F401
-from ymb_standardization_core.readers.input_router import read_rows
+from ymb_standardization_core.readers.input_router import configure_readers, read_rows
 from ymb_standardization_core.readers.routing.rule_loader import (
     activate_routing_rules_snapshot,
     build_routing_rules_snapshot,
@@ -21,6 +21,13 @@ from ymb_standardization_core.readers.routing.rule_loader import (
 )
 
 from .models import ArtifactStream, RuleDraft, RuleTestResult, RuleVersion
+
+
+configure_readers(
+    _standardize.read_rows_excel,
+    _standardize.read_rows_csv,
+    _standardize.NotABankStatement,
+)
 
 
 _DRAFT_LOCK = RLock()

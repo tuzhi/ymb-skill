@@ -5,7 +5,7 @@ description: >-
   用户提交 Excel、CSV、PDF 或 zip 流水文件，或要求流水清洗、合并、校验、打标、尽调底表时使用。
   调用 Skill 工具时把客户文件、目录或 zip 路径作为 args 传入；运行时执行 Orchestrator，
   并按紧凑 RunResult 完成交付或路由。
-allowed-tools: Bash
+allowed-tools: Bash, Agent
 ---
 
 # 银行流水标准化
@@ -21,6 +21,20 @@ allowed-tools: Bash
 - `DELIVER`：返回 `artifact_refs` 中的交付物，并直接使用 `summary` 说明文件数量和 QC。
 - `REQUEST_USER`：按 `message` 请求用户补充信息；有 `action` 时执行它，否则把用户补充的路径作为 `args` 重新调用本 Skill。
 - `REPORT_ERROR`：返回 `message` 和 `context_ref`。
-- `AI_FALLBACK`：执行 `action`，将后续角色交给确定性 Coordinator。
+- `AI_FALLBACK`：执行 `action`，按下方协议调度隔离角色。
 
 `next_action=DELIVER` 时任务完成。
+
+## 隔离角色调度
+
+Coordinator 返回 `NEED_FALLBACK` 或 `NEED_AUDIT` 时，必须调用一次 WorkBuddy `Agent` 工具：
+
+- `subagent_type="general-purpose"`；
+- `run_in_background=false`；
+- prompt 只包含 Coordinator 返回的完整 `task` JSON，以及“读取 `role_prompt_ref`、`input_refs`、`output_contract_ref`，只返回一个符合契约的 JSON object”；入口会话不得读取这些引用或扩写证据摘要；
+- 不得使用 `fork`，不得设置 `resume`，不得在当前会话内扮演该角色；
+- 每次重试、Fallback 和 Audit 都分别创建新的 Agent，不复用会话。
+
+Agent 返回后，只把它最终返回的 JSON 原样保存到 Run 目录外的临时文件；不得写入 task 的 `output_path`。使用 Agent 工具返回元数据中的 `subAgent.sessionId` 执行同一 Coordinator 的 `submit` 操作。元数据缺失时停止并报告错误；不得自行生成 session ID，不得在入口会话补写、修正或扩展角色结果。
+
+只有 `NEED_FALLBACK`、`NEED_AUDIT` 可以继续调度。`DELIVER`、`REQUEST_USER`、`REPORT_ERROR`、`UNSUPPORTED`、`MAINTAINER_REQUIRED`、`STOPPED` 都是终止状态；立即返回，不得删除、覆盖或重建任何 `attempt-*`，重试只能由 Coordinator 签发新的 attempt。

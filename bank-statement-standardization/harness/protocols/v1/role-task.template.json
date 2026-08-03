@@ -1,0 +1,14 @@
+{
+  "task_id": "",
+  "run_id": "",
+  "attempt": 0,
+  "role": "",
+  "role_prompt_ref": "",
+  "input_refs": [],
+  "output_path": "",
+  "output_contract_ref": "",
+  "fresh_session_required": true,
+  "inherit_chat_history": false,
+  "stage_id": "stage_1_standardize",
+  "contract_version": 1
+}
