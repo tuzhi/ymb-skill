@@ -5,7 +5,6 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
@@ -43,24 +42,43 @@ class SkillEntryTest(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(result["next_action"], "REQUEST_USER")
 
-    def test_valid_directory_executes_orchestrator_with_current_python(self):
+    def test_valid_directory_returns_fast_execution_plan(self):
         module = self.load_module()
         with tempfile.TemporaryDirectory() as tmp:
             input_path = Path(tmp) / "input"
             input_path.mkdir()
             run_root = Path(tmp) / "runs"
-            with patch.object(module.os, "execv") as execv:
-                status = module.main(
-                    ["--input", str(input_path), "--run-root", str(run_root)]
-                )
+            status, result = self.captured_result(
+                module,
+                ["--input", str(input_path), "--run-root", str(run_root)],
+            )
 
-        self.assertEqual(status, 1)
-        executable, command = execv.call_args.args
-        self.assertEqual(executable, module.sys.executable)
-        self.assertEqual(command[0], module.sys.executable)
-        self.assertEqual(command[2], "run")
-        self.assertEqual(command[3:5], ["--folder", str(input_path.resolve())])
-        self.assertEqual(command[5:7], ["--run-root", str(run_root.resolve())])
+            self.assertEqual(status, 0)
+            self.assertEqual(result["status"], "READY")
+            self.assertEqual(result["next_action"], "EXECUTE_PIPELINE")
+            self.assertEqual(result["action"]["timeout_ms"], 600_000)
+            command = result["action"]["argv"]
+            self.assertEqual(command[0], module.sys.executable)
+            self.assertEqual(command[2], "run")
+            self.assertEqual(command[3:5], ["--folder", str(input_path.resolve())])
+            self.assertEqual(command[5:7], ["--run-root", str(run_root.resolve())])
+            self.assertEqual(command[7:9], ["--run-id", result["run_id"]])
+            self.assertEqual(command[9], "--execution-plan-key")
+            self.assertFalse((run_root / result["run_id"]).exists())
+
+    def test_repeated_plan_reuses_run_id_until_pipeline_releases_it(self):
+        module = self.load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = Path(tmp) / "input"
+            input_path.mkdir()
+            run_root = Path(tmp) / "runs"
+            argv = ["--input", str(input_path), "--run-root", str(run_root)]
+
+            _, first = self.captured_result(module, argv)
+            _, second = self.captured_result(module, argv)
+
+            self.assertEqual(first["run_id"], second["run_id"])
+            self.assertEqual(first["action"]["command"], second["action"]["command"])
 
 
 if __name__ == "__main__":

@@ -141,8 +141,8 @@ class PackageSkillTest(unittest.TestCase):
             self.assertEqual(
                 [archive.name for archive in archives],
                 [
-                    "bank-statement-standardization_v1.4.6_macos.zip",
-                    "bank-statement-standardization_v1.4.6_windows.zip",
+                    "bank-statement-standardization_v1.4.7_macos.zip",
+                    "bank-statement-standardization_v1.4.7_windows.zip",
                 ],
             )
             expected_python = {
@@ -166,6 +166,9 @@ class PackageSkillTest(unittest.TestCase):
                 self.assertIn("$ARGUMENTS", skill)
                 self.assertIn("allowed-tools: Bash, Agent", skill)
                 self.assertIn("这是成功快速返回", skill)
+                self.assertIn("`EXECUTE_PIPELINE`", skill)
+                self.assertIn("timeout=action.timeout_ms", skill)
+                self.assertIn("不得扫描 `runs/`", skill)
                 self.assertIn("调用一次 `present_files`", skill)
                 self.assertIn(
                     "不得读取 `context_ref`、manifest、QC、报告或目录", skill
@@ -176,7 +179,7 @@ class PackageSkillTest(unittest.TestCase):
                 self.assertIn("不得设置 `resume`", skill)
                 self.assertIn("`subAgent.sessionId`", skill)
                 self.assertIn("元数据缺失时停止", skill)
-                self.assertEqual(manifest["skill"]["version"], "1.4.6")
+                self.assertEqual(manifest["skill"]["version"], "1.4.7")
                 self.assertIn("bank-statement-standardization/roles/fallback.md", names)
                 self.assertIn("bank-statement-standardization/roles/audit.md", names)
                 self.assertFalse(any(

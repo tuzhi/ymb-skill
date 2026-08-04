@@ -42,6 +42,8 @@ PENDING = "PENDING"
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
 TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
 MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
+RUN_ID_PATTERN = re.compile(r"^\d{8}T\d{6}[+-]\d{4}-[0-9a-f]{8}$")
+PLAN_KEY_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def configure_console():
@@ -52,6 +54,42 @@ def configure_console():
 
 def now():
     return datetime.now(LOCAL_TZ).isoformat()
+
+
+def claim_planned_run(run_root, run_id):
+    """原子认领预分配 Run；重复执行只能等待同一个 Run。"""
+    if not RUN_ID_PATTERN.fullmatch(str(run_id or "")):
+        raise ValueError("预分配 run_id 无效")
+    root = resolve_run_root(run_root)
+    os.makedirs(root, exist_ok=True)
+    run_dir = os.path.join(root, run_id)
+    try:
+        os.mkdir(run_dir)
+    except FileExistsError:
+        return run_dir, False
+    return run_dir, True
+
+
+def wait_for_run_result(run_dir, timeout_seconds, poll_seconds=0.25):
+    deadline = time.monotonic() + max(0.0, float(timeout_seconds))
+    result_path = os.path.join(run_dir, "run_result.json")
+    while time.monotonic() <= deadline:
+        result = read_json_if_exists(result_path, {})
+        if result:
+            return result
+        time.sleep(poll_seconds)
+    return {}
+
+
+def release_execution_plan(run_root, plan_key, run_id):
+    if not plan_key:
+        return
+    if not PLAN_KEY_PATTERN.fullmatch(str(plan_key)):
+        raise ValueError("execution plan key 无效")
+    plan_path = os.path.join(resolve_run_root(run_root), ".harness-plans", f"{plan_key}.json")
+    plan = read_json_if_exists(plan_path, {})
+    if plan and plan.get("run_id") == run_id:
+        os.unlink(plan_path)
 
 
 def safe_name(value):
@@ -474,8 +512,11 @@ class Runner:
         self.args = args
         self.skill_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.template_manifest_path = manifest_template_path(self.skill_dir)
+        planned_run_id = str(getattr(args, "run_id", "") or "")
+        if planned_run_id and not RUN_ID_PATTERN.fullmatch(planned_run_id):
+            raise ValueError("预分配 run_id 无效")
         stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
-        self.run_id = f"{stamp}-{uuid.uuid4().hex[:8]}"
+        self.run_id = planned_run_id or f"{stamp}-{uuid.uuid4().hex[:8]}"
         root = resolve_run_root(args.run_root)
         self.run_dir = os.path.join(root, self.run_id)
         self.out_dir = os.path.join(self.run_dir, "artifacts")
@@ -1872,13 +1913,34 @@ def main():
     ap.add_argument("--ai-repair-attempt-increment", type=int, default=0, help=argparse.SUPPRESS)
     ap.add_argument("--routing-rules-snapshot", help=argparse.SUPPRESS)
     ap.add_argument("--routing-rules-sha256", help=argparse.SUPPRESS)
+    ap.add_argument("--run-id", help=argparse.SUPPRESS)
+    ap.add_argument("--execution-plan-key", help=argparse.SUPPRESS)
+    ap.add_argument("--attach-timeout-seconds", type=float, default=600, help=argparse.SUPPRESS)
     args = ap.parse_args()
     args.client_arg_provided = bool(args.client)
     if not args.client:
         args.client = os.path.basename(os.path.abspath(args.folder).rstrip(os.sep)) or "未命名客户"
+    if args.run_id:
+        run_dir, claimed = claim_planned_run(args.run_root, args.run_id)
+        if not claimed:
+            result = wait_for_run_result(run_dir, args.attach_timeout_seconds)
+            if not result:
+                result = {
+                    "run_id": args.run_id,
+                    "status": "RUNNING",
+                    "next_action": R.REPORT_ERROR,
+                    "reason_code": "PIPELINE_ALREADY_RUNNING",
+                    "artifact_refs": [],
+                    "context_ref": "",
+                    "message": "同一执行计划仍在运行；未创建重复 Run",
+                    "contract_version": R.CONTRACT_VERSION,
+                }
+            print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+            return 0 if result.get("next_action") == R.DELIVER else 1
     runner = Runner(args)
     status = runner.execute()
     result = read_json_if_exists(runner.run_result_path, {})
+    release_execution_plan(args.run_root, args.execution_plan_key, runner.run_id)
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return status
 

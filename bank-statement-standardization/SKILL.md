@@ -18,12 +18,15 @@ allowed-tools: Bash, Agent
 
 读取上方输出最后一行的 `RunResult`，按 `next_action` 处理：
 
+- `EXECUTE_PIPELINE`：这是快速执行计划。把 `action.command` 原样调用一次 Bash，并设置 `timeout=action.timeout_ms`；不得改写命令、重复调用或并行启动。等待 Bash 返回后，再按其 stdout 最后一行的最终 `RunResult` 继续处理。
 - `DELIVER`：这是成功快速返回。仅将命令输出中 `[交付]` 后的绝对路径调用一次 `present_files`（宿主无此工具时直接返回 `artifact_refs`），随后只使用 `summary` 回复用户；不得调用其他工具，不得读取 `context_ref`、manifest、QC、报告或目录，不得写入 memory。
 - `REQUEST_USER`：按 `message` 请求用户补充信息；有 `action` 时执行它，否则把用户补充的路径作为 `args` 重新调用本 Skill。
 - `REPORT_ERROR`：返回 `message` 和 `context_ref`。
 - `AI_FALLBACK`：执行 `action`，按下方协议调度隔离角色。
 
 `next_action=DELIVER` 时，`RunResult` 已包含交付所需的全部事实，完成上述单次交付后立即结束任务。
+
+`EXECUTE_PIPELINE` 的 Bash 调用若超时、返回空 stdout 或工具异常，报告 `run_id` 和工具错误后立即停止；不得扫描 `runs/`、读取源码或再次启动 Pipeline。同一执行计划由程序保证只对应一个 Run。
 
 ## 隔离角色调度
 

@@ -12,6 +12,10 @@ from runtime import run_result as R
 
 
 class RunResultTests(unittest.TestCase):
+    def test_execution_plan_is_a_supported_entry_action(self):
+        result = R.RunResult("run-1", "READY", R.EXECUTE_PIPELINE)
+        self.assertEqual(result.next_action, "EXECUTE_PIPELINE")
+
     def test_password_exception_type_is_classified_even_without_message(self):
         class PDFPasswordIncorrect(Exception):
             pass
