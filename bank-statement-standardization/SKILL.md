@@ -14,16 +14,16 @@ allowed-tools: Bash, Agent
 
 以下命令由 WorkBuddy 在加载 Skill 时执行，先于 AI 后续决策：
 
-!`"${HOME}/.workbuddy/binaries/python/envs/default/bin/python" "${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" --input "$ARGUMENTS" --run-root "./runs"`
+!`python "${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" --input "$ARGUMENTS" --run-root "./runs"`
 
 读取上方输出最后一行的 `RunResult`，按 `next_action` 处理：
 
-- `DELIVER`：返回 `artifact_refs` 中的交付物，并直接使用 `summary` 说明文件数量和 QC。
+- `DELIVER`：这是成功快速返回。仅将命令输出中 `[交付]` 后的绝对路径调用一次 `present_files`（宿主无此工具时直接返回 `artifact_refs`），随后只使用 `summary` 回复用户；不得调用其他工具，不得读取 `context_ref`、manifest、QC、报告或目录，不得写入 memory。
 - `REQUEST_USER`：按 `message` 请求用户补充信息；有 `action` 时执行它，否则把用户补充的路径作为 `args` 重新调用本 Skill。
 - `REPORT_ERROR`：返回 `message` 和 `context_ref`。
 - `AI_FALLBACK`：执行 `action`，按下方协议调度隔离角色。
 
-`next_action=DELIVER` 时任务完成。
+`next_action=DELIVER` 时，`RunResult` 已包含交付所需的全部事实，完成上述单次交付后立即结束任务。
 
 ## 隔离角色调度
 
