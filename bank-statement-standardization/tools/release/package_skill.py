@@ -29,6 +29,15 @@ INCLUDED_TOP_LEVEL_DIRS = {
     "services",
 }
 HARNESS_SKILL_NAME = "bank-statement-standardization"
+PLATFORM_PYTHON = {
+    "macos": "${HOME}/.workbuddy/binaries/python/envs/default/bin/python",
+    "windows": "${HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe",
+}
+INLINE_ENTRY = (
+    '!`"${HOME}/.workbuddy/binaries/python/envs/default/bin/python" '
+    '"${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" '
+    '--input "$ARGUMENTS" --run-root "./runs"`'
+)
 
 
 def workspace_version(repo_root):
@@ -80,7 +89,20 @@ def _is_included(relative_path):
     return parts[0] in INCLUDED_TOP_LEVEL_DIRS
 
 
-def package_skill(skill_dir, output=None):
+def render_platform_skill(skill_text, target_platform):
+    python_path = PLATFORM_PYTHON.get(target_platform)
+    if not python_path:
+        raise ValueError(f"不支持的平台：{target_platform}")
+    if INLINE_ENTRY not in skill_text:
+        raise ValueError("SKILL.md 缺少标准内联入口，无法生成平台包")
+    platform_entry = (
+        f'!`"{python_path}" "${{CODEBUDDY_SKILL_DIR}}/scripts/skill_entry.py" '
+        '--input "$ARGUMENTS" --run-root "./runs"`'
+    )
+    return skill_text.replace(INLINE_ENTRY, platform_entry)
+
+
+def package_skill(skill_dir, output=None, *, target_platform=None):
     root = Path(skill_dir).resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"skill directory not found: {root}")
@@ -104,6 +126,13 @@ def package_skill(skill_dir, output=None):
             for filename in sorted(files):
                 rel_file = rel_dir / filename
                 if not _is_included(rel_file):
+                    continue
+                if target_platform and rel_file == Path("SKILL.md"):
+                    skill_text = (current_path / filename).read_text(encoding="utf-8")
+                    zf.writestr(
+                        (Path(top) / rel_file).as_posix(),
+                        render_platform_skill(skill_text, target_platform),
+                    )
                     continue
                 zf.write(current_path / filename, Path(top) / rel_file)
         repo_root = root.parent
@@ -133,7 +162,7 @@ def package_skill(skill_dir, output=None):
     return archive
 
 
-def package_harness_skill(repo_root, output_dir):
+def package_harness_skills(repo_root, output_dir):
     repo_root = Path(repo_root).resolve()
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -153,10 +182,17 @@ def package_harness_skill(repo_root, output_dir):
     ):
         for obsolete in output_dir.glob(pattern):
             obsolete.unlink()
-    return package_skill(
-        repo_root / HARNESS_SKILL_NAME,
-        output=output_dir / f"{HARNESS_SKILL_NAME}_v{version}.zip",
-    )
+    archives = []
+    for target_platform in PLATFORM_PYTHON:
+        archives.append(package_skill(
+            repo_root / HARNESS_SKILL_NAME,
+            output=(
+                output_dir
+                / f"{HARNESS_SKILL_NAME}_v{version}_{target_platform}.zip"
+            ),
+            target_platform=target_platform,
+        ))
+    return tuple(archives)
 
 
 def main():
@@ -169,10 +205,11 @@ def main():
 
     selected_root = Path(args.skill_dir).resolve()
     if selected_root == default_root and not args.output:
-        archive = package_harness_skill(default_root.parent, default_root / "dist")
+        archives = package_harness_skills(default_root.parent, default_root / "dist")
     else:
-        archive = package_skill(args.skill_dir, output=args.output)
-    print(archive)
+        archives = (package_skill(args.skill_dir, output=args.output),)
+    for archive in archives:
+        print(archive)
 
 
 if __name__ == "__main__":

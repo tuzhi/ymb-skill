@@ -121,7 +121,7 @@ class PackageSkillTest(unittest.TestCase):
         self.assertFalse(package_skill._is_included(Path("版本说明.md")))
         self.assertFalse(package_skill._is_included(Path("测试验证报告.md")))
 
-    def test_packages_one_versioned_harness_skill(self):
+    def test_packages_two_platform_harness_skills(self):
         package_skill = self.load_package_module()
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "harness-skill-hashes.json").write_text("stale", encoding="utf-8")
@@ -137,31 +137,51 @@ class PackageSkillTest(unittest.TestCase):
             )
             for name in stale_names:
                 (Path(tmp) / name).write_text("stale", encoding="utf-8")
-            archive = package_skill.package_harness_skill(SKILL_ROOT.parent, tmp)
-            self.assertEqual(archive.name, "bank-statement-standardization_v1.4.5.zip")
-            with zipfile.ZipFile(archive) as zf:
-                names = set(zf.namelist())
-                skill = zf.read("bank-statement-standardization/SKILL.md").decode("utf-8")
-                manifest = json.loads(zf.read(
-                    "bank-statement-standardization/assets/manifest.template.json"
+            archives = package_skill.package_harness_skills(SKILL_ROOT.parent, tmp)
+            self.assertEqual(
+                [archive.name for archive in archives],
+                [
+                    "bank-statement-standardization_v1.4.6_macos.zip",
+                    "bank-statement-standardization_v1.4.6_windows.zip",
+                ],
+            )
+            expected_python = {
+                "macos": "${HOME}/.workbuddy/binaries/python/envs/default/bin/python",
+                "windows": "${HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe",
+            }
+            for target_platform, archive in zip(expected_python, archives):
+                with self.subTest(platform=target_platform), zipfile.ZipFile(archive) as zf:
+                    names = set(zf.namelist())
+                    skill = zf.read(
+                        "bank-statement-standardization/SKILL.md"
+                    ).decode("utf-8")
+                    manifest = json.loads(zf.read(
+                        "bank-statement-standardization/assets/manifest.template.json"
+                    ))
+                self.assertIn("bank-statement-standardization/SKILL.md", names)
+                self.assertIn(f'!`"{expected_python[target_platform]}"', skill)
+                self.assertIn(
+                    '"${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py"', skill
+                )
+                self.assertIn("$ARGUMENTS", skill)
+                self.assertIn("allowed-tools: Bash, Agent", skill)
+                self.assertIn("这是成功快速返回", skill)
+                self.assertIn("调用一次 `present_files`", skill)
+                self.assertIn(
+                    "不得读取 `context_ref`、manifest、QC、报告或目录", skill
+                )
+                self.assertIn("不得写入 memory", skill)
+                self.assertIn('subagent_type="general-purpose"', skill)
+                self.assertIn("不得使用 `fork`", skill)
+                self.assertIn("不得设置 `resume`", skill)
+                self.assertIn("`subAgent.sessionId`", skill)
+                self.assertIn("元数据缺失时停止", skill)
+                self.assertEqual(manifest["skill"]["version"], "1.4.6")
+                self.assertIn("bank-statement-standardization/roles/fallback.md", names)
+                self.assertIn("bank-statement-standardization/roles/audit.md", names)
+                self.assertFalse(any(
+                    name.startswith("bank-statement-fallback/") for name in names
                 ))
-            self.assertIn("bank-statement-standardization/SKILL.md", names)
-            self.assertIn("!`", skill)
-            self.assertIn("$ARGUMENTS", skill)
-            self.assertIn("allowed-tools: Bash, Agent", skill)
-            self.assertIn("这是成功快速返回", skill)
-            self.assertIn("调用一次 `present_files`", skill)
-            self.assertIn("不得读取 `context_ref`、manifest、QC、报告或目录", skill)
-            self.assertIn("不得写入 memory", skill)
-            self.assertIn('subagent_type="general-purpose"', skill)
-            self.assertIn("不得使用 `fork`", skill)
-            self.assertIn("不得设置 `resume`", skill)
-            self.assertIn("`subAgent.sessionId`", skill)
-            self.assertIn("元数据缺失时停止", skill)
-            self.assertEqual(manifest["skill"]["version"], "1.4.5")
-            self.assertIn("bank-statement-standardization/roles/fallback.md", names)
-            self.assertIn("bank-statement-standardization/roles/audit.md", names)
-            self.assertFalse(any(name.startswith("bank-statement-fallback/") for name in names))
             self.assertFalse((Path(tmp) / "harness-skill-hashes.json").exists())
             for name in stale_names:
                 self.assertFalse((Path(tmp) / name).exists())

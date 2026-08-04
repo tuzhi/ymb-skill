@@ -5,7 +5,7 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.5 采用一个可安装 Skill、一个确定性 Coordinator 和两个按需 AI 角色：
+v1.4.6 采用一个 Skill 源码、两个 WorkBuddy 平台包、一个确定性 Coordinator 和两个按需 AI 角色：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -139,7 +139,8 @@ WorkBuddy 通过「技能/插件」目录加载 Agent Skill：
 mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbuddy/skills/
 ```
 - 若 WorkBuddy 提供图形界面：进入「设置 → 技能/Skills → 导入」，选择本目录或下方的
-  `bank-statement-standardization_v1.4.5.zip` 单文件导入或解压安装。
+  `bank-statement-standardization_v1.4.6_macos.zip` 或
+  `bank-statement-standardization_v1.4.6_windows.zip` 导入或解压安装。
 - 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
   Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
 
@@ -153,14 +154,15 @@ mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skil
 ```
 - 启动后用客户端的技能列表命令确认已加载。
 
-### 5) 单文件 `.zip` 分发（推荐发给同事/批量部署）
-本仓库可打包生成 `bank-statement-standardization_v1.4.5.zip`。三种装法：
+### 5) 平台 `.zip` 分发（推荐发给同事/批量部署）
+本仓库从同一份 Skill 源码生成两个包，业务文件完全相同，仅 `SKILL.md` 的 WorkBuddy Python 入口不同：
 ```bash
-# 通用：解压到目标客户端的 skills 目录（以 Kimi 为例）
-unzip bank-statement-standardization_v1.4.5.zip -d ~/.kimi/skills/
+# macOS
+unzip bank-statement-standardization_v1.4.6_macos.zip -d ~/.workbuddy/skills/
+# Windows 使用 bank-statement-standardization_v1.4.6_windows.zip
 ```
 - 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并生成一个 `bank-statement-standardization_v1.4.5.zip`。
+- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并同时生成 macOS/Windows 两个 zip。
   归档使用运行时白名单，只包含 Skill 入口、依赖清单、运行代码、资源和共享 core；源码维护文档不进 zip。
 
 ### 安装自检（任意客户端通用）

@@ -14,7 +14,7 @@ allowed-tools: Bash, Agent
 
 以下命令由 WorkBuddy 在加载 Skill 时执行，先于 AI 后续决策：
 
-!`python "${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" --input "$ARGUMENTS" --run-root "./runs"`
+!`"${HOME}/.workbuddy/binaries/python/envs/default/bin/python" "${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" --input "$ARGUMENTS" --run-root "./runs"`
 
 读取上方输出最后一行的 `RunResult`，按 `next_action` 处理：
 
