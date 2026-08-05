@@ -1,0 +1,63 @@
+{
+  "name": "bank-statement-standardization-expert",
+  "version": "1.0.3",
+  "description": "Deterministic bank statement standardization expert with isolated fallback and audit sessions",
+  "author": {
+    "name": "tuzhi",
+    "email": ""
+  },
+  "agents": [
+    "./agents/bank-statement-standardization-expert.md",
+    "./agents/bank-statement-fallback.md",
+    "./agents/bank-statement-audit.md"
+  ],
+  "expertType": "agent",
+  "agentName": "bank-statement-standardization-expert",
+  "displayName": {
+    "en": "Bank Statement Standardization Expert",
+    "zh": "流水标准化专家"
+  },
+  "profession": {
+    "en": "Bank Statement Standardization Specialist",
+    "zh": "流水标准化执行专家"
+  },
+  "displayDescription": {
+    "en": "Standardizes bank and payment statements with deterministic validation and delivery, then coordinates isolated diagnosis and audit sessions only when runtime evidence requires them.",
+    "zh": "专注银行及支付流水标准化，执行确定性清洗、整合、余额校验和交付，并在异常时调度隔离诊断与复核会话。"
+  },
+  "avatar": "avatars/expert.png",
+  "categoryId": "08-FinanceInvestment",
+  "defaultInitPrompt": {
+    "zh": "帮我标准化这份银行流水文件",
+    "en": "Help me standardize this bank statement file"
+  },
+  "plugin": "bank-statement-standardization-expert",
+  "tags": [
+    {
+      "en": "Bank Statements",
+      "zh": "银行流水"
+    },
+    {
+      "en": "Data Standardization",
+      "zh": "数据标准化"
+    },
+    {
+      "en": "Quality Assurance",
+      "zh": "质量校验"
+    }
+  ],
+  "quickPrompts": [
+    {
+      "en": "Process the bank statements in this directory",
+      "zh": "处理这个目录下的银行流水"
+    },
+    {
+      "en": "Standardize this bank statement zip file",
+      "zh": "标准化这个流水 zip 文件"
+    },
+    {
+      "en": "Diagnose and repair an unrecognized bank statement template",
+      "zh": "诊断并修复未识别的银行流水模板"
+    }
+  ]
+}
