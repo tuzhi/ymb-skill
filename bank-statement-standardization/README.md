@@ -5,7 +5,7 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.7 采用一个 Skill 源码、两个 WorkBuddy 平台包、一个确定性 Coordinator 和两个按需 AI 角色：
+v1.4.8 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和两个按需隔离 AI 角色：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -25,8 +25,9 @@ bank-statement-standardization/
 ├── requirements.txt         # Skill 分发包兼容安装清单，由根目录 pyproject.toml 同步
 ├── 测试验证报告.md           # 用 4 个真实案例做的验证结果
 ├── scripts/
-│   ├── skill_entry.py       # WorkBuddy 内联入口：快速生成幂等执行计划
-│   ├── orchestrator.py      # ★ 唯一正式生产入口：状态、回执、失败与交付
+│   ├── run-posix.sh         # macOS/Linux 有限候选 Python 启动器
+│   ├── run-windows.cmd      # Windows 有限候选 Python 启动器
+│   ├── orchestrator.py      # ★ Skill 直接调用的唯一正式入口；输入、Run 幂等、状态与交付
 │   └── fallback_coordinator.py # Fallback/Audit 结构化交接与 Child Run 授权
 ├── harness/                 # 确定性 Coordinator、角色契约和 Policy Gate
 ├── roles/                   # 仅由 Coordinator 指定的新会话按需读取
@@ -54,7 +55,7 @@ bank-statement-standardization/
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
-主 `SKILL.md` 不引用或预读 `roles/`；只有 Coordinator 生成独立会话 task 时，`role_prompt_ref` 才指向对应角色协议。
+主 `SKILL.md` 不引用或预读 `roles/`；只有 Coordinator 生成独立会话 task 时，`role_prompt_ref` 才指向对应角色协议。仓库同级的 `workbuddy-experts/bank-statement-standardization-expert/` 是可选规划层定义，不进入 Skill zip；只有它负责创建 Fallback/Audit Agent。
 
 开发用大体积数据与源码分离，默认放在仓库同级的
 `../ymb-skill-data/{testdata,testoutput,原始流水数据}`。如需使用其他位置，设置
@@ -102,21 +103,24 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 ## 安装到各类大模型客户端（Skill 安装说明）
 
 本技能遵循 Agent Skill 通用规范（一个含 `SKILL.md` 的目录），可装入任何兼容该规范的客户端。
+仓库内 `SKILL.md` 是含 `{{PLATFORM_INLINE_ENTRY}}` 的发布模板，不直接复制安装；应从 `dist/`
+选择操作系统对应的完整发行包。
 通用前提：使用客户端可调用的宿主机 `python`，推荐 Python 3.11+。源码仓库以根目录
 `pyproject.toml` 的 `standardization` 可选依赖组作为依赖事实源；缺少依赖时执行
 `python -m pip install -e ".[standardization]"`。仅拿到 Skill 分发包、没有仓库根目录 `pyproject.toml`
 时，在部署阶段执行一次 `python -m pip install -r requirements.txt`。`requirements.txt`
 是从 `pyproject.toml` 同步出来的兼容安装清单，不作为第二事实源。
 
-> 通用原理：只把 `bank-statement-standardization/` 放进客户端的「skills 目录」，
+> 通用原理：把平台发行包中的 `bank-statement-standardization/` 放进客户端的「skills 目录」，
 > 客户端读取 `SKILL.md` 的 `description`，在用户提到流水标准化/字段映射/流水合并去重/余额校验/
 > 交易打标/尽调底表等场景时自动调用。下面给出各客户端的目录位置与命令。
 
 ### 1) Claude Code / Claude 桌面端
 ```bash
 mkdir -p ~/.claude/skills
-cp -R bank-statement-standardization ~/.claude/skills/
+unzip dist/bank-statement-standardization_v1.4.8_macos.zip -d ~/.claude/skills/
 ```
+- Windows 使用 `bank-statement-standardization_v1.4.8_windows.zip`。
 - 项目级（仅当前项目可用）：放到项目根目录的 `.claude/skills/` 下。
 - 重启或新开会话后，说「帮我把这些银行流水标准化/出一份已清洗待分析表」即自动触发。
 
@@ -124,23 +128,19 @@ cp -R bank-statement-standardization ~/.claude/skills/
 Kimi Code 兼容 Claude Code 的 skill 机制，默认读取用户目录与项目目录下的 skills：
 ```bash
 # 用户级（全局可用）
-mkdir -p ~/.kimi/skills && cp -R bank-statement-standardization ~/.kimi/skills/
+mkdir -p ~/.kimi/skills
+unzip dist/bank-statement-standardization_v1.4.8_macos.zip -d ~/.kimi/skills/
 # 若你的 Kimi Code 复用 Claude 配置目录，则改放 ~/.claude/skills/（同上）
-# 项目级
-mkdir -p .kimi/skills && cp -R bank-statement-standardization .kimi/skills/
 ```
+- Windows 使用 `bank-statement-standardization_v1.4.8_windows.zip`。
 - 装好后用 `/skills`（或客户端内「技能/Skills」面板）确认已列出 `bank-statement-standardization`。
 - 国内网络无需代理；脚本仅用本地 Python，不联网。
 
 ### 3) WorkBuddy（职场助手客户端）
-WorkBuddy 通过「技能/插件」目录加载 Agent Skill：
-```bash
-# 用户级
-mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbuddy/skills/
-```
-- 若 WorkBuddy 提供图形界面：进入「设置 → 技能/Skills → 导入」，选择本目录或下方的
-  `bank-statement-standardization_v1.4.7_macos.zip` 或
-  `bank-statement-standardization_v1.4.7_windows.zip` 导入或解压安装。
+WorkBuddy 通过「技能/插件」目录加载 Agent Skill。进入「设置 → 技能/Skills → 导入」，按操作系统选择
+  `bank-statement-standardization_v1.4.8_macos.zip` 或
+  `bank-statement-standardization_v1.4.8_windows.zip`。需要完整 AI Fallback 时，再安装
+  `bank-statement-standardization-expert_v1.0.3.zip`。
 - 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
   Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
 
@@ -148,21 +148,24 @@ mkdir -p ~/.workbuddy/skills && cp -R bank-statement-standardization ~/.workbudd
 OpenClaw 兼容 Claude Code 的 skills/插件加载：
 ```bash
 # 用户级
-mkdir -p ~/.openclaw/skills && cp -R bank-statement-standardization ~/.openclaw/skills/
-# 项目级
-mkdir -p .openclaw/skills && cp -R bank-statement-standardization .openclaw/skills/
+mkdir -p ~/.openclaw/skills
+unzip dist/bank-statement-standardization_v1.4.8_macos.zip -d ~/.openclaw/skills/
 ```
+- Windows 使用 `bank-statement-standardization_v1.4.8_windows.zip`。
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 平台 `.zip` 分发（推荐发给同事/批量部署）
-本仓库从同一份 Skill 源码生成两个包，业务文件完全相同，仅 `SKILL.md` 的 WorkBuddy Python 入口不同：
+本仓库从同一份 Skill 源码生成两个互斥平台包，用户只安装其中一个：
 ```bash
 # macOS
-unzip bank-statement-standardization_v1.4.7_macos.zip -d ~/.workbuddy/skills/
-# Windows 使用 bank-statement-standardization_v1.4.7_windows.zip
+unzip bank-statement-standardization_v1.4.8_macos.zip -d ~/.workbuddy/skills/
+
+# Windows：通过 WorkBuddy 技能面板导入
+# bank-statement-standardization_v1.4.8_windows.zip
 ```
-- 支持「导入 zip」的客户端（如 WorkBuddy 图形界面）：直接在技能面板选择该文件导入。
-- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本并同时生成 macOS/Windows 两个 zip。
+- macOS 包只含 `run-posix.sh` 及对应 `!` 内联命令；Windows 包只含 `run-windows.cmd` 及对应 `!` 内联命令。Skill 触发时命令自动执行，不需要模型先阅读代码块再决定调用 Bash。两个包内部 Skill 名均为 `bank-statement-standardization`，不得同时安装。
+- 完整专家模式还需导入 `bank-statement-standardization-expert_v1.0.3.zip`；包内包含主专家以及受限的 Fallback/Audit 文字 Agent 定义，独立 Skill 遇到 `AI_FALLBACK` 时只返回结构化结果，不自行创建 Agent。
+- 重新打包（改动后）：运行 `python tools/release/package_skill.py`，从 `pyproject.toml` 读取版本，生成两个平台 Skill zip 和一个专家 zip。
   归档使用运行时白名单，只包含 Skill 入口、依赖清单、运行代码、资源和共享 core；源码维护文档不进 zip。
 
 ### 安装自检（任意客户端通用）

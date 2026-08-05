@@ -1,6 +1,6 @@
 # Stage 1 Fallback
 
-这是独立 AI 会话。只读取 task 声明的 `input_refs` 与 `output_contract_ref`，不要继承入口会话历史，不要读取整份原始流水、完整日志、源码或其他资料。
+这是独立 AI 会话。只读取 task 声明的 `input_refs` 与 `output_contract_ref`；相对 `input_refs` 必须以 task 的 `run_dir` 为基准解析。不要继承入口会话历史，不要读取整份原始流水、完整日志、源码或其他资料。
 
 读取 task 的 `output_contract_ref`，复制该 JSON 模板并填值；不得新增、删除字段。Routing 草稿只允许使用 `evidence_bundle.json` 中的 `routing_evidence`（标题/表头/metadata/style/date pattern）；不得把文件名、客户名、账号或交易内容写进 fingerprint。证据不能支持的字段保持空值。
 

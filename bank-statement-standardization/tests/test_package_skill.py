@@ -72,7 +72,7 @@ class PackageSkillTest(unittest.TestCase):
             "ymb_standardization_core/readers/routing/evidence.py",
             names,
         )
-        self.assertIn(
+        self.assertNotIn(
             "bank-statement-standardization/scripts/skill_entry.py",
             names,
         )
@@ -101,7 +101,7 @@ class PackageSkillTest(unittest.TestCase):
         package_skill = self.load_package_module()
 
         self.assertTrue(package_skill._is_included(Path("scripts/orchestrator.py")))
-        self.assertTrue(package_skill._is_included(Path("scripts/skill_entry.py")))
+        self.assertFalse((SKILL_ROOT / "scripts" / "skill_entry.py").exists())
         self.assertFalse((SKILL_ROOT / "scripts" / "standardize.py").exists())
         self.assertTrue(package_skill._is_included(Path("runtime/standardize.py")))
         self.assertTrue(package_skill._is_included(Path("runtime/integrate.py")))
@@ -134,6 +134,9 @@ class PackageSkillTest(unittest.TestCase):
                 "bank-statement-audit_v1.4.1.zip",
                 "bank-statement-fallback_v1.4.2.zip",
                 "bank-statement-audit_v1.4.2.zip",
+                "bank-statement-standardization_v1.4.7_macos.zip",
+                "bank-statement-standardization_v1.4.7_windows.zip",
+                "bank-statement-standardization_v1.4.8.zip",
             )
             for name in stale_names:
                 (Path(tmp) / name).write_text("stale", encoding="utf-8")
@@ -141,45 +144,56 @@ class PackageSkillTest(unittest.TestCase):
             self.assertEqual(
                 [archive.name for archive in archives],
                 [
-                    "bank-statement-standardization_v1.4.7_macos.zip",
-                    "bank-statement-standardization_v1.4.7_windows.zip",
+                    "bank-statement-standardization_v1.4.8_macos.zip",
+                    "bank-statement-standardization_v1.4.8_windows.zip",
                 ],
             )
-            expected_python = {
-                "macos": "${HOME}/.workbuddy/binaries/python/envs/default/bin/python",
-                "windows": "${HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe",
-            }
-            for target_platform, archive in zip(expected_python, archives):
-                with self.subTest(platform=target_platform), zipfile.ZipFile(archive) as zf:
-                    names = set(zf.namelist())
-                    skill = zf.read(
-                        "bank-statement-standardization/SKILL.md"
-                    ).decode("utf-8")
-                    manifest = json.loads(zf.read(
-                        "bank-statement-standardization/assets/manifest.template.json"
-                    ))
+            packages = {}
+            for archive in archives:
+                with zipfile.ZipFile(archive) as zf:
+                    packages[archive.name] = {
+                        "names": set(zf.namelist()),
+                        "skill": zf.read(
+                            "bank-statement-standardization/SKILL.md"
+                        ).decode("utf-8"),
+                        "manifest": json.loads(zf.read(
+                            "bank-statement-standardization/assets/manifest.template.json"
+                        )),
+                    }
+
+            macos = packages["bank-statement-standardization_v1.4.8_macos.zip"]
+            windows = packages["bank-statement-standardization_v1.4.8_windows.zip"]
+            posix_path = "bank-statement-standardization/scripts/run-posix.sh"
+            windows_path = "bank-statement-standardization/scripts/run-windows.cmd"
+            self.assertIn(posix_path, macos["names"])
+            self.assertNotIn(windows_path, macos["names"])
+            self.assertIn('!`sh "${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh"', macos["skill"])
+            self.assertIn("${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh", macos["skill"])
+            self.assertNotIn("run-windows.cmd", macos["skill"])
+            self.assertIn(windows_path, windows["names"])
+            self.assertNotIn(posix_path, windows["names"])
+            self.assertIn(
+                '!`cmd.exe /d /s /c ""${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd"',
+                windows["skill"],
+            )
+            self.assertIn(
+                "${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd",
+                windows["skill"],
+            )
+            self.assertNotIn("run-posix.sh", windows["skill"])
+            for packaged in packages.values():
+                names = packaged["names"]
+                skill = packaged["skill"]
                 self.assertIn("bank-statement-standardization/SKILL.md", names)
-                self.assertIn(f'!`"{expected_python[target_platform]}"', skill)
-                self.assertIn(
-                    '"${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py"', skill
-                )
+                self.assertEqual(skill.count("!`"), 1)
+                self.assertNotIn("{{PLATFORM_INLINE_ENTRY}}", skill)
+                self.assertNotIn("skill_entry.py", skill)
                 self.assertIn("$ARGUMENTS", skill)
-                self.assertIn("allowed-tools: Bash, Agent", skill)
-                self.assertIn("这是成功快速返回", skill)
-                self.assertIn("`EXECUTE_PIPELINE`", skill)
-                self.assertIn("timeout=action.timeout_ms", skill)
-                self.assertIn("不得扫描 `runs/`", skill)
-                self.assertIn("调用一次 `present_files`", skill)
-                self.assertIn(
-                    "不得读取 `context_ref`、manifest、QC、报告或目录", skill
-                )
-                self.assertIn("不得写入 memory", skill)
-                self.assertIn('subagent_type="general-purpose"', skill)
-                self.assertIn("不得使用 `fork`", skill)
-                self.assertIn("不得设置 `resume`", skill)
-                self.assertIn("`subAgent.sessionId`", skill)
-                self.assertIn("元数据缺失时停止", skill)
-                self.assertEqual(manifest["skill"]["version"], "1.4.7")
+                self.assertIn("allowed-tools: Bash", skill)
+                self.assertNotIn("allowed-tools: Bash, Agent", skill)
+                self.assertIn("独立 Skill 不创建 Agent", skill)
+                self.assertNotIn('subagent_type="general-purpose"', skill)
+                self.assertEqual(packaged["manifest"]["skill"]["version"], "1.4.8")
                 self.assertIn("bank-statement-standardization/roles/fallback.md", names)
                 self.assertIn("bank-statement-standardization/roles/audit.md", names)
                 self.assertFalse(any(
@@ -188,6 +202,89 @@ class PackageSkillTest(unittest.TestCase):
             self.assertFalse((Path(tmp) / "harness-skill-hashes.json").exists())
             for name in stale_names:
                 self.assertFalse((Path(tmp) / name).exists())
+
+    def test_platform_entry_template_must_have_exactly_one_placeholder(self):
+        package_skill = self.load_package_module()
+
+        with self.assertRaisesRegex(ValueError, "必须且只能包含一个"):
+            package_skill._render_platform_skill("no placeholder", "macos")
+        with self.assertRaisesRegex(ValueError, "必须且只能包含一个"):
+            package_skill._render_platform_skill(
+                "{{PLATFORM_INLINE_ENTRY}}\n{{PLATFORM_INLINE_ENTRY}}",
+                "windows",
+            )
+        with self.assertRaisesRegex(ValueError, "unsupported platform"):
+            package_skill._render_platform_skill(
+                "{{PLATFORM_INLINE_ENTRY}}",
+                "linux",
+            )
+
+    def test_packages_versioned_workbuddy_expert_separately(self):
+        package_skill = self.load_package_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = package_skill.package_workbuddy_expert(SKILL_ROOT.parent, tmp)
+            with zipfile.ZipFile(archive) as zf:
+                names = set(zf.namelist())
+                plugin = json.loads(zf.read(
+                    "bank-statement-standardization-expert/.workbuddy-plugin/plugin.json"
+                ))
+                agent = zf.read(
+                    "bank-statement-standardization-expert/agents/"
+                    "bank-statement-standardization-expert.md"
+                ).decode("utf-8")
+                fallback_agent = zf.read(
+                    "bank-statement-standardization-expert/agents/"
+                    "bank-statement-fallback.md"
+                ).decode("utf-8")
+                audit_agent = zf.read(
+                    "bank-statement-standardization-expert/agents/"
+                    "bank-statement-audit.md"
+                ).decode("utf-8")
+                avatar = zf.read(
+                    "bank-statement-standardization-expert/avatars/expert.png"
+                )
+
+        self.assertEqual(archive.name, "bank-statement-standardization-expert_v1.0.3.zip")
+        self.assertEqual(plugin["agentName"], "bank-statement-standardization-expert")
+        self.assertEqual(plugin["agents"], [
+            "./agents/bank-statement-standardization-expert.md",
+            "./agents/bank-statement-fallback.md",
+            "./agents/bank-statement-audit.md",
+        ])
+        self.assertIn("skills: [bank-statement-standardization]", agent)
+        self.assertNotIn("\ntools:", agent)
+        self.assertNotIn('subagent_type="general-purpose"', agent)
+        self.assertIn('subagent_type="bank-statement-fallback"', agent)
+        self.assertIn('subagent_type="bank-statement-audit"', agent)
+        self.assertIn("`subAgent.sessionId`", agent)
+        self.assertIn("不使用 `fork` 或 `resume`", agent)
+        self.assertIn("必须是新 Agent", agent)
+        self.assertNotIn("run-posix.sh", agent)
+        self.assertNotIn("run-windows.cmd", agent)
+        self.assertNotIn("\ntools:", fallback_agent)
+        self.assertIn("displayName:", fallback_agent)
+        self.assertIn("profession:", fallback_agent)
+        self.assertIn("maxTurns: 12", fallback_agent)
+        self.assertIn("role=fallback", fallback_agent)
+        self.assertNotIn("\ntools:", audit_agent)
+        self.assertIn("displayName:", audit_agent)
+        self.assertIn("profession:", audit_agent)
+        self.assertIn("maxTurns: 12", audit_agent)
+        self.assertIn("role=audit", audit_agent)
+        self.assertEqual(plugin["avatar"], "avatars/expert.png")
+        self.assertEqual(len(plugin["tags"]), 3)
+        self.assertEqual(len(plugin["quickPrompts"]), 3)
+        self.assertLessEqual(len(plugin["displayDescription"]["zh"]), 50)
+        self.assertGreaterEqual(len(plugin["displayDescription"]["zh"]), 40)
+        self.assertTrue(avatar.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(int.from_bytes(avatar[16:20], "big"), 512)
+        self.assertEqual(int.from_bytes(avatar[20:24], "big"), 512)
+        self.assertLess(len(avatar), 500 * 1024)
+        self.assertNotIn(
+            "bank-statement-standardization-expert/.codebuddy-plugin/plugin.json",
+            names,
+        )
+        self.assertEqual(len(names), 5)
 
 
 if __name__ == "__main__":

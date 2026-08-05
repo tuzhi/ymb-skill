@@ -139,6 +139,7 @@ class FallbackCoordinator:
         output_contract_ref = protocol_path(ROLE_RESULT_PROTOCOLS[role]).as_posix()
         seed = {
             "run_id": self.run_id,
+            "run_dir": self.run_dir.resolve().as_posix(),
             "attempt": self.attempt,
             "role": role,
             "role_prompt_ref": role_prompt_ref,
@@ -149,6 +150,7 @@ class FallbackCoordinator:
         return RoleTask(
             task_id=f"{self.run_id}:{self.attempt}:{role}:{_canonical_hash(seed)[:16]}",
             run_id=self.run_id,
+            run_dir=self.run_dir.resolve().as_posix(),
             attempt=self.attempt,
             role=role,
             role_prompt_ref=role_prompt_ref,

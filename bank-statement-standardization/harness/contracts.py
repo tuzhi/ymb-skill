@@ -30,6 +30,7 @@ ROLE_RESULT_PROTOCOLS = {
 class RoleTask:
     task_id: str
     run_id: str
+    run_dir: str
     attempt: int
     role: str
     role_prompt_ref: str
@@ -45,6 +46,7 @@ class RoleTask:
         return render_protocol("role-task", {
             "task_id": self.task_id,
             "run_id": self.run_id,
+            "run_dir": self.run_dir,
             "attempt": self.attempt,
             "role": self.role,
             "role_prompt_ref": self.role_prompt_ref,

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把当前 skill 打包成 .zip 归档。
+"""把平台 Skill 和可选 WorkBuddy 专家打包成 .zip 归档。
 
 归档写入 <skill_dir>/dist，并以 skill 目录作为 zip 顶层目录。
 源码测试、运行产物、原始流水、独立工具、dist 目录和本打包脚本自身会被排除。
 """
 import argparse
+import json
 import os
 import tomllib
 import zipfile
@@ -29,15 +30,26 @@ INCLUDED_TOP_LEVEL_DIRS = {
     "services",
 }
 HARNESS_SKILL_NAME = "bank-statement-standardization"
-PLATFORM_PYTHON = {
-    "macos": "${HOME}/.workbuddy/binaries/python/envs/default/bin/python",
-    "windows": "${HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe",
+EXPERT_NAME = "bank-statement-standardization-expert"
+EXPERT_SOURCE_RELATIVE = Path("workbuddy-experts") / EXPERT_NAME
+SUPPORTED_PLATFORMS = ("macos", "windows")
+PLATFORM_LAUNCHERS = {
+    "macos": Path("scripts") / "run-posix.sh",
+    "windows": Path("scripts") / "run-windows.cmd",
 }
-INLINE_ENTRY = (
-    '!`"${HOME}/.workbuddy/binaries/python/envs/default/bin/python" '
-    '"${CODEBUDDY_SKILL_DIR}/scripts/skill_entry.py" '
-    '--input "$ARGUMENTS" --run-root "./runs"`'
-)
+PLATFORM_ENTRY_PLACEHOLDER = "{{PLATFORM_INLINE_ENTRY}}"
+PLATFORM_INLINE_ENTRIES = {
+    "macos": (
+        '!`sh "${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh" '
+        '"${CODEBUDDY_SKILL_DIR}/scripts/orchestrator.py" run '
+        '--folder "$ARGUMENTS" --run-root "./runs"`'
+    ),
+    "windows": (
+        '!`cmd.exe /d /s /c ""${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd" '
+        '"${CODEBUDDY_SKILL_DIR}\\scripts\\orchestrator.py" run '
+        '--folder "$ARGUMENTS" --run-root ".\\runs""`'
+    ),
+}
 
 
 def workspace_version(repo_root):
@@ -89,25 +101,37 @@ def _is_included(relative_path):
     return parts[0] in INCLUDED_TOP_LEVEL_DIRS
 
 
-def render_platform_skill(skill_text, target_platform):
-    python_path = PLATFORM_PYTHON.get(target_platform)
-    if not python_path:
-        raise ValueError(f"不支持的平台：{target_platform}")
-    if INLINE_ENTRY not in skill_text:
-        raise ValueError("SKILL.md 缺少标准内联入口，无法生成平台包")
-    platform_entry = (
-        f'!`"{python_path}" "${{CODEBUDDY_SKILL_DIR}}/scripts/skill_entry.py" '
-        '--input "$ARGUMENTS" --run-root "./runs"`'
+def _render_platform_skill(content, platform):
+    """把单一 SKILL.md 发布变量渲染为指定平台的内联快速入口。"""
+    if platform not in SUPPORTED_PLATFORMS:
+        raise ValueError(f"unsupported platform: {platform}")
+    if content.count(PLATFORM_ENTRY_PLACEHOLDER) != 1:
+        raise ValueError("SKILL.md 必须且只能包含一个平台入口变量")
+    rendered = content.replace(
+        PLATFORM_ENTRY_PLACEHOLDER,
+        PLATFORM_INLINE_ENTRIES[platform],
     )
-    return skill_text.replace(INLINE_ENTRY, platform_entry)
+    if PLATFORM_ENTRY_PLACEHOLDER in rendered:
+        raise ValueError("SKILL.md 平台入口变量渲染失败")
+    return rendered.rstrip() + "\n"
 
 
-def package_skill(skill_dir, output=None, *, target_platform=None):
+def _include_platform_file(relative_path, platform):
+    if not platform:
+        return True
+    selected_launcher = PLATFORM_LAUNCHERS[platform]
+    platform_launchers = set(PLATFORM_LAUNCHERS.values())
+    return relative_path not in platform_launchers or relative_path == selected_launcher
+
+
+def package_skill(skill_dir, output=None, platform=None):
     root = Path(skill_dir).resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"skill directory not found: {root}")
     if not (root / "SKILL.md").is_file():
         raise FileNotFoundError(f"SKILL.md not found in skill directory: {root}")
+    if platform is not None and platform not in SUPPORTED_PLATFORMS:
+        raise ValueError(f"unsupported platform: {platform}")
 
     if output:
         archive = Path(output).resolve()
@@ -127,14 +151,15 @@ def package_skill(skill_dir, output=None, *, target_platform=None):
                 rel_file = rel_dir / filename
                 if not _is_included(rel_file):
                     continue
-                if target_platform and rel_file == Path("SKILL.md"):
-                    skill_text = (current_path / filename).read_text(encoding="utf-8")
-                    zf.writestr(
-                        (Path(top) / rel_file).as_posix(),
-                        render_platform_skill(skill_text, target_platform),
-                    )
+                if not _include_platform_file(rel_file, platform):
                     continue
-                zf.write(current_path / filename, Path(top) / rel_file)
+                source_path = current_path / filename
+                archive_path = Path(top) / rel_file
+                if platform and rel_file == Path("SKILL.md"):
+                    content = source_path.read_text(encoding="utf-8")
+                    zf.writestr(str(archive_path), _render_platform_skill(content, platform))
+                else:
+                    zf.write(source_path, archive_path)
         repo_root = root.parent
         core_project = repo_root / CORE_PACKAGE_SOURCE_RELATIVE
         core_source = core_project / "src"
@@ -182,17 +207,42 @@ def package_harness_skills(repo_root, output_dir):
     ):
         for obsolete in output_dir.glob(pattern):
             obsolete.unlink()
-    archives = []
-    for target_platform in PLATFORM_PYTHON:
-        archives.append(package_skill(
+    return tuple(
+        package_skill(
             repo_root / HARNESS_SKILL_NAME,
-            output=(
-                output_dir
-                / f"{HARNESS_SKILL_NAME}_v{version}_{target_platform}.zip"
-            ),
-            target_platform=target_platform,
-        ))
-    return tuple(archives)
+            output=output_dir / f"{HARNESS_SKILL_NAME}_v{version}_{platform}.zip",
+            platform=platform,
+        )
+        for platform in SUPPORTED_PLATFORMS
+    )
+
+
+def package_workbuddy_expert(repo_root, output_dir):
+    repo_root = Path(repo_root).resolve()
+    output_dir = Path(output_dir).resolve()
+    source = repo_root / EXPERT_SOURCE_RELATIVE
+    plugin_path = source / ".workbuddy-plugin" / "plugin.json"
+    if not plugin_path.is_file():
+        raise FileNotFoundError(f"expert plugin.json not found: {plugin_path}")
+    plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+    version = str(plugin.get("version") or "").strip()
+    if not version:
+        raise ValueError("expert plugin.json 缺少 version")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for obsolete in output_dir.glob(f"{EXPERT_NAME}_v*.zip"):
+        obsolete.unlink()
+    archive = output_dir / f"{EXPERT_NAME}_v{version}.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        for current, dirs, files in os.walk(source):
+            current_path = Path(current)
+            rel_dir = current_path.relative_to(source)
+            dirs[:] = sorted(d for d in dirs if d not in {"__pycache__"})
+            for filename in sorted(files):
+                if filename in {".DS_Store"} or filename.endswith((".pyc", ".pyo")):
+                    continue
+                rel_file = rel_dir / filename
+                zf.write(current_path / filename, Path(source.name) / rel_file)
+    return archive
 
 
 def main():
@@ -206,6 +256,7 @@ def main():
     selected_root = Path(args.skill_dir).resolve()
     if selected_root == default_root and not args.output:
         archives = package_harness_skills(default_root.parent, default_root / "dist")
+        archives += (package_workbuddy_expert(default_root.parent, default_root / "dist"),)
     else:
         archives = (package_skill(args.skill_dir, output=args.output),)
     for archive in archives:

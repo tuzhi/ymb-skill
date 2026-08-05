@@ -44,6 +44,7 @@ TOKEN_VAULT_SECRET_FILENAMES = {"token_vault_manifest.json"}
 MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
 RUN_ID_PATTERN = re.compile(r"^\d{8}T\d{6}[+-]\d{4}-[0-9a-f]{8}$")
 PLAN_KEY_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+PLAN_DIR_NAME = ".harness-plans"
 
 
 def configure_console():
@@ -54,6 +55,105 @@ def configure_console():
 
 def now():
     return datetime.now(LOCAL_TZ).isoformat()
+
+
+def new_run_id():
+    stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
+    return f"{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def execution_plan_key(input_path):
+    return hashlib.sha256(os.path.realpath(input_path).encode("utf-8")).hexdigest()
+
+
+def load_or_create_execution_plan(input_path, run_root):
+    """同一工作空间、同一输入在当前执行完成前复用一个 Run。"""
+    source = os.path.realpath(input_path)
+    root = resolve_run_root(run_root)
+    key = execution_plan_key(source)
+    plan_dir = os.path.join(root, PLAN_DIR_NAME)
+    os.makedirs(plan_dir, exist_ok=True)
+    plan_path = os.path.join(plan_dir, f"{key}.json")
+
+    while True:
+        run_id = new_run_id()
+        payload = {
+            "contract_version": R.CONTRACT_VERSION,
+            "plan_key": key,
+            "run_id": run_id,
+            "input_path": source,
+            "created_at": now(),
+        }
+        try:
+            descriptor = os.open(plan_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            try:
+                existing = read_json_if_exists(plan_path, {})
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"执行计划损坏：{plan_path}") from exc
+            existing_run_id = str(existing.get("run_id") or "").strip()
+            if not existing_run_id or existing.get("input_path") != source:
+                raise RuntimeError(f"执行计划内容无效：{plan_path}")
+            return existing_run_id, key
+        else:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(payload, stream, ensure_ascii=False, separators=(",", ":"))
+                stream.write("\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            return run_id, key
+
+
+def entry_result(next_action, message, *, reason_code="", status="ERROR", context_ref=""):
+    return {
+        "run_id": "",
+        "status": status,
+        "next_action": next_action,
+        "reason_code": reason_code,
+        "artifact_refs": [],
+        "context_ref": context_ref,
+        "message": message,
+        "contract_version": R.CONTRACT_VERSION,
+    }
+
+
+def validate_input_source(raw_folder):
+    value = str(raw_folder or "").strip()
+    if not value or value == "$ARGUMENTS":
+        return "", entry_result(
+            R.REQUEST_USER,
+            "请提供客户流水目录或 zip 路径",
+            reason_code="INPUT_SOURCE_INVALID",
+            status="BLOCKED",
+        )
+    source = os.path.abspath(os.path.expanduser(value))
+    if not os.path.exists(source):
+        return source, entry_result(
+            R.REQUEST_USER,
+            f"输入路径不存在：{source}",
+            reason_code="INPUT_SOURCE_INVALID",
+            status="BLOCKED",
+        )
+    if not os.path.isdir(source) and not (
+        os.path.isfile(source) and source.lower().endswith(".zip")
+    ):
+        return source, entry_result(
+            R.REQUEST_USER,
+            "请输入流水目录或 zip 文件",
+            reason_code="INPUT_SOURCE_INVALID",
+            status="BLOCKED",
+        )
+    return source, None
+
+
+def protocol_exit_status(result, fallback_status=1):
+    if (
+        isinstance(result, dict)
+        and result.get("contract_version") == R.CONTRACT_VERSION
+        and result.get("next_action") in R.NEXT_ACTIONS
+    ):
+        return 0
+    return fallback_status
 
 
 def claim_planned_run(run_root, run_id):
@@ -515,8 +615,7 @@ class Runner:
         planned_run_id = str(getattr(args, "run_id", "") or "")
         if planned_run_id and not RUN_ID_PATTERN.fullmatch(planned_run_id):
             raise ValueError("预分配 run_id 无效")
-        stamp = datetime.now(LOCAL_TZ).strftime("%Y%m%dT%H%M%S%z")
-        self.run_id = planned_run_id or f"{stamp}-{uuid.uuid4().hex[:8]}"
+        self.run_id = planned_run_id or new_run_id()
         root = resolve_run_root(args.run_root)
         self.run_dir = os.path.join(root, self.run_id)
         self.out_dir = os.path.join(self.run_dir, "artifacts")
@@ -1887,7 +1986,7 @@ class Runner:
             return 1
 
 
-def main():
+def main(argv=None):
     configure_console()
     ap = argparse.ArgumentParser(description="银行流水标准化正式生产编排器")
     ap.add_argument("command", choices=["run"], help="正式执行流水线")
@@ -1916,10 +2015,29 @@ def main():
     ap.add_argument("--run-id", help=argparse.SUPPRESS)
     ap.add_argument("--execution-plan-key", help=argparse.SUPPRESS)
     ap.add_argument("--attach-timeout-seconds", type=float, default=600, help=argparse.SUPPRESS)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+    source, input_result = validate_input_source(args.folder)
+    if input_result:
+        print(json.dumps(input_result, ensure_ascii=False, separators=(",", ":")))
+        return 0
+    args.folder = source
     args.client_arg_provided = bool(args.client)
     if not args.client:
         args.client = os.path.basename(os.path.abspath(args.folder).rstrip(os.sep)) or "未命名客户"
+    if not args.run_id:
+        try:
+            args.run_id, args.execution_plan_key = load_or_create_execution_plan(
+                args.folder,
+                args.run_root,
+            )
+        except RuntimeError as exc:
+            result = entry_result(
+                R.REPORT_ERROR,
+                str(exc),
+                reason_code="EXECUTION_PLAN_INVALID",
+            )
+            print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+            return 0
     if args.run_id:
         run_dir, claimed = claim_planned_run(args.run_root, args.run_id)
         if not claimed:
@@ -1936,13 +2054,13 @@ def main():
                     "contract_version": R.CONTRACT_VERSION,
                 }
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-            return 0 if result.get("next_action") == R.DELIVER else 1
+            return protocol_exit_status(result)
     runner = Runner(args)
     status = runner.execute()
     result = read_json_if_exists(runner.run_result_path, {})
     release_execution_plan(args.run_root, args.execution_plan_key, runner.run_id)
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-    return status
+    return protocol_exit_status(result, status)
 
 
 if __name__ == "__main__":

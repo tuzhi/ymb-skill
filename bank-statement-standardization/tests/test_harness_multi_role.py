@@ -86,6 +86,11 @@ class HarnessMultiRoleTests(unittest.TestCase):
             coordinator = FallbackCoordinator(run)
             first = coordinator.next()
             self.assertEqual(first["status"], NEED_FALLBACK)
+            self.assertEqual(first["task"]["run_dir"], run.resolve().as_posix())
+            self.assertTrue(all(
+                (Path(first["task"]["run_dir"]) / ref).is_file()
+                for ref in first["task"]["input_refs"]
+            ))
             self.assertTrue(first["task"]["role_prompt_ref"].endswith("/roles/fallback.md"))
             self.assertEqual(
                 first["task"]["output_contract_ref"],
@@ -115,6 +120,11 @@ class HarnessMultiRoleTests(unittest.TestCase):
             with patch("harness.coordinator.evaluate_routing_draft", side_effect=accepted_gate):
                 second = coordinator.next()
             self.assertEqual(second["status"], NEED_AUDIT)
+            self.assertEqual(second["task"]["run_dir"], run.resolve().as_posix())
+            self.assertTrue(all(
+                (Path(second["task"]["run_dir"]) / ref).is_file()
+                for ref in second["task"]["input_refs"]
+            ))
             self.assertTrue(second["task"]["role_prompt_ref"].endswith("/roles/audit.md"))
             self.assertEqual(
                 second["task"]["output_contract_ref"],

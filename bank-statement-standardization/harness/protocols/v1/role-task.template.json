@@ -1,6 +1,7 @@
 {
   "task_id": "",
   "run_id": "",
+  "run_dir": "",
   "attempt": 0,
   "role": "",
   "role_prompt_ref": "",
