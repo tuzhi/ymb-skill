@@ -548,63 +548,44 @@ class OrchestratorManifestTest(unittest.TestCase):
 
             data = json.loads(runtime.read_text(encoding="utf-8"))
             stage = data["stage_1_standardize"]
-            self.assertFalse(stage["ai_fallback_used"])
-            self.assertEqual(stage["ai_fallback_artifacts"], [])
+            self.assertNotIn("ai_fallback_used", stage)
+            self.assertNotIn("ai_fallback_artifacts", stage)
             self.assertNotIn("ai_fallback_dir", stage)
             self.assertNotIn("started_at", stage)
             self.assertIsNone(stage["duration_seconds"])
             self.assertNotIn("script", stage)
             self.assertNotIn("validator", stage)
             self.assertEqual(stage["status"], "")
-            self.assertEqual(stage["ai_fallback_info"], "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。")
+            self.assertNotIn("ai_fallback_info", stage)
+            self.assertNotIn("ai_fallback_refs", stage)
 
-    def test_load_parent_run_context_collects_fallbacks(self):
+    def test_load_parent_run_context_reads_current_attempts(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_root = Path(tmp) / "runs"
             parent = run_root / "parent-run"
-            fallback = parent / "fallback" / "stage_1_standardize"
-            fallback.mkdir(parents=True)
-            (fallback / "fallback_request.json").write_text("{}", encoding="utf-8")
+            parent.mkdir(parents=True)
             (parent / "manifest.json").write_text(
                 json.dumps(
                     {
+                        "client": "斑马商业",
+                        "password_attempt": 1,
+                        "ai_repair_attempt": 1,
                         "stage_1_standardize": {
                             "name": "stage 1",
-                            "script": "scripts/standardize.py",
-                            "validator": "scripts/validate_stage.py::validate_standardize",
-                            "ai_fallback_used": True,
-                            "ai_fallback_dir": str(fallback),
-                            "ai_fallback_artifacts": ["fallback_request.json", "patch_header_nan_fix.py"],
                             "status": "ERROR",
-                        },
-                        "stage_2_integrate": {
-                            "ai_fallback_used": False,
-                            "ai_fallback_dir": "",
-                            "ai_fallback_artifacts": [],
-                            "status": "",
                         },
                     },
                     ensure_ascii=False,
                 ),
                 encoding="utf-8",
             )
-            (parent / "run_manifest.json").write_text(
-                json.dumps({"run_id": "parent-run", "status": "error", "error": "CSV 无交易数据"}, ensure_ascii=False),
-                encoding="utf-8",
-            )
 
             context = orchestrator.load_parent_run_context(str(run_root), "parent-run")
 
             self.assertEqual(context["parent_run_id"], "parent-run")
-            self.assertEqual(context["parent_status"], "error")
-            self.assertEqual(context["parent_error"], "CSV 无交易数据")
-            self.assertEqual(len(context["inherited_fallbacks"]), 1)
-            inherited = context["inherited_fallbacks"][0]
-            self.assertEqual(inherited["stage"], "stage_1_standardize")
-            self.assertEqual(inherited["parent_status"], "ERROR")
-            self.assertEqual(inherited["parent_fallback_artifacts"], ["fallback_request.json", "patch_header_nan_fix.py"])
-            self.assertNotIn("script", inherited)
-            self.assertNotIn("validator", inherited)
+            self.assertEqual(context["parent_client"], "斑马商业")
+            self.assertEqual(context["password_attempt"], 1)
+            self.assertEqual(context["ai_repair_attempt"], 1)
 
     def test_load_parent_run_context_rejects_missing_parent(self):
         with tempfile.TemporaryDirectory() as tmp:

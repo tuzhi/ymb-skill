@@ -115,7 +115,7 @@ class ExecutionPlanTest(unittest.TestCase):
     def test_valid_business_run_result_uses_zero_process_status(self):
         result = {
             "contract_version": 1,
-            "next_action": "AI_FALLBACK",
+            "next_action": "NEED_REPAIR",
         }
 
         self.assertEqual(self.orchestrator.protocol_exit_status(result), 0)
@@ -129,10 +129,10 @@ class ExecutionPlanTest(unittest.TestCase):
             final_result = {
                 "run_id": "",
                 "status": "ERROR",
-                "next_action": "AI_FALLBACK",
+                "next_action": "NEED_REPAIR",
                 "reason_code": "ROUTE_UNMATCHED",
                 "artifact_refs": [],
-                "context_ref": "fallback_request.json",
+                "context_ref": "stage_1_results.json",
                 "message": "需要诊断",
                 "contract_version": 1,
             }
@@ -151,7 +151,19 @@ class ExecutionPlanTest(unittest.TestCase):
                     return 1
 
             output = StringIO()
-            with patch.object(self.orchestrator, "Runner", FakeRunner), redirect_stdout(output):
+            public_result = {
+                "contract_version": 1,
+                "run_id": "run-1",
+                "attempt": 1,
+                "status": "NEED_REPAIR",
+                "role": "repair",
+                "request": {},
+            }
+            with (
+                patch.object(self.orchestrator, "Runner", FakeRunner),
+                patch.object(self.orchestrator, "public_result", return_value=public_result),
+                redirect_stdout(output),
+            ):
                 status = self.orchestrator.main([
                     "run",
                     "--folder", str(input_path),
@@ -160,7 +172,7 @@ class ExecutionPlanTest(unittest.TestCase):
 
             result = json.loads(output.getvalue())
             self.assertEqual(status, 0)
-            self.assertEqual(result["next_action"], "AI_FALLBACK")
+            self.assertEqual(result["status"], "NEED_REPAIR")
             self.assertFalse(any((run_root / ".harness-plans").glob("*.json")))
 
 

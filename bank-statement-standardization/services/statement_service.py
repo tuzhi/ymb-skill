@@ -58,8 +58,8 @@ class StatementService:
         parent_run_id: str | None = None,
         remove_file_ids: Iterable[str] | None = None,
         file_passwords: Mapping[str, str] | None = None,
-        routing_rules_snapshot: str | os.PathLike[str] | None = None,
-        routing_rules_sha256: str | None = None,
+        repair_result_snapshot: str | os.PathLike[str] | None = None,
+        repair_result_sha256: str | None = None,
     ) -> RunReference:
         uploads = list(files or [])
         removed = list(remove_file_ids or [])
@@ -69,8 +69,8 @@ class StatementService:
             raise ValueError("remove_file_ids 只能用于增量运行")
         if parent_run_id and client_name:
             raise ValueError("增量运行的 client_name 必须从父 Run 继承")
-        if (file_passwords or routing_rules_snapshot) and not parent_run_id:
-            raise ValueError("密码或 routing snapshot 只能用于显式 Child Run")
+        if (file_passwords or repair_result_snapshot) and not parent_run_id:
+            raise ValueError("密码或 Repair snapshot 只能用于显式 Child Run")
 
         staging = Path(tempfile.mkdtemp(prefix="statement-input-"))
         try:
@@ -106,15 +106,15 @@ class StatementService:
                     changed,
                     removed,
                     password_retry=password_retry,
-                    ai_repair=bool(routing_rules_snapshot),
+                    ai_repair=bool(repair_result_snapshot),
                 ),
                 account_type=None,
                 file_sleep_seconds=0,
                 verbose=False,
                 password_attempt_increment=1 if password_retry else 0,
-                ai_repair_attempt_increment=1 if routing_rules_snapshot else 0,
-                routing_rules_snapshot=str(routing_rules_snapshot or ""),
-                routing_rules_sha256=str(routing_rules_sha256 or ""),
+                ai_repair_attempt_increment=1 if repair_result_snapshot else 0,
+                repair_result_snapshot=str(repair_result_snapshot or ""),
+                repair_result_sha256=str(repair_result_sha256 or ""),
             )
             runner = Runner(args)
         finally:
@@ -151,12 +151,7 @@ class StatementService:
                 "stage_1": (stage_1_results.get("files") or {}).get(file_id, {}),
             })
 
-        fallback = _read_json(
-            run_dir / "fallback" / "stage_1_standardize" / "fallback_request.json",
-            {},
-        )
-        error = self._error_summary(run_dir, fallback)
-        public_fallback = self._public_value(fallback, run_dir)
+        error = self._error_summary(run_dir)
         return RunDetail(
             run_id=run_id,
             parent_run_id=str(manifest.get("parent_run_id") or ""),
@@ -169,57 +164,7 @@ class StatementService:
             analysis=self._analysis(run_dir),
             artifacts=self._artifact_entries(run_dir),
             run_result=_read_json(run_dir / "run_result.json", {}),
-            fallback=public_fallback,
             error=error,
-        )
-
-    def start_child_run_from_request(
-        self,
-        parent_run_id: str,
-        request_ref: str,
-    ) -> RunReference:
-        parent_dir = self._run_dir(parent_run_id)
-        request_path = (parent_dir / request_ref).resolve()
-        if parent_dir not in request_path.parents or not request_path.is_file():
-            raise FileNotFoundError("child_run_request 不存在或路径越界")
-        request = _read_json(request_path, {})
-        if request.get("parent_run_id") != parent_run_id:
-            raise ValueError("child_run_request parent_run_id 不匹配")
-        authorized = request.get("authorized_by") or {}
-        gate_path = (parent_dir / str(authorized.get("policy_gate") or "")).resolve()
-        audit_path = (parent_dir / str(authorized.get("audit") or "")).resolve()
-        for path in (gate_path, audit_path):
-            if parent_dir not in path.parents or not path.is_file():
-                raise ValueError("Child Run 授权证据缺失或越界")
-        gate = _read_json(gate_path, {})
-        audit = _read_json(audit_path, {})
-        if gate.get("status") != "ACCEPTED":
-            raise RuntimeError("Policy Gate 未授权高风险修复")
-        if audit.get("status") != "ACCEPTED":
-            raise RuntimeError("Audit 未授权 Child Run")
-        receipt_path = audit_path.parent / "session-receipts" / "audit.json"
-        receipt = _read_json(receipt_path, {})
-        if receipt.get("output_sha256") != self._sha256_path(audit_path):
-            raise RuntimeError("Audit checksum 无效")
-
-        snapshot = (parent_dir / str(request.get("routing_rules_snapshot") or "")).resolve()
-        if parent_dir not in snapshot.parents or not snapshot.is_file():
-            raise ValueError("routing snapshot 缺失或越界")
-        expected_sha256 = str(request.get("routing_rules_sha256") or "")
-        if not expected_sha256 or self._sha256_path(snapshot) != expected_sha256:
-            raise RuntimeError("routing snapshot checksum 无效")
-        parent_manifest = _read_json(parent_dir / "manifest.json", {})
-        if (
-            int(parent_manifest.get("ai_repair_attempt") or 0)
-            >= R.MAX_AI_REPAIR_ATTEMPTS
-        ):
-            raise RuntimeError("AI 修复次数已达上限")
-        return self.start_run(
-            None,
-            [],
-            parent_run_id=parent_run_id,
-            routing_rules_snapshot=snapshot,
-            routing_rules_sha256=expected_sha256,
         )
 
     def get_artifact(self, run_id: str, artifact_id: str) -> ArtifactStream:
@@ -370,7 +315,7 @@ class StatementService:
         if password_retry:
             return "password_retry"
         if ai_repair:
-            return "ai_fallback_after_stage_1_failure"
+            return "ai_repair_after_stage_1_failure"
         if changed or list(remove_file_ids or []):
             return "incremental_input_changed"
         return "resume_parent_run"
@@ -493,9 +438,7 @@ class StatementService:
         return entries
 
     @staticmethod
-    def _error_summary(run_dir: Path, fallback: dict[str, Any]) -> str | None:
-        if fallback.get("error"):
-            return str(fallback["error"]).replace(str(run_dir), "<run>")
+    def _error_summary(run_dir: Path) -> str | None:
         traceback_path = run_dir / "traceback.txt"
         if traceback_path.is_file():
             lines = [line.strip() for line in traceback_path.read_text(

@@ -31,8 +31,6 @@ from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
 from runtime.contracts import YAML_ROUTE_FIELDS, IntegrationContext, StageResult, yaml_route_summary
-from harness.protocols import render_protocol
-from ymb_standardization_core.readers.routing.rule_loader import build_routing_rules_snapshot
 
 
 DONE = "DONE"
@@ -153,7 +151,29 @@ def protocol_exit_status(result, fallback_status=1):
         and result.get("next_action") in R.NEXT_ACTIONS
     ):
         return 0
+    if isinstance(result, dict) and result.get("status") in {
+        "NEED_REPAIR",
+        "REQUEST_USER",
+        "UNSUPPORTED",
+        "MAINTAINER_REQUIRED",
+        "STOPPED",
+    }:
+        return 0
     return fallback_status
+
+
+def public_result(result, run_dir):
+    """把 NEED_REPAIR 原子推进为专家可直接消费的 Repair 请求。"""
+    if isinstance(result, dict) and result.get("next_action") == R.NEED_REPAIR:
+        from harness.coordinator import RepairCoordinator
+
+        decision = RepairCoordinator(run_dir).decision()
+        print(
+            f"[COORDINATOR][NEED_REPAIR] run_id={decision['run_id']} attempt={decision['attempt']}",
+            file=sys.stderr,
+        )
+        return decision
+    return result
 
 
 def claim_planned_run(run_root, run_id):
@@ -279,10 +299,12 @@ def has_open_password_hint(path):
         return False
 
 
-def reusable_stage_1_route(route, source_name):
+def reusable_stage_1_route(route, source_name, standardization_source=""):
     """原始文件只复用唯一命中 YAML 的结果；声明式标准化 CSV 是明确例外。"""
     if not valid_yaml_route(route):
         return False
+    if standardization_source == "ai_repair":
+        return True
     if str(source_name or "").lower().endswith("__standardized.csv"):
         return route.get("yaml_match_status") in {"matched", "unmatched"}
     return route.get("yaml_match_status") == "matched"
@@ -335,57 +357,13 @@ def load_parent_run_context(run_root, parent_run_id):
     stage_manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
     # 兼容历史 run；新 run 的运行上下文已合并到 manifest.json。
     legacy_run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
-    inherited_fallbacks = []
-    stage_statuses = []
-    parent_error = ""
-    for stage_id, spec in stage_manifest.items():
-        if not str(stage_id).startswith("stage_"):
-            continue
-        if not isinstance(spec, dict):
-            continue
-        status = spec.get("status", "")
-        stage_statuses.append(status)
-        if not (spec.get("ai_fallback_used") or spec.get("ai_fallback_dir") or spec.get("ai_fallback_artifacts")):
-            continue
-        fallback_dir = os.path.join(parent_dir, "fallback", stage_id)
-        fallback_request = read_json_if_exists(os.path.join(fallback_dir, "fallback_request.json"), {})
-        if status == ERROR and not parent_error:
-            evidence = {}
-            evidence_ref = str(fallback_request.get("evidence_ref") or "")
-            if evidence_ref:
-                evidence_path = os.path.abspath(os.path.join(parent_dir, evidence_ref))
-                if os.path.commonpath([parent_dir, evidence_path]) == parent_dir:
-                    evidence = read_json_if_exists(evidence_path, {})
-            parent_error = str(
-                evidence.get("error_summary")
-                or fallback_request.get("error")
-                or fallback_request.get("message")
-                or ""
-            )
-        inherited_fallbacks.append({
-            "stage": stage_id,
-            "name": spec.get("name", ""),
-            "parent_status": status,
-            "parent_fallback_dir": fallback_dir,
-            "parent_fallback_artifacts": spec.get("ai_fallback_artifacts", []),
-        })
-
-    if any(status == ERROR for status in stage_statuses):
-        parent_status = "error"
-    elif stage_statuses and all(status == DONE for status in stage_statuses):
-        parent_status = "success"
-    else:
-        parent_status = "running"
 
     return {
         "parent_run_id": parent_run_id,
         "parent_run_dir": parent_dir,
         "parent_client": stage_manifest.get("client") or legacy_run_manifest.get("client", ""),
-        "parent_status": legacy_run_manifest.get("status") or parent_status,
-        "parent_error": legacy_run_manifest.get("error") or parent_error,
         "password_attempt": int(stage_manifest.get("password_attempt") or 0),
         "ai_repair_attempt": int(stage_manifest.get("ai_repair_attempt") or 0),
-        "inherited_fallbacks": inherited_fallbacks,
     }
 
 
@@ -656,33 +634,55 @@ class Runner:
         self.manifest["ai_repair_attempt"] = int(
             (parent_context or {}).get("ai_repair_attempt") or 0
         ) + int(getattr(args, "ai_repair_attempt_increment", 0) or 0)
-        self.routing_rules_snapshot = None
-        snapshot_source = str(getattr(args, "routing_rules_snapshot", "") or "").strip()
+        self.repair_outputs = {}
+        snapshot_source = str(getattr(args, "repair_result_snapshot", "") or "").strip()
         if snapshot_source:
             if not parent_context:
-                raise RuntimeError("Run 内 routing snapshot 只允许用于显式 Child Run")
-            source_path = os.path.abspath(snapshot_source)
-            parent_root = os.path.abspath(parent_context["parent_run_dir"])
+                raise RuntimeError("Run 内 Repair snapshot 只允许用于显式 Child Run")
+            source_path = os.path.realpath(snapshot_source)
+            parent_root = os.path.realpath(parent_context["parent_run_dir"])
             if os.path.commonpath([parent_root, source_path]) != parent_root:
-                raise RuntimeError("routing snapshot 必须位于直接父 Run 内")
-            expected_sha256 = str(getattr(args, "routing_rules_sha256", "") or "")
+                raise RuntimeError("Repair snapshot 必须位于直接父 Run 内")
+            expected_sha256 = str(getattr(args, "repair_result_sha256", "") or "")
             if not expected_sha256 or sha256(source_path) != expected_sha256:
-                raise RuntimeError("routing snapshot checksum 无效")
-            content = open(source_path, "r", encoding="utf-8").read()
-            self.routing_rules_snapshot = build_routing_rules_snapshot(content)
-            snapshot_dir = os.path.join(self.run_dir, "routing")
+                raise RuntimeError("Repair snapshot checksum 无效")
+            repair_result = read_json_if_exists(source_path, {})
+            if repair_result.get("status") != "REPAIRED" or not isinstance(repair_result.get("outputs"), list):
+                raise RuntimeError("Repair snapshot 结构无效")
+            snapshot_dir = os.path.join(self.run_dir, "repair")
             os.makedirs(snapshot_dir, exist_ok=True)
-            snapshot_path = os.path.join(snapshot_dir, "routing_rules.yaml")
-            with open(snapshot_path, "w", encoding="utf-8") as stream:
-                stream.write(content)
-            self.manifest["routing_rules_snapshot"] = {
+            snapshot_root = os.path.realpath(snapshot_dir)
+            snapshot_path = os.path.join(snapshot_dir, "repair_result.json")
+            shutil.copy2(source_path, snapshot_path)
+            source_root = os.path.dirname(source_path)
+            seen_repair_paths = set()
+            for item in repair_result["outputs"]:
+                if not isinstance(item, dict):
+                    raise RuntimeError("Repair snapshot output 无效")
+                file_id = str(item.get("file_id") or "")
+                relative = str(item.get("standardized_csv") or "")
+                if not file_id.startswith("md5:") or item.get("source_md5") != file_id:
+                    raise RuntimeError(f"Repair snapshot source_md5 无效：{file_id}")
+                if relative in seen_repair_paths:
+                    raise RuntimeError(f"Repair snapshot CSV 路径重复：{relative}")
+                seen_repair_paths.add(relative)
+                output_source = os.path.realpath(os.path.join(source_root, relative))
+                if os.path.commonpath([source_root, output_source]) != source_root:
+                    raise RuntimeError(f"Repair CSV 路径越界：{file_id}")
+                if not os.path.isfile(output_source) or sha256(output_source) != str(item.get("sha256") or ""):
+                    raise RuntimeError(f"Repair CSV checksum 无效：{file_id}")
+                output_target = os.path.realpath(os.path.join(snapshot_root, relative))
+                if os.path.commonpath([snapshot_root, output_target]) != snapshot_root:
+                    raise RuntimeError(f"Child Run Repair CSV 路径越界：{file_id}")
+                os.makedirs(os.path.dirname(output_target), exist_ok=True)
+                shutil.copy2(output_source, output_target)
+                self.repair_outputs[file_id] = {**item, "path": output_target}
+            self.manifest["repair_snapshot"] = {
                 "path": self.run_relative_ref(snapshot_path),
                 "sha256": expected_sha256,
                 "scope": "run_only",
             }
-            self.manifest["routing_rules_version"] = S.routing_rules_version(content)
-        else:
-            self.manifest["routing_rules_version"] = S.routing_rules_version()
+        self.manifest["routing_rules_version"] = S.routing_rules_version()
         self.manifest["skipped_inputs"] = []
         self.write_manifest()
         Q.atomic_write_json(self.stage_1_results_path, {"files": {}})
@@ -690,7 +690,7 @@ class Runner:
         R.atomic_write_json(self.token_usage_path, {
             "contract_version": 1,
             "run_id": self.run_id,
-            "measurement_scope": "fallback_and_audit_sessions_only",
+            "measurement_scope": "repair_sessions_only",
             "ai_session_count": 0,
             "input_tokens": 0,
             "output_tokens": 0,
@@ -716,8 +716,10 @@ class Runner:
             spec.pop("validator", None)
             spec["status"] = ""
             if stage_id == "stage_1_standardize":
-                spec["ai_fallback_used"] = False
-                spec["ai_fallback_artifacts"] = []
+                spec.pop("ai_fallback_used", None)
+                spec.pop("ai_fallback_artifacts", None)
+                spec.pop("ai_fallback_refs", None)
+                spec.pop("ai_fallback_info", None)
                 spec.pop("route_artifact", None)
                 spec.pop("file_routes", None)
             spec.pop("ai_fallback_dir", None)
@@ -764,8 +766,8 @@ class Runner:
 
     def coordinator_action(self, operation, **extra):
         action = {
-            "handler": "fallback_coordinator",
-            "entrypoint": os.path.join(SKILL_DIR, "scripts", "fallback_coordinator.py"),
+            "handler": "repair_coordinator",
+            "entrypoint": os.path.join(SKILL_DIR, "scripts", "repair_coordinator.py"),
             "operation": operation,
             "run_dir": os.path.realpath(self.run_dir),
         }
@@ -785,15 +787,6 @@ class Runner:
             for path in glob.glob(os.path.join(self.input_dir, "**", "*"), recursive=True)
             if os.path.isfile(path) and os.path.basename(path) != "_file_hints.yaml"
         )
-
-    def mark_stage_ai_fallback_used(self, stage_id, artifacts=None):
-        if stage_id not in self.manifest:
-            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        self.manifest[stage_id]["ai_fallback_used"] = True
-        self.manifest[stage_id]["ai_fallback_artifacts"] = (
-            artifacts or self.manifest[stage_id].get("ai_fallback_artifacts", [])
-        )
-        self.write_manifest()
 
     def first_pending_stage(self):
         for stage_id, spec in self.manifest.items():
@@ -955,9 +948,6 @@ class Runner:
     def work_dir(self):
         return os.path.join(self.out_dir, "_工作区", safe_name(self.args.client))
 
-    def fallback_dir(self, stage_id):
-        return os.path.join(self.run_dir, "fallback", stage_id)
-
     def run_relative_ref(self, path):
         root = os.path.abspath(self.run_dir)
         resolved = os.path.abspath(path)
@@ -973,45 +963,6 @@ class Runner:
         if os.path.commonpath([input_root, resolved]) != input_root:
             return os.path.basename(resolved)
         return normalize_relpath(os.path.relpath(resolved, input_root))
-
-    def compact_evidence_bundle(self, stage_id, reason_code, failed_files, error):
-        def compact_text(value, limit):
-            text = str(value or "")
-            return text if len(text) <= limit else text[:limit] + "…"
-
-        qc = self.load_qc_results()
-        failed_qc = []
-        for file_id, rules in (qc.get("files") or {}).items():
-            for rule_id, value in (rules or {}).items():
-                if value.get("passed"):
-                    continue
-                failed_qc.append({
-                    "file_id": file_id,
-                    "rule_id": rule_id,
-                    "level": value.get("level", ""),
-                    "message": compact_text(value.get("message", ""), 500),
-                })
-        compact_files = [
-            {
-                "file_id": item.get("file_id", ""),
-                "name": item.get("name", ""),
-                "relative_path": item.get("relative_path", ""),
-                "status": item.get("status", ""),
-                "reason_code": item.get("reason_code", ""),
-                "message": compact_text(item.get("message", ""), 1000),
-                "route": item.get("route", {}),
-            }
-            for item in failed_files
-        ]
-        return render_protocol("evidence-bundle", {
-            "run_id": self.run_id,
-            "stage_id": stage_id,
-            "reason_code": reason_code,
-            "failed_files": compact_files,
-            "qc_summary": failed_qc,
-            "skipped_inputs": list(self.manifest.get("skipped_inputs") or []),
-            "error_summary": compact_text(error, 2000),
-        })
 
     def latest_artifact(self, pattern):
         hits = sorted(glob.glob(os.path.join(self.work_dir(), pattern)))
@@ -1172,8 +1123,10 @@ class Runner:
             if blocked:
                 stage_results["files"][file_id] = {
                     "name": os.path.basename(source_path),
+                    "relative_path": self.input_relative_path(source_path),
                     "status": "BLOCKED",
                     "message": "文件级前置 HARD QC 未通过",
+                    "reason_code": R.QC_HARD_FAILURE,
                 }
                 self.write_stage_1_results(stage_results)
                 continue
@@ -1199,8 +1152,10 @@ class Runner:
                 if post_blocked:
                     stage_results["files"][file_id] = {
                         "name": os.path.basename(source_path),
+                        "relative_path": self.input_relative_path(source_path),
                         "status": BLOCKED,
                         "message": self.file_qc_failure_message(file_id),
+                        "reason_code": R.QC_HARD_FAILURE,
                     }
                 else:
                     stage_results["files"][file_id] = {
@@ -1215,10 +1170,13 @@ class Runner:
                         "rows": row_count,
                     })
             except Exception as exc:
+                failure = R.classify_failure("stage_1_standardize", exc)
                 stage_results["files"][file_id] = {
                     "name": os.path.basename(source_path),
+                    "relative_path": self.input_relative_path(source_path),
                     "status": ERROR,
                     "message": str(exc),
+                    "reason_code": failure.reason_code,
                 }
             self.write_stage_1_results(stage_results)
 
@@ -1277,6 +1235,7 @@ class Runner:
         decisions = {}
         added = []
         reused = []
+        repaired = []
         rerun = []
         parent = getattr(self, "parent_context", None) or {}
         parent_dir = parent.get("parent_run_dir")
@@ -1310,14 +1269,20 @@ class Runner:
             parent_record = parent_files.get(file_id)
             decision = "ADDED" if parent_record is None else "RERUN"
             reason = "new_md5" if parent_record is None else "parent_result_not_reusable"
-            stage_results["files"][file_id] = {"name": name, "status": PENDING}
+            stage_results["files"][file_id] = {
+                "name": name,
+                "relative_path": self.input_relative_path(path),
+                "status": PENDING,
+            }
             self.write_stage_1_results(stage_results)
 
             if self.run_file_qc(file_id, Q.BEFORE_STAGE_1, {"path": path}):
                 stage_results["files"][file_id] = {
                     "name": name,
+                    "relative_path": self.input_relative_path(path),
                     "status": BLOCKED,
                     "message": "文件级前置 HARD QC 未通过",
+                    "reason_code": R.QC_HARD_FAILURE,
                 }
                 decisions[file_id] = {
                     "decision": decision,
@@ -1328,6 +1293,84 @@ class Runner:
                 self.write_stage_1_results(stage_results)
                 continue
 
+            repair_record = getattr(self, "repair_outputs", {}).get(file_id)
+            if repair_record is not None:
+                (added if parent_record is None else rerun).append(file_id)
+                target_name = f"{file_id.removeprefix('md5:')[:12]}__{os.path.basename(repair_record['path'])}"
+                target_csv = os.path.join(work, target_name)
+                try:
+                    shutil.copy2(repair_record["path"], target_csv)
+                    row_count = V.validate_standardized_file(target_csv)["standardized_rows"]
+                    if row_count != int(repair_record.get("row_count") or 0):
+                        raise V.ValidationError(f"Repair CSV row_count 与提交不一致：{name}")
+                    post_blocked = self.run_file_qc(
+                        file_id,
+                        Q.AFTER_STAGE_1,
+                        {"path": path, "output": target_csv, "source_format_error": ""},
+                    )
+                    route_source = parent_record.get("route") if isinstance(parent_record, dict) else {}
+                    route = {
+                        "fingerprint_id": str((route_source or {}).get("fingerprint_id") or ""),
+                        "series_family": str((route_source or {}).get("series_family") or ""),
+                        "router_bank": str((route_source or {}).get("router_bank") or "未识别"),
+                        "yaml_match_status": str((route_source or {}).get("yaml_match_status") or "unmatched"),
+                    }
+                    repaired.append(file_id)
+                    if post_blocked:
+                        stage_results["files"][file_id] = {
+                            "name": name,
+                            "relative_path": self.input_relative_path(path),
+                            "status": BLOCKED,
+                            "message": self.file_qc_failure_message(file_id),
+                            "reason_code": R.QC_HARD_FAILURE,
+                        }
+                        result_status = BLOCKED
+                    else:
+                        stage_results["files"][file_id] = {
+                            "name": name,
+                            "relative_path": self.input_relative_path(path),
+                            "status": DONE,
+                            "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
+                            "route": route,
+                            "recognized_type": route["router_bank"],
+                            "record_count": row_count,
+                            "standardization_source": "ai_repair",
+                            "repair_artifact": {
+                                "source_md5": str(repair_record.get("source_md5") or ""),
+                                "sha256": str(repair_record.get("sha256") or ""),
+                            },
+                        }
+                        processed.append({
+                            "input": path,
+                            "csv": target_csv,
+                            "rows": row_count,
+                            "repaired": True,
+                        })
+                        result_status = DONE
+                except Exception as exc:
+                    stage_results["files"][file_id] = {
+                        "name": name,
+                        "relative_path": self.input_relative_path(path),
+                        "status": ERROR,
+                        "message": str(exc),
+                        "reason_code": R.VALIDATION_FAILED,
+                    }
+                    result_status = ERROR
+                    try:
+                        if os.path.isfile(target_csv):
+                            os.unlink(target_csv)
+                    except OSError:
+                        pass
+                decisions[file_id] = {
+                    "decision": "REPAIRED",
+                    "reason": "authorized_repair_artifact",
+                    "result_status": result_status,
+                }
+                self.write_stage_1_results(stage_results)
+                if file_sleep_seconds and index < len(descriptors):
+                    time.sleep(file_sleep_seconds)
+                continue
+
             parent_output = ""
             if parent_record is not None:
                 if parent_record.get("name") != name:
@@ -1336,7 +1379,11 @@ class Runner:
                     reason = "parent_file_not_done"
                 elif not versions_match:
                     reason = "skill_version_mismatch"
-                elif not reusable_stage_1_route(parent_record.get("route"), name):
+                elif not reusable_stage_1_route(
+                    parent_record.get("route"),
+                    name,
+                    str(parent_record.get("standardization_source") or ""),
+                ):
                     reason = "parent_route_invalid"
                 else:
                     parent_output = self.resolve_result_output(parent_dir, parent_record.get("output"))
@@ -1365,13 +1412,16 @@ class Runner:
                     if post_blocked:
                         stage_results["files"][file_id] = {
                             "name": name,
+                            "relative_path": self.input_relative_path(path),
                             "status": BLOCKED,
                             "message": self.file_qc_failure_message(file_id),
+                            "reason_code": R.QC_HARD_FAILURE,
                         }
                         result_status = BLOCKED
                     else:
-                        stage_results["files"][file_id] = {
+                        done_record = {
                             "name": name,
+                            "relative_path": self.input_relative_path(path),
                             "status": DONE,
                             "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
                             "route": dict(parent_record.get("route") or {}),
@@ -1382,6 +1432,10 @@ class Runner:
                             ),
                             "record_count": row_count,
                         }
+                        if parent_record.get("standardization_source") == "ai_repair":
+                            done_record["standardization_source"] = "ai_repair"
+                            done_record["repair_artifact"] = dict(parent_record.get("repair_artifact") or {})
+                        stage_results["files"][file_id] = done_record
                         processed.append({"input": path, "csv": target_csv, "rows": row_count, "reused": True})
                         result_status = DONE
                     reuse_succeeded = True
@@ -1411,7 +1465,6 @@ class Runner:
                     out_dir=work,
                     account_type=self.args.account_type,
                     write_mapping=False,
-                    route_rules=getattr(self, "routing_rules_snapshot", None),
                 ))
                 row_count = int(report["标准化统计"]["交易笔数"])
                 V.validate_standardized_file(csv_path)
@@ -1525,6 +1578,7 @@ class Runner:
         decision_summary = {
             "added": sorted(added),
             "reused": sorted(reused),
+            "repaired": sorted(repaired),
             "rerun": sorted(rerun),
             "removed": removed,
             "decisions": decisions,
@@ -1754,12 +1808,12 @@ class Runner:
             skipped_inputs=self.manifest.get("skipped_inputs") or [],
         )
         if (
-            failure.next_action == R.AI_FALLBACK
+            failure.next_action == R.NEED_REPAIR
             and int(self.manifest.get("ai_repair_attempt") or 0) >= R.MAX_AI_REPAIR_ATTEMPTS
         ):
             failure = R.FailureRoute(
                 failure.reason_code,
-                R.REPORT_ERROR,
+                R.MAINTAINER_REQUIRED,
                 "AI 修复次数已达上限",
             )
         self.manifest[stage_id]["reason_code"] = failure.reason_code
@@ -1769,7 +1823,7 @@ class Runner:
             duration_seconds=duration_seconds,
         )
 
-        if failure.next_action != R.AI_FALLBACK:
+        if failure.next_action != R.NEED_REPAIR:
             event_code = (
                 "USER_INPUT_REQUIRED"
                 if failure.next_action == R.REQUEST_USER
@@ -1811,65 +1865,27 @@ class Runner:
             )
             return
 
-        fallback_dir = self.fallback_dir(stage_id)
-        os.makedirs(fallback_dir, exist_ok=True)
-        evidence_path = os.path.join(fallback_dir, "evidence_bundle.json")
-        evidence = self.compact_evidence_bundle(
-            stage_id,
-            failure.reason_code,
-            failed_files,
-            exc,
-        )
-        R.atomic_write_json(evidence_path, evidence)
-        fallback_request = render_protocol("fallback-request", {
-            "run_id": self.run_id,
-            "client": self.args.client,
-            "stage_id": stage_id,
-            "name": spec.get("name", ""),
-            "reason_code": failure.reason_code,
-            "attempt": int(self.manifest.get("ai_repair_attempt") or 0) + 1,
-            "max_attempts": R.MAX_AI_REPAIR_ATTEMPTS,
-            "next_action": R.AI_FALLBACK,
-            "evidence_ref": self.run_relative_ref(evidence_path),
-            "message": failure.message,
-            "files": [
-                {"file_id": item.get("file_id", ""), "name": item.get("name", "")}
-                for item in failed_files
-            ],
-            "created_at": now(),
-        })
-        fallback_request_path = os.path.join(fallback_dir, "fallback_request.json")
-        R.atomic_write_json(fallback_request_path, fallback_request)
-        fallback_artifacts = ["fallback_request.json", "evidence_bundle.json"]
         self.emit(
             "WARNING",
-            "AI_FALLBACK_REQUIRED",
-            f"阶段 {stage_id} 失败，需要独立 Fallback 会话处理紧凑 evidence",
+            "AI_REPAIR_REQUIRED",
+            f"阶段 {stage_id} 失败，需要独立 Repair Agent 读取失败文件并修复",
             stage=stage_id,
             reason_code=failure.reason_code,
-            ai_fallback_dir=fallback_dir,
             max_retry=R.MAX_AI_REPAIR_ATTEMPTS,
         )
-        self.mark_stage_ai_fallback_used(stage_id, fallback_artifacts)
         self.receipt(stage_id, "error", {
             "orchestrator_handler": self.stage_handler_name(stage_id),
             "reason_code": failure.reason_code,
-            "next_action": R.AI_FALLBACK,
-            "ai_fallback_used": True,
-            "ai_fallback_artifacts": fallback_artifacts,
+            "next_action": R.NEED_REPAIR,
             "error": str(exc),
         })
         self.write_run_result(
             status=ERROR,
-            next_action=R.AI_FALLBACK,
+            next_action=R.NEED_REPAIR,
             reason_code=failure.reason_code,
-            artifact_refs=(
-                self.run_relative_ref(fallback_request_path),
-                self.run_relative_ref(evidence_path),
-            ),
-            context_ref=self.run_relative_ref(fallback_request_path),
+            artifact_refs=("stage_1_results.json", "qc_results.json"),
+            context_ref="stage_1_results.json",
             message=failure.message,
-            action=self.coordinator_action("next"),
         )
 
     def run_manifest_stages(self):
@@ -2004,7 +2020,7 @@ def main(argv=None):
     ap.add_argument("--parent-run-id",
                     help="可选：AI 兜底修复后重跑时，记录关联的上一轮失败 run_id")
     ap.add_argument("--rerun-reason",
-                    help="可选：重跑原因，例如 ai_fallback_after_stage_failure")
+                    help="可选：重跑原因，例如 ai_repair_after_stage_1_failure")
     ap.add_argument("--error-bundle-mode", choices=["full", "safe"], default="full",
                     help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full")
     ap.add_argument("--verbose", action="store_true", help="同时把阶段事件打印到 stdout")
@@ -2053,14 +2069,17 @@ def main(argv=None):
                     "message": "同一执行计划仍在运行；未创建重复 Run",
                     "contract_version": R.CONTRACT_VERSION,
                 }
-            print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-            return protocol_exit_status(result)
+            public = public_result(result, run_dir)
+            print(json.dumps(public, ensure_ascii=False, separators=(",", ":")))
+            return protocol_exit_status(public)
     runner = Runner(args)
     status = runner.execute()
     result = read_json_if_exists(runner.run_result_path, {})
     release_execution_plan(args.run_root, args.execution_plan_key, runner.run_id)
-    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
-    return protocol_exit_status(result, status)
+    result_run_dir = getattr(runner, "run_dir", os.path.dirname(runner.run_result_path))
+    public = public_result(result, result_run_dir)
+    print(json.dumps(public, ensure_ascii=False, separators=(",", ":")))
+    return protocol_exit_status(public, status)
 
 
 if __name__ == "__main__":

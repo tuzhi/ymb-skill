@@ -114,3 +114,27 @@ def build_pdf_routing_evidence(context=None, reader_id=""):
             for value in list(context.get("date_patterns") or [])[:10]
         ],
     }
+
+
+def enrich_pdf_table_routing_evidence(evidence, rows, reader_id):
+    """用通用 Reader 已恢复的表头补全 unmatched PDF 证据。
+
+    只保留首个疑似交易行之前的结构行；交易正文、长数字、邮箱和
+    其他可识别值仍由 `_safe_text` 脱敏，不扩大 Fallback 的原始文件读取权限。
+    """
+    enriched = dict(evidence or {})
+    enriched["reader_id"] = _safe_text(reader_id, 80)
+    headers = []
+    for row in list(rows or [])[:20]:
+        values = [value for value in row if value not in (None, "")]
+        if not values:
+            continue
+        if _looks_like_transaction(values):
+            break
+        safe_values = [_safe_text(value) for value in values[:30]]
+        if len(safe_values) >= 3:
+            headers.append(safe_values)
+        if len(headers) >= 3:
+            break
+    enriched["header_candidates"] = headers
+    return enriched

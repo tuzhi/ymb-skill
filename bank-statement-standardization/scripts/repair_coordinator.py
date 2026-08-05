@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""确定性 Fallback Coordinator 命令行入口。"""
+"""单 Repair Agent 的确定性 Coordinator 命令行入口。"""
 
 from __future__ import annotations
 
@@ -13,8 +13,8 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from harness.coordinator import FallbackCoordinator  # noqa: E402
 from harness.contracts import CHILD_RUN_READY  # noqa: E402
+from harness.coordinator import RepairCoordinator  # noqa: E402
 from runtime.run_result import atomic_write_json  # noqa: E402
 from services.statement_service import StatementService  # noqa: E402
 
@@ -26,55 +26,74 @@ def _read_object(path: str) -> dict:
     return value
 
 
-def _start_child_run(coordinator: FallbackCoordinator, request_ref: str) -> dict:
-    """幂等创建 Child Run，并直接返回新的紧凑 RunResult。"""
-    launch_path = coordinator.attempt_root / "child_run_launch.json"
+def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
+    """幂等创建 Child Run，并返回 Child Run 的紧凑 RunResult。"""
+    snapshot_ref = str(outcome.get("repair_result_ref") or "")
+    snapshot = (coordinator.run_dir / snapshot_ref).resolve()
+    checksum = str(outcome.get("repair_result_sha256") or "")
+    launch_path = coordinator.repair_root / "child_run_launch.json"
     service = StatementService(coordinator.run_dir.parent, submit=lambda execute: execute())
     if launch_path.is_file():
         launch = _read_object(str(launch_path))
         if launch.get("parent_run_id") != coordinator.run_id:
             raise RuntimeError("child_run_launch parent_run_id 不匹配")
-        if launch.get("request_ref") != request_ref:
-            raise RuntimeError("child_run_launch request_ref 不匹配")
+        if launch.get("repair_result_sha256") != checksum:
+            raise RuntimeError("child_run_launch Repair checksum 不匹配")
         child_run_id = str(launch.get("child_run_id") or "")
         if not child_run_id:
             raise RuntimeError("child_run_launch 缺少 child_run_id")
     else:
-        reference = service.start_child_run_from_request(coordinator.run_id, request_ref)
+        reference = service.start_run(
+            None,
+            [],
+            parent_run_id=coordinator.run_id,
+            repair_result_snapshot=snapshot,
+            repair_result_sha256=checksum,
+        )
         child_run_id = reference.run_id
         atomic_write_json(launch_path, {
             "contract_version": 1,
             "parent_run_id": coordinator.run_id,
-            "request_ref": request_ref,
+            "repair_result_ref": snapshot_ref,
+            "repair_result_sha256": checksum,
             "child_run_id": child_run_id,
         })
     detail = service.get_run(child_run_id)
     if not detail.run_result:
         raise RuntimeError(f"Child Run 尚未生成 RunResult：{child_run_id}")
-    return dict(detail.run_result)
+    result = dict(detail.run_result)
+    if result.get("next_action") == "NEED_REPAIR":
+        child_dir = coordinator.run_dir.parent / child_run_id
+        decision = RepairCoordinator(child_dir).decision()
+        print(
+            f"[COORDINATOR][NEED_REPAIR] run_id={decision['run_id']} "
+            f"attempt={decision['attempt']}",
+            file=sys.stderr,
+        )
+        return decision
+    return result
 
 
-def _advance(coordinator: FallbackCoordinator) -> dict:
-    outcome = coordinator.next()
+def _advance(coordinator: RepairCoordinator, outcome: dict) -> dict:
     if outcome.get("status") != CHILD_RUN_READY:
         return outcome
-    return _start_child_run(coordinator, str(outcome["child_run_request"]))
+    print(
+        f"[COORDINATOR][CHILD_RUN_READY] run_id={coordinator.run_id} "
+        f"attempt={getattr(coordinator, 'attempt', outcome.get('attempt', ''))}",
+        file=sys.stderr,
+    )
+    return _start_child_run(coordinator, outcome)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Stage 1 Fallback 确定性协调器")
+    parser = argparse.ArgumentParser(description="Stage 1 Repair 确定性协调器")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    next_parser = subparsers.add_parser("next")
-    next_parser.add_argument("--run-dir", required=True)
     submit_parser = subparsers.add_parser("submit")
     submit_parser.add_argument("--run-dir", required=True)
-    submit_parser.add_argument("--role", choices=["fallback", "audit"], required=True)
+    submit_parser.add_argument("--request-id", required=True)
     submit_parser.add_argument("--session-id", required=True)
     submit_parser.add_argument("--result", required=True)
     submit_parser.add_argument("--usage")
-    child_parser = subparsers.add_parser("run-child")
-    child_parser.add_argument("--run-dir", required=True)
-    child_parser.add_argument("--request", required=True)
     password_parser = subparsers.add_parser("retry-password")
     password_parser.add_argument("--run-dir", required=True)
     password_parser.add_argument("--file", required=True, help="Run input 内的相对路径")
@@ -86,32 +105,23 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.command == "next":
-        coordinator = FallbackCoordinator(args.run_dir)
-        result = _advance(coordinator)
-    elif args.command == "submit":
-        coordinator = FallbackCoordinator(args.run_dir)
+    if args.command == "submit":
+        coordinator = RepairCoordinator(args.run_dir)
         result_path = Path(args.result).resolve()
         if coordinator.run_dir in result_path.parents:
-            raise ValueError("--result 必须是 Run 目录外的临时文件，不得预写角色 output_path")
-        coordinator.submit(
-            args.role,
+            raise ValueError("--result 必须位于 Run 目录外")
+        outcome = coordinator.submit(
+            request_id=args.request_id,
             session_id=args.session_id,
             payload=_read_object(str(result_path)),
             usage=_read_object(args.usage) if args.usage else {},
         )
-        result = _advance(coordinator)
-    elif args.command == "run-child":
-        run_dir = Path(args.run_dir).resolve()
-        service = StatementService(run_dir.parent, submit=lambda execute: execute())
-        reference = service.start_child_run_from_request(run_dir.name, args.request)
-        detail = service.get_run(reference.run_id)
-        result = {
-            "run_id": reference.run_id,
-            "parent_run_id": reference.parent_run_id,
-            "status": detail.status,
-            "run_result": detail.run_result,
-        }
+        print(
+            f"[COORDINATOR][SUBMIT] run_id={coordinator.run_id} "
+            f"attempt={coordinator.attempt} status={outcome['status']}",
+            file=sys.stderr,
+        )
+        result = _advance(coordinator, outcome)
     else:
         password = sys.stdin.readline().rstrip("\r\n")
         if not password:

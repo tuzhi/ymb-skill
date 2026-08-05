@@ -15,6 +15,9 @@ from ymb_standardization_core.readers.pdf.text_lines import _extract_pdf_text_ta
 from ymb_standardization_core.readers.routing.rule_loader import (
     apply_required_reader_header_gate,
 )
+from ymb_standardization_core.readers.routing.evidence import (
+    enrich_pdf_table_routing_evidence,
+)
 from ymb_standardization_core.transforms import annotate_payment_order_state
 
 
@@ -198,6 +201,11 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
                 route_info = {
                     **route_info,
                     "reader_id": "pdfplumber_table",
+                    "routing_evidence": enrich_pdf_table_routing_evidence(
+                        route_info.get("routing_evidence"),
+                        table_rows,
+                        "pdfplumber_table",
+                    ),
                 }
             else:
                 table_rows = _extract_pdf_tables_from_horizontal_lines(reader_pdf)
@@ -205,6 +213,11 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
                     route_info = {
                         **route_info,
                         "reader_id": "pdfplumber_line_table",
+                        "routing_evidence": enrich_pdf_table_routing_evidence(
+                            route_info.get("routing_evidence"),
+                            table_rows,
+                            "pdfplumber_line_table",
+                        ),
                     }
 
     if table_rows:

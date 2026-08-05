@@ -1,9 +1,10 @@
 {
   "contract_version": 1,
   "run_id": "",
+  "attempt": 0,
   "stage_id": "stage_1_standardize",
-  "role": "audit",
+  "role": "repair",
   "status": "",
-  "affected_file_ids": [],
-  "reason": ""
+  "outputs": [],
+  "message": ""
 }

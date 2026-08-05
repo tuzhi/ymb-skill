@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import tempfile
 import unittest
@@ -22,7 +23,7 @@ def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_r
         client_arg_provided=client_arg_provided,
         error_bundle_mode="full",
         parent_run_id=parent_run_id,
-        rerun_reason="ai_fallback_after_stage_failure" if parent_run_id else "",
+        rerun_reason="ai_repair_after_stage_1_failure" if parent_run_id else "",
         account_type=None,
     )
 
@@ -50,7 +51,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertEqual(usage["ai_session_count"], 0)
             self.assertEqual(
                 usage["measurement_scope"],
-                "fallback_and_audit_sessions_only",
+                "repair_sessions_only",
             )
             self.assertNotIn("skill_contracts", usage)
             self.assertFalse((Path(runner.run_dir) / "run_manifest.json").exists())
@@ -67,16 +68,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     self.assertNotIn("ai_fallback_used", stage)
                     self.assertNotIn("ai_fallback_artifacts", stage)
 
-    def test_parent_context_reads_client_and_error_from_single_manifest(self):
+    def test_parent_context_reads_client_from_single_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_root = Path(tmp) / "runs"
             parent = run_root / "parent-run"
-            fallback = parent / "fallback" / "stage_1_standardize"
-            fallback.mkdir(parents=True)
-            (fallback / "fallback_request.json").write_text(
-                json.dumps({"error": "CSV 无交易数据"}, ensure_ascii=False),
-                encoding="utf-8",
-            )
+            parent.mkdir(parents=True)
             (parent / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -86,8 +82,6 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                         "rerun_reason": "",
                         "stage_1_standardize": {
                             "status": "ERROR",
-                            "ai_fallback_used": True,
-                            "ai_fallback_artifacts": ["fallback_request.json", "mapping_patch.yaml"],
                         },
                     },
                     ensure_ascii=False,
@@ -98,9 +92,6 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             context = orchestrator.load_parent_run_context(str(run_root), "parent-run")
 
             self.assertEqual(context["parent_client"], "斑马商业")
-            self.assertEqual(context["parent_status"], "error")
-            self.assertEqual(context["parent_error"], "CSV 无交易数据")
-            self.assertEqual(context["inherited_fallbacks"][0]["parent_fallback_dir"], str(fallback))
 
     def test_child_run_inherits_parent_client(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -159,7 +150,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     )
                 )
 
-    def test_stage_1_failure_records_ai_fallback_in_single_manifest(self):
+    def test_stage_1_failure_returns_need_repair_from_stage_results(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
@@ -170,31 +161,30 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 runner_args(root / "runs-stage-1", source, client="斑马商业")
             )
             stage_id = "stage_1_standardize"
+            snapshot = Path(runner.input_dir) / "流水.csv"
+            file_id = "md5:" + orchestrator.md5(str(snapshot))
+            runner.write_stage_1_results({"files": {file_id: {
+                "name": "流水.csv",
+                "relative_path": "流水.csv",
+                "status": "ERROR",
+                "reason_code": "MAPPING_FAILED",
+                "message": "阶段一测试失败",
+            }}})
             runner.handle_stage_failure(stage_id, runner.manifest[stage_id], RuntimeError("阶段一测试失败"))
 
             manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest[stage_id]["status"], "ERROR")
-            self.assertTrue(manifest[stage_id]["ai_fallback_used"])
-            self.assertEqual(
-                manifest[stage_id]["ai_fallback_artifacts"],
-                ["fallback_request.json", "evidence_bundle.json"],
-            )
-            request_path = Path(runner.fallback_dir(stage_id)) / "fallback_request.json"
-            request = json.loads(request_path.read_text(encoding="utf-8"))
-            self.assertNotIn("error", request)
-            evidence = json.loads(
-                (request_path.parent / "evidence_bundle.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(evidence["error_summary"], "阶段一测试失败")
-            self.assertEqual(request["client"], "斑马商业")
-            self.assertEqual(request["next_action"], "AI_FALLBACK")
-            self.assertNotIn("fallback_skill", request)
-            self.assertNotIn("script", request)
-            self.assertNotIn("validator", request)
+            self.assertNotIn("ai_fallback_used", manifest[stage_id])
+            self.assertFalse((Path(runner.run_dir) / "fallback").exists())
             run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
-            self.assertEqual(run_result["action"]["handler"], "fallback_coordinator")
-            self.assertEqual(run_result["action"]["operation"], "next")
-            self.assertEqual(run_result["action"]["run_dir"], str(Path(runner.run_dir).resolve()))
+            self.assertNotIn("action", run_result)
+            self.assertEqual(run_result["next_action"], "NEED_REPAIR")
+            self.assertEqual(run_result["context_ref"], "stage_1_results.json")
+            public = orchestrator.public_result(run_result, runner.run_dir)
+            self.assertEqual(public["status"], "NEED_REPAIR")
+            self.assertEqual(public["role"], "repair")
+            self.assertIn("request", public)
+            self.assertEqual(public["action"]["operation"], "submit")
 
     def test_password_failure_requests_user_without_ai_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -218,8 +208,39 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertEqual(result["action"]["operation"], "retry-password")
             self.assertEqual(result["action"]["file_refs"], ["加密流水.pdf"])
             self.assertEqual(result["action"]["input_transport"], "stdin")
-            self.assertFalse(Path(runner.fallback_dir("stage_1_standardize")).exists())
-            self.assertFalse(runner.manifest["stage_1_standardize"]["ai_fallback_used"])
+            self.assertFalse((Path(runner.run_dir) / "repair").exists())
+
+    def test_repair_attempt_limit_routes_to_maintainer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            raw = source / "流水.pdf"
+            raw.write_bytes(b"%PDF-1.4\n")
+            runner = orchestrator.Runner(
+                runner_args(root / "runs", source, client="斑马商业")
+            )
+            snapshot = Path(runner.input_dir) / raw.name
+            file_id = "md5:" + orchestrator.md5(str(snapshot))
+            runner.manifest["ai_repair_attempt"] = orchestrator.R.MAX_AI_REPAIR_ATTEMPTS
+            runner.write_manifest()
+            runner.write_stage_1_results({"files": {file_id: {
+                "name": raw.name,
+                "relative_path": raw.name,
+                "status": "ERROR",
+                "reason_code": "VALIDATION_FAILED",
+                "message": "Repair CSV 验证失败",
+            }}})
+
+            runner.handle_stage_failure(
+                "stage_1_standardize",
+                runner.manifest["stage_1_standardize"],
+                RuntimeError("Repair CSV 验证失败"),
+            )
+
+            result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            self.assertEqual(result["next_action"], "MAINTAINER_REQUIRED")
+            self.assertIn("次数已达上限", result["message"])
 
     def test_downstream_failure_does_not_record_ai_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,16 +265,16 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 self.assertNotIn("ai_fallback_refs", manifest[stage_id])
                 self.assertNotIn("ai_fallback_used", manifest[stage_id])
                 self.assertNotIn("ai_fallback_artifacts", manifest[stage_id])
-                self.assertFalse(Path(runner.fallback_dir(stage_id)).exists())
+                self.assertFalse((Path(runner.run_dir) / "repair").exists())
                 result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
                 self.assertEqual(result["next_action"], "REPORT_ERROR")
                 self.assertEqual(result["reason_code"], "DOWNSTREAM_STAGE_FAILURE")
                 events = Path(runner.event_path).read_text(encoding="utf-8")
                 self.assertIn('"code": "STAGE_ERROR"', events)
-                self.assertNotIn('"code": "AI_FALLBACK_REQUIRED"', events)
+                self.assertNotIn('"code": "AI_REPAIR_REQUIRED"', events)
 
-    def test_ai_fallback_fix_can_create_child_run_and_pass_same_validator(self):
-        """锁定失败请求、确定性修复、关联 run 和原 validator 的兼容链条。"""
+    def test_ai_repair_child_run_passes_same_validator(self):
+        """锁定关联 Child Run 和原 validator 的兼容链条。"""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             run_root = root / "runs"
@@ -267,21 +288,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 parent.manifest["stage_1_standardize"],
                 RuntimeError("字段映射失败"),
             )
-            fallback_dir = Path(parent.fallback_dir("stage_1_standardize"))
-            (fallback_dir / "mapping_patch.yaml").write_text("field_mapping: {}\n", encoding="utf-8")
-            parent.mark_stage_ai_fallback_used(
-                "stage_1_standardize",
-                ["fallback_request.json", "mapping_patch.yaml"],
-            )
-            # AI 兜底的确定性输入提示由下一次 run 的输入快照接收。
+            # Repair 以父 Run 输入快照为基础创建 Child Run。
             (source / "_file_hints.yaml").write_text("files: {}\n", encoding="utf-8")
 
             parent_context = orchestrator.load_parent_run_context(str(run_root), parent.run_id)
-            self.assertEqual(parent_context["parent_error"], "字段映射失败")
-            self.assertEqual(
-                parent_context["inherited_fallbacks"][0]["parent_fallback_artifacts"],
-                ["fallback_request.json", "mapping_patch.yaml"],
-            )
+            self.assertEqual(parent_context["parent_run_id"], parent.run_id)
 
             child = orchestrator.Runner(
                 runner_args(run_root, source, client="斑马商业", parent_run_id=parent.run_id)
@@ -314,9 +325,84 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             child.run_manifest_stages()
 
             self.assertEqual(child.manifest["parent_run_id"], parent.run_id)
-            self.assertEqual(child.manifest["rerun_reason"], "ai_fallback_after_stage_failure")
+            self.assertEqual(child.manifest["rerun_reason"], "ai_repair_after_stage_1_failure")
             self.assertEqual(child.manifest["stage_1_standardize"]["status"], "DONE")
             self.assertEqual(child.stage_validation_results["stage_1_standardize"]["standardized_rows"], 1)
+
+    def test_child_run_consumes_authorized_repair_csv_for_failed_raw_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_root = root / "runs"
+            source = root / "source"
+            source.mkdir()
+            raw = source / "交通银行流水.pdf"
+            raw.write_bytes(b"%PDF-1.4\n")
+
+            parent = orchestrator.Runner(runner_args(run_root, source, client="测试客户"))
+            parent_raw = Path(parent.input_dir) / raw.name
+            file_id = "md5:" + orchestrator.md5(str(parent_raw))
+            parent.write_stage_1_results({"files": {file_id: {
+                "name": raw.name,
+                "relative_path": raw.name,
+                "status": "ERROR",
+                "reason_code": "ROUTE_UNMATCHED",
+                "message": "未唯一命中 YAML",
+                "route": {
+                    "fingerprint_id": "",
+                    "series_family": "",
+                    "router_bank": "交通银行",
+                    "yaml_match_status": "unmatched",
+                },
+            }}})
+            parent.manifest["stage_1_standardize"]["status"] = "ERROR"
+            parent.write_manifest()
+
+            attempt = Path(parent.run_dir) / "repair" / "attempt-01"
+            repaired = attempt / "standardized" / "交通银行__standardized.csv"
+            repaired.parent.mkdir(parents=True)
+            repaired.write_text(
+                "交易唯一编号,交易时间,本方账户,收入金额,支出金额,交易金额,账户余额,来源文件名,来源行号\n"
+                "TX-1,2026-01-01,62170001,100,,100,1100,交通银行流水.pdf,1\n",
+                encoding="utf-8",
+            )
+            result_path = attempt / "repair_result.json"
+            result_path.write_text(json.dumps({
+                "contract_version": 1,
+                "run_id": parent.run_id,
+                "attempt": 1,
+                "stage_id": "stage_1_standardize",
+                "role": "repair",
+                "status": "REPAIRED",
+                "outputs": [{
+                    "file_id": file_id,
+                    "source_md5": file_id,
+                    "standardized_csv": "standardized/交通银行__standardized.csv",
+                    "row_count": 1,
+                    "sha256": hashlib.sha256(repaired.read_bytes()).hexdigest(),
+                }],
+                "message": "",
+            }, ensure_ascii=False), encoding="utf-8")
+
+            args = runner_args(
+                run_root,
+                Path(parent.input_dir),
+                client="测试客户",
+                parent_run_id=parent.run_id,
+            )
+            args.ai_repair_attempt_increment = 1
+            args.repair_result_snapshot = str(result_path)
+            args.repair_result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
+            child = orchestrator.Runner(args)
+
+            stage_result = child.stage_1_standardize()
+            validation = child.validate_stage("stage_1_standardize")
+            record = child.load_stage_1_results()["files"][file_id]
+
+            self.assertEqual(stage_result["repaired"], [file_id])
+            self.assertEqual(record["status"], "DONE")
+            self.assertEqual(record["standardization_source"], "ai_repair")
+            self.assertEqual(record["route"]["yaml_match_status"], "unmatched")
+            self.assertEqual(validation["standardized_rows"], 1)
 
     def test_downstream_stage_does_not_call_stage_validator(self):
         with tempfile.TemporaryDirectory() as tmp:

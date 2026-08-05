@@ -56,7 +56,7 @@ class RunResultTests(unittest.TestCase):
             [{"status": "ERROR", "reason_code": R.ROUTE_AMBIGUOUS}],
         )
         self.assertEqual(route.reason_code, R.ROUTE_AMBIGUOUS)
-        self.assertEqual(route.next_action, R.AI_FALLBACK)
+        self.assertEqual(route.next_action, R.NEED_REPAIR)
 
     def test_downstream_failure_never_uses_ai(self):
         route = R.classify_failure("stage_3_tag", RuntimeError("tag failed"))
@@ -76,10 +76,10 @@ class RunResultTests(unittest.TestCase):
         result = R.RunResult(
             "run-1",
             "ERROR",
-            R.AI_FALLBACK,
-            action={"handler": "fallback_coordinator", "operation": "next"},
+            R.NEED_REPAIR,
+            action={"handler": "repair_coordinator", "operation": "submit"},
         )
-        self.assertEqual(result.to_dict()["action"]["operation"], "next")
+        self.assertEqual(result.to_dict()["action"]["operation"], "submit")
 
     def test_run_result_serializes_delivery_summary_only_when_present(self):
         result = R.RunResult(

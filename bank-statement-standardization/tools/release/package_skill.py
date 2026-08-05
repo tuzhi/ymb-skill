@@ -29,6 +29,10 @@ INCLUDED_TOP_LEVEL_DIRS = {
     "scripts",
     "services",
 }
+INCLUDED_REFERENCE_FILES = {
+    Path("references") / "prompt-1-字段映射.md",
+    Path("references") / "附件A-标准化字段说明.md",
+}
 HARNESS_SKILL_NAME = "bank-statement-standardization"
 EXPERT_NAME = "bank-statement-standardization-expert"
 EXPERT_SOURCE_RELATIVE = Path("workbuddy-experts") / EXPERT_NAME
@@ -97,6 +101,10 @@ def _is_included(relative_path):
     if not parts or _is_excluded(relative_path):
         return False
     if len(parts) == 1 and parts[0] in INCLUDED_TOP_LEVEL_FILES:
+        return True
+    if relative_path in INCLUDED_REFERENCE_FILES:
+        return True
+    if relative_path == Path("references"):
         return True
     return parts[0] in INCLUDED_TOP_LEVEL_DIRS
 
@@ -175,10 +183,11 @@ def package_skill(skill_dir, output=None, platform=None):
                 rel_dir = current_path.relative_to(core_source)
                 dirs[:] = sorted(
                     d for d in dirs
-                    if d not in {"__pycache__", "build", "dist"} and not d.endswith(".egg-info")
+                    if d not in {"__pycache__", "build", "dist", ".DS_Store"}
+                    and not d.endswith(".egg-info")
                 )
                 for filename in sorted(files):
-                    if filename.endswith((".pyc", ".pyo")):
+                    if filename == ".DS_Store" or filename.endswith((".pyc", ".pyo")):
                         continue
                     rel_file = rel_dir / filename
                     archive_path = Path(top) / CORE_PACKAGE_ARCHIVE_RELATIVE / rel_file

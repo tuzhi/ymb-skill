@@ -115,6 +115,7 @@ def validate_standardize(
             status = route.get("yaml_match_status")
             source_name = str(record.get("name") or "")
             declared_standardized_input = source_name.lower().endswith("__standardized.csv")
+            repaired_standardized_input = record.get("standardization_source") == "ai_repair"
             if status not in {"matched", "unmatched", "ambiguous", "failed"}:
                 raise ValidationError(
                     f"阶段一 YAML 命中状态不合法：{source_name or file_id}：{status}"
@@ -123,7 +124,7 @@ def validate_standardize(
                 raise ValidationError(
                     f"已声明标准化输入的路由状态不合法：{source_name or file_id}：{status}"
                 )
-            if status != "matched" and not declared_standardized_input:
+            if status != "matched" and not declared_standardized_input and not repaired_standardized_input:
                 raise ValidationError(
                     f"阶段一原始文件未唯一命中 YAML，不得标记为 DONE："
                     f"{source_name or file_id}：{status}"

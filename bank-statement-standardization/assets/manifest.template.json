@@ -5,8 +5,6 @@
   },
   "stage_1_standardize": {
     "name": "单文件标准化与字段映射",
-    "ai_fallback_used": false,
-    "ai_fallback_artifacts": [],
     "duration_seconds": null,
     "status": ""
   },

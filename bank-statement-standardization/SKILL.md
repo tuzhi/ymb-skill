@@ -21,4 +21,5 @@ Skill 触发后自动执行一次本安装包的平台入口。执行前不读�
 - `DELIVER`：仅将 `[交付]` 后的绝对路径调用一次 `present_files`（宿主无此工具时返回 `artifact_refs`），只使用 `summary` 回复，然后结束。不要读取 `context_ref`、manifest、QC、报告或目录，不写 memory。
 - `REQUEST_USER`：只按 `message` 请求用户补充；若含 `action`，保留完整 `RunResult` 交给上层并停止。
 - `REPORT_ERROR`：返回 `message`、`run_id` 和 `context_ref`，停止。
-- `AI_FALLBACK`：独立 Skill 不创建 Agent；把完整 `RunResult` 交给流水标准化专家/上层 Harness 后停止，不在当前会话诊断或修复。
+- `MAINTAINER_REQUIRED`：返回维护者处理提示、`run_id` 和 `context_ref`，停止。
+- `NEED_REPAIR`：独立 Skill 不创建 Agent；把完整结果交给流水标准化专家/上层 Harness 后停止，不在当前会话读取失败文件或修复。

@@ -17,10 +17,14 @@ if str(QA_DIR) not in sys.path:
 if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
-from _paths import RAW_STATEMENT_ROOT, TESTDATA_ROOT  # noqa: E402
+from _paths import DATA_ROOT, RAW_STATEMENT_ROOT, TESTDATA_ROOT  # noqa: E402
 from ymb_standardization_core import core  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import ExcelRouteRule  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
+from ymb_standardization_core.readers.routing.evidence import (  # noqa: E402
+    enrich_pdf_table_routing_evidence,
+)
+
 
 def load_input_router():
     spec = importlib.util.spec_from_file_location(
@@ -31,6 +35,18 @@ def load_input_router():
     spec.loader.exec_module(module)
     module.configure_readers(core.read_rows_excel, core.read_rows_csv, core.NotABankStatement)
     return module
+
+
+def iter_string_values(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from iter_string_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from iter_string_values(item)
+
 
 class InputRouterTests(unittest.TestCase):
     def test_unmatched_excel_exposes_only_structural_routing_evidence(self):
@@ -60,6 +76,62 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(evidence["date_patterns"], ["yyyy-mm-dd hh:mm:ss"])
         self.assertNotIn("测试客户秘密", encoded)
         self.assertNotIn("6222021234567890", encoded)
+
+    def test_unmatched_pdf_table_evidence_stops_before_transaction_rows(self):
+        evidence = enrich_pdf_table_routing_evidence(
+            {"file_type": "pdf", "reader_id": "none"},
+            [
+                ["交易日期", "交易金额", "账户余额", "对方户名"],
+                ["2026-01-02", "100.00", "1100.00", "测试客户秘密"],
+            ],
+            "pdfplumber_table",
+        )
+        encoded = json.dumps(evidence, ensure_ascii=False)
+
+        self.assertEqual(evidence["reader_id"], "pdfplumber_table")
+        self.assertEqual(
+            evidence["header_candidates"],
+            [["交易日期", "交易金额", "账户余额", "对方户名"]],
+        )
+        self.assertNotIn("测试客户秘密", encoded)
+        self.assertNotIn("100.00", encoded)
+
+    def test_unmatched_bocom_pdf_backfills_reader_header_evidence(self):
+        module = load_input_router()
+        pdf = (
+            DATA_ROOT
+            / "testdata2"
+            / "黄么其"
+            / "交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供交通银行个人客户交易清单 PDF 样本")
+
+        result = module.read_rows(str(pdf), route_rules=[])
+        route = result.route_info
+        evidence = route["routing_evidence"]
+
+        self.assertEqual(route["decision"], "unmatched")
+        self.assertEqual(route["reader_id"], "pdfplumber_table")
+        self.assertEqual(evidence["reader_id"], "pdfplumber_table")
+        self.assertEqual(
+            evidence["header_candidates"][0],
+            [
+                "序号Serial",
+                "交易日期Trans Date",
+                "交易时间Trans Time",
+                "交易类型Trading Type",
+                "借贷状态Dc Flg",
+                "交易金额Trans Amt",
+                "余额Balance",
+                "对方账号Payment Receipt",
+                "对方户名Payment Receipt",
+                "交易地点Trading Place",
+                "摘要Abstract",
+            ],
+        )
+        for text in iter_string_values(evidence):
+            self.assertIsNone(re.search(r"(?<!\d)\d{12,}(?!\d)", text))
 
     def test_directional_payer_payee_biff_xls_route(self):
         module = load_input_router()

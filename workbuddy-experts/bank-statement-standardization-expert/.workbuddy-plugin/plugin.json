@@ -1,15 +1,14 @@
 {
   "name": "bank-statement-standardization-expert",
   "version": "1.0.3",
-  "description": "Deterministic bank statement standardization expert with isolated fallback and audit sessions",
+  "description": "Deterministic bank statement standardization expert with an isolated repair session",
   "author": {
     "name": "tuzhi",
     "email": ""
   },
   "agents": [
     "./agents/bank-statement-standardization-expert.md",
-    "./agents/bank-statement-fallback.md",
-    "./agents/bank-statement-audit.md"
+    "./agents/bank-statement-repair.md"
   ],
   "expertType": "agent",
   "agentName": "bank-statement-standardization-expert",
@@ -22,8 +21,8 @@
     "zh": "流水标准化执行专家"
   },
   "displayDescription": {
-    "en": "Standardizes bank and payment statements with deterministic validation and delivery, then coordinates isolated diagnosis and audit sessions only when runtime evidence requires them.",
-    "zh": "专注银行及支付流水标准化，执行确定性清洗、整合、余额校验和交付，并在异常时调度隔离诊断与复核会话。"
+    "en": "Standardizes bank and payment statements with deterministic validation and delivery, then coordinates one isolated repair session only when Stage 1 fails.",
+    "zh": "专注银行及支付流水标准化，执行确定性清洗、整合、余额校验和交付，并仅在阶段一失败时调度隔离修复会话。"
   },
   "avatar": "avatars/expert.png",
   "categoryId": "08-FinanceInvestment",

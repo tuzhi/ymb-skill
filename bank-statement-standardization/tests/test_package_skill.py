@@ -54,17 +54,7 @@ class PackageSkillTest(unittest.TestCase):
         )
         self.assertIn(
             "bank-statement-standardization/harness/protocols/v1/"
-            "fallback-result.template.json",
-            names,
-        )
-        self.assertIn(
-            "bank-statement-standardization/harness/protocols/v1/"
-            "audit-result.template.json",
-            names,
-        )
-        self.assertIn(
-            "bank-statement-standardization/harness/protocols/v1/"
-            "retry-decision.template.json",
+            "repair-result.template.json",
             names,
         )
         self.assertIn(
@@ -80,8 +70,12 @@ class PackageSkillTest(unittest.TestCase):
             "bank-statement-standardization/agents/openai.yaml",
             names,
         )
-        self.assertIn("bank-statement-standardization/roles/fallback.md", names)
-        self.assertIn("bank-statement-standardization/roles/audit.md", names)
+        self.assertIn("bank-statement-standardization/roles/repair.md", names)
+        self.assertIn("bank-statement-standardization/references/prompt-1-字段映射.md", names)
+        self.assertIn("bank-statement-standardization/references/附件A-标准化字段说明.md", names)
+        self.assertNotIn("bank-statement-standardization/roles/fallback.md", names)
+        self.assertNotIn("bank-statement-standardization/roles/audit.md", names)
+        self.assertFalse(any(name.endswith("/.DS_Store") for name in names))
 
     def test_package_excludes_runtime_raw_data_and_independent_tools(self):
         package_skill = self.load_package_module()
@@ -109,14 +103,15 @@ class PackageSkillTest(unittest.TestCase):
         self.assertTrue(package_skill._is_included(Path("services/statement_service.py")))
         self.assertTrue(package_skill._is_included(Path("harness/coordinator.py")))
         self.assertTrue(package_skill._is_included(
-            Path("harness/protocols/v1/fallback-result.template.json")
+            Path("harness/protocols/v1/repair-result.template.json")
         ))
-        self.assertTrue(package_skill._is_included(Path("roles/fallback.md")))
-        self.assertTrue(package_skill._is_included(Path("roles/audit.md")))
+        self.assertTrue(package_skill._is_included(Path("roles/repair.md")))
         self.assertTrue(package_skill._is_included(Path("agents/openai.yaml")))
         self.assertFalse(package_skill._is_included(Path("tools/qa/run_full_test.py")))
         self.assertFalse(package_skill._is_included(Path("AGENTS.md")))
-        self.assertFalse(package_skill._is_included(Path("references/prompt-1-字段映射.md")))
+        self.assertTrue(package_skill._is_included(Path("references/prompt-1-字段映射.md")))
+        self.assertTrue(package_skill._is_included(Path("references/附件A-标准化字段说明.md")))
+        self.assertFalse(package_skill._is_included(Path("references/prompt-3-交易打标.md")))
         self.assertFalse(package_skill._is_included(Path("README.md")))
         self.assertFalse(package_skill._is_included(Path("版本说明.md")))
         self.assertFalse(package_skill._is_included(Path("测试验证报告.md")))
@@ -194,8 +189,10 @@ class PackageSkillTest(unittest.TestCase):
                 self.assertIn("独立 Skill 不创建 Agent", skill)
                 self.assertNotIn('subagent_type="general-purpose"', skill)
                 self.assertEqual(packaged["manifest"]["skill"]["version"], "1.4.8")
-                self.assertIn("bank-statement-standardization/roles/fallback.md", names)
-                self.assertIn("bank-statement-standardization/roles/audit.md", names)
+                self.assertIn("bank-statement-standardization/roles/repair.md", names)
+                self.assertIn("bank-statement-standardization/references/prompt-1-字段映射.md", names)
+                self.assertNotIn("bank-statement-standardization/roles/fallback.md", names)
+                self.assertNotIn("bank-statement-standardization/roles/audit.md", names)
                 self.assertFalse(any(
                     name.startswith("bank-statement-fallback/") for name in names
                 ))
@@ -232,13 +229,9 @@ class PackageSkillTest(unittest.TestCase):
                     "bank-statement-standardization-expert/agents/"
                     "bank-statement-standardization-expert.md"
                 ).decode("utf-8")
-                fallback_agent = zf.read(
+                repair_agent = zf.read(
                     "bank-statement-standardization-expert/agents/"
-                    "bank-statement-fallback.md"
-                ).decode("utf-8")
-                audit_agent = zf.read(
-                    "bank-statement-standardization-expert/agents/"
-                    "bank-statement-audit.md"
+                    "bank-statement-repair.md"
                 ).decode("utf-8")
                 avatar = zf.read(
                     "bank-statement-standardization-expert/avatars/expert.png"
@@ -248,29 +241,22 @@ class PackageSkillTest(unittest.TestCase):
         self.assertEqual(plugin["agentName"], "bank-statement-standardization-expert")
         self.assertEqual(plugin["agents"], [
             "./agents/bank-statement-standardization-expert.md",
-            "./agents/bank-statement-fallback.md",
-            "./agents/bank-statement-audit.md",
+            "./agents/bank-statement-repair.md",
         ])
         self.assertIn("skills: [bank-statement-standardization]", agent)
         self.assertNotIn("\ntools:", agent)
         self.assertNotIn('subagent_type="general-purpose"', agent)
-        self.assertIn('subagent_type="bank-statement-fallback"', agent)
-        self.assertIn('subagent_type="bank-statement-audit"', agent)
+        self.assertIn('subagent_type="bank-statement-repair"', agent)
         self.assertIn("`subAgent.sessionId`", agent)
         self.assertIn("不使用 `fork` 或 `resume`", agent)
         self.assertIn("必须是新 Agent", agent)
         self.assertNotIn("run-posix.sh", agent)
         self.assertNotIn("run-windows.cmd", agent)
-        self.assertNotIn("\ntools:", fallback_agent)
-        self.assertIn("displayName:", fallback_agent)
-        self.assertIn("profession:", fallback_agent)
-        self.assertIn("maxTurns: 12", fallback_agent)
-        self.assertIn("role=fallback", fallback_agent)
-        self.assertNotIn("\ntools:", audit_agent)
-        self.assertIn("displayName:", audit_agent)
-        self.assertIn("profession:", audit_agent)
-        self.assertIn("maxTurns: 12", audit_agent)
-        self.assertIn("role=audit", audit_agent)
+        self.assertNotIn("\ntools:", repair_agent)
+        self.assertIn("displayName:", repair_agent)
+        self.assertIn("profession:", repair_agent)
+        self.assertIn("maxTurns: 18", repair_agent)
+        self.assertIn("role=repair", repair_agent)
         self.assertEqual(plugin["avatar"], "avatars/expert.png")
         self.assertEqual(len(plugin["tags"]), 3)
         self.assertEqual(len(plugin["quickPrompts"]), 3)
@@ -284,7 +270,7 @@ class PackageSkillTest(unittest.TestCase):
             "bank-statement-standardization-expert/.codebuddy-plugin/plugin.json",
             names,
         )
-        self.assertEqual(len(names), 5)
+        self.assertEqual(len(names), 4)
 
 
 if __name__ == "__main__":

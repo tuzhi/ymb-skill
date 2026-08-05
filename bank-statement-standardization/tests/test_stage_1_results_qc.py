@@ -95,11 +95,13 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 runner.manifest["stage_1_standardize"],
                 RuntimeError("阶段一存在失败文件"),
             )
-            request = json.loads(
-                (Path(runner.fallback_dir("stage_1_standardize")) / "fallback_request.json")
-                .read_text(encoding="utf-8")
+            run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            self.assertEqual(run_result["next_action"], "NEED_REPAIR")
+            public = orchestrator.public_result(run_result, runner.run_dir)
+            self.assertEqual(
+                public["request"]["input_refs"],
+                ["stage_1_results.json", "input/失败.pdf"],
             )
-            self.assertEqual([item["name"] for item in request["files"]], ["失败.pdf"])
 
     def test_child_run_reuses_same_md5_same_name_done_file(self):
         with tempfile.TemporaryDirectory() as tmp:

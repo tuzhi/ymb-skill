@@ -27,7 +27,6 @@ class RunDetail:
     analysis: dict[str, Any]
     artifacts: list[dict[str, Any]]
     run_result: dict[str, Any]
-    fallback: dict[str, Any]
     error: str | None
 
 
