@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -37,6 +38,15 @@ class ExecutionPlanTest(unittest.TestCase):
             self.assertTrue(first_claimed)
             self.assertFalse(second_claimed)
             self.assertEqual(first_dir, second_dir)
+
+    def test_default_run_root_uses_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            expected = Path(os.path.abspath(os.path.join(tmp, "runs")))
+
+            actual = Path(self.orchestrator.resolve_run_root(None, cwd=tmp))
+
+            self.assertEqual(actual, expected)
+            self.assertNotEqual(actual.parent, SKILL_ROOT)
 
     def test_same_input_reuses_active_execution_plan(self):
         with tempfile.TemporaryDirectory() as tmp:

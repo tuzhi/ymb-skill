@@ -137,7 +137,7 @@ class HarnessRepairTests(unittest.TestCase):
                 request_id=request["request_id"],
                 session_id="repair-session-1",
                 payload=self._payload(request),
-                usage={"input_tokens": 100, "output_tokens": 20},
+                usage={"input_tokens": 100, "output_tokens": 20, "cached_input_tokens": 80},
             )
 
             self.assertEqual(outcome["status"], CHILD_RUN_READY)
@@ -145,9 +145,57 @@ class HarnessRepairTests(unittest.TestCase):
             self.assertTrue(outcome["repair_result_sha256"])
             receipt = json.loads((repair_dir / "session-receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["session_id"], "repair-session-1")
+            self.assertEqual(receipt["measurement_status"], "available")
+            self.assertEqual(receipt["usage"]["cached_input_tokens"], 80)
             usage = json.loads((run / "token_usage.json").read_text(encoding="utf-8"))
             self.assertEqual(usage["measurement_scope"], "repair_sessions_only")
+            self.assertEqual(usage["measurement_status"], "available")
             self.assertEqual(usage["ai_session_count"], 1)
+            self.assertEqual(usage["input_tokens"], 100)
+            self.assertEqual(usage["output_tokens"], 20)
+            self.assertEqual(usage["cached_input_tokens"], 80)
+
+    def test_partial_usage_is_not_treated_as_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self._run(Path(tmp))
+            coordinator = RepairCoordinator(run)
+            request = coordinator.decision()["request"]
+
+            coordinator.submit(
+                request_id=request["request_id"],
+                session_id="repair-session-with-partial-usage",
+                payload=self._payload(request),
+                usage={"input_tokens": 100, "output_tokens": 20},
+            )
+
+            usage = json.loads((run / "token_usage.json").read_text(encoding="utf-8"))
+            self.assertEqual(usage["measurement_status"], "partial")
+            self.assertEqual(usage["input_tokens"], 100)
+            self.assertEqual(usage["output_tokens"], 20)
+            self.assertIsNone(usage["cached_input_tokens"])
+
+    def test_missing_usage_is_recorded_as_unavailable_not_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self._run(Path(tmp))
+            coordinator = RepairCoordinator(run)
+            request = coordinator.decision()["request"]
+
+            coordinator.submit(
+                request_id=request["request_id"],
+                session_id="repair-session-without-usage",
+                payload=self._payload(request),
+            )
+
+            receipt = json.loads(
+                (Path(request["repair_dir"]) / "session-receipt.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(receipt["measurement_status"], "unavailable")
+            self.assertTrue(all(value is None for value in receipt["usage"].values()))
+            usage = json.loads((run / "token_usage.json").read_text(encoding="utf-8"))
+            self.assertEqual(usage["measurement_status"], "unavailable")
+            self.assertIsNone(usage["input_tokens"])
+            self.assertIsNone(usage["output_tokens"])
+            self.assertIsNone(usage["cached_input_tokens"])
 
     def test_repaired_result_requires_all_failed_csv_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:

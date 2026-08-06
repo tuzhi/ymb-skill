@@ -86,7 +86,7 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
-每个 Run 固定生成 `manifest.json`、`run_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`token_usage.json` 只统计 Repair 宿主回传的用量，不代表入口会话的总 Token。正常 stdout 只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，可直接完成结果说明，无需为此回读 manifest/QC。完整事件与回执留在 Run 目录。
+每个 Run 固定生成 `manifest.json`、`run_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`token_usage.json` 只统计 Repair 宿主回传的用量，不代表入口会话的总 Token；宿主未回传时使用 `measurement_status=unavailable` 和 `null`，不以 `0` 表示未知。正常 stdout 只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，可直接完成结果说明，无需为此回读 manifest/QC。完整事件与回执留在 Run 目录。
 
 生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
 
@@ -102,7 +102,7 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 ## 安装到各类大模型客户端（Skill 安装说明）
 
 本技能遵循 Agent Skill 通用规范（一个含 `SKILL.md` 的目录），可装入任何兼容该规范的客户端。
-仓库内 `SKILL.md` 是含 `{{PLATFORM_INLINE_ENTRY}}` 的发布模板，不直接复制安装；应从 `dist/`
+仓库内 `SKILL.md` 是含 `{{PLATFORM_COMMAND}}` 的发布模板，不直接复制安装；应从 `dist/`
 选择操作系统对应的完整发行包。
 通用前提：使用客户端可调用的宿主机 `python`，推荐 Python 3.11+。源码仓库以根目录
 `pyproject.toml` 的 `standardization` 可选依赖组作为依赖事实源；缺少依赖时执行

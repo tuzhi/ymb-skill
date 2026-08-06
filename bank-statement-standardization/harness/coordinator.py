@@ -27,6 +27,7 @@ from .protocols import protocol_path
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 REPAIR_PROMPT = SKILL_ROOT / "roles" / "repair.md"
+TOKEN_USAGE_KEYS = ("input_tokens", "output_tokens", "cached_input_tokens")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -57,6 +58,37 @@ def _md5(path: Path) -> str:
 def _canonical_hash(value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _normalize_token_usage(usage: Mapping[str, Any]) -> dict[str, int | None]:
+    return {
+        key: max(0, int(usage[key])) if usage.get(key) is not None else None
+        for key in TOKEN_USAGE_KEYS
+    }
+
+
+def _measurement_status(usage: Mapping[str, int | None]) -> str:
+    known_count = sum(usage.get(key) is not None for key in TOKEN_USAGE_KEYS)
+    if known_count == len(TOKEN_USAGE_KEYS):
+        return "available"
+    if known_count == 0:
+        return "unavailable"
+    return "partial"
+
+
+def _aggregate_token_usage(sessions: list[Mapping[str, Any]]) -> tuple[str, dict[str, int | None]]:
+    statuses = {_measurement_status(session) for session in sessions}
+    if statuses == {"available"}:
+        status = "available"
+    elif statuses == {"unavailable"}:
+        status = "unavailable"
+    else:
+        status = "partial"
+    totals = {}
+    for key in TOKEN_USAGE_KEYS:
+        values = [session.get(key) for session in sessions]
+        totals[key] = sum(int(value) for value in values) if all(value is not None for value in values) else None
+    return status, totals
 
 
 class RepairCoordinator:
@@ -264,10 +296,7 @@ class RepairCoordinator:
                 raise RuntimeError("每个 Repair attempt 必须使用不同的新会话")
 
     def _write_receipt(self, request: RepairRequest, session_id: str, usage: Mapping[str, Any]) -> None:
-        normalized_usage = {
-            key: max(0, int(usage.get(key) or 0))
-            for key in ("input_tokens", "output_tokens", "cached_input_tokens")
-        }
+        normalized_usage = _normalize_token_usage(usage)
         receipt = {
             "contract_version": CONTRACT_VERSION,
             "run_id": self.run_id,
@@ -277,6 +306,7 @@ class RepairCoordinator:
             "session_id": session_id,
             "output_path": self.output_path.relative_to(self.run_dir).as_posix(),
             "output_sha256": _sha256(self.output_path),
+            "measurement_status": _measurement_status(normalized_usage),
             "usage": normalized_usage,
         }
         if self.receipt_path.is_file() and _read_json(self.receipt_path) != receipt:
@@ -284,12 +314,13 @@ class RepairCoordinator:
         atomic_write_json(self.receipt_path, receipt)
         self._record_usage(session_id, normalized_usage)
 
-    def _record_usage(self, session_id: str, usage: Mapping[str, int]) -> None:
+    def _record_usage(self, session_id: str, usage: Mapping[str, int | None]) -> None:
         path = self.run_dir / "token_usage.json"
         data = _read_json(path) if path.is_file() else {
             "contract_version": 1,
             "run_id": self.run_id,
             "measurement_scope": "repair_sessions_only",
+            "measurement_status": "not_started",
             "ai_session_count": 0,
             "input_tokens": 0,
             "output_tokens": 0,
@@ -298,10 +329,17 @@ class RepairCoordinator:
         }
         if any(item.get("session_id") == session_id for item in data.get("sessions", [])):
             return
-        entry = {"session_id": session_id, "attempt": self.attempt, "role": REPAIR, **usage}
+        entry = {
+            "session_id": session_id,
+            "attempt": self.attempt,
+            "role": REPAIR,
+            "measurement_status": _measurement_status(usage),
+            **usage,
+        }
         data.setdefault("sessions", []).append(entry)
         data["measurement_scope"] = "repair_sessions_only"
         data["ai_session_count"] = len(data["sessions"])
-        for key in ("input_tokens", "output_tokens", "cached_input_tokens"):
-            data[key] = sum(int(item.get(key) or 0) for item in data["sessions"])
+        status, totals = _aggregate_token_usage(data["sessions"])
+        data["measurement_status"] = status
+        data.update(totals)
         atomic_write_json(path, data)

@@ -333,7 +333,7 @@ def manifest_template_path(skill_dir):
 def resolve_run_root(explicit_run_root, cwd=None):
     if explicit_run_root:
         return os.path.abspath(explicit_run_root)
-    return os.path.abspath(os.path.join(SKILL_DIR, "runs"))
+    return os.path.abspath(os.path.join(cwd or os.getcwd(), "runs"))
 
 
 def normalize_relpath(path):
@@ -691,6 +691,7 @@ class Runner:
             "contract_version": 1,
             "run_id": self.run_id,
             "measurement_scope": "repair_sessions_only",
+            "measurement_status": "not_started",
             "ai_session_count": 0,
             "input_tokens": 0,
             "output_tokens": 0,

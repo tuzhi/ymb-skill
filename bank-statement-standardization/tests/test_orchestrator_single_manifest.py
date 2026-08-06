@@ -49,6 +49,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 (Path(runner.run_dir) / "token_usage.json").read_text(encoding="utf-8")
             )
             self.assertEqual(usage["ai_session_count"], 0)
+            self.assertEqual(usage["measurement_status"], "not_started")
             self.assertEqual(
                 usage["measurement_scope"],
                 "repair_sessions_only",
