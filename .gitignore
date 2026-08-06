@@ -38,8 +38,8 @@ htmlcov/
 .codegraph/
 
 # Runtime outputs
-runs/
-logs/
+bank-statement-standardization/runs/
+token-vault-service/logs/
 log/
 *.log
 *.zip
@@ -59,3 +59,6 @@ testoutput/
 
 # Local scratch/resources
 resources/
+
+# Token vault SQLite cache (contains reversible mappings)
+*.sqlite3

@@ -333,7 +333,7 @@ def manifest_template_path(skill_dir):
 def resolve_run_root(explicit_run_root, cwd=None):
     if explicit_run_root:
         return os.path.abspath(explicit_run_root)
-    return os.path.abspath(os.path.join(cwd or os.getcwd(), "runs"))
+    return os.path.abspath(os.path.join(SKILL_DIR, "runs"))
 
 
 def normalize_relpath(path):

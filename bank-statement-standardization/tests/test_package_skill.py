@@ -164,24 +164,26 @@ class PackageSkillTest(unittest.TestCase):
             self.assertNotIn(windows_path, macos["names"])
             self.assertIn('!`sh "${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh"', macos["skill"])
             self.assertIn("${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh", macos["skill"])
+            self.assertIn('--folder "$ARGUMENTS" --run-root "./runs"`', macos["skill"])
             self.assertNotIn("run-windows.cmd", macos["skill"])
             self.assertIn(windows_path, windows["names"])
             self.assertNotIn(posix_path, windows["names"])
             self.assertIn(
-                '!`cmd.exe /d /s /c ""${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd"',
+                '!`cmd.exe /d /s /c call "${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd"',
                 windows["skill"],
             )
             self.assertIn(
                 "${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd",
                 windows["skill"],
             )
+            self.assertIn('--folder "$ARGUMENTS" --run-root "./runs"`', windows["skill"])
             self.assertNotIn("run-posix.sh", windows["skill"])
             for packaged in packages.values():
                 names = packaged["names"]
                 skill = packaged["skill"]
                 self.assertIn("bank-statement-standardization/SKILL.md", names)
                 self.assertEqual(skill.count("!`"), 1)
-                self.assertNotIn("{{PLATFORM_INLINE_ENTRY}}", skill)
+                self.assertNotIn("{{PLATFORM_COMMAND}}", skill)
                 self.assertNotIn("skill_entry.py", skill)
                 self.assertIn("$ARGUMENTS", skill)
                 self.assertIn("allowed-tools: Bash", skill)
@@ -207,12 +209,12 @@ class PackageSkillTest(unittest.TestCase):
             package_skill._render_platform_skill("no placeholder", "macos")
         with self.assertRaisesRegex(ValueError, "必须且只能包含一个"):
             package_skill._render_platform_skill(
-                "{{PLATFORM_INLINE_ENTRY}}\n{{PLATFORM_INLINE_ENTRY}}",
+                "{{PLATFORM_COMMAND}}\n{{PLATFORM_COMMAND}}",
                 "windows",
             )
         with self.assertRaisesRegex(ValueError, "unsupported platform"):
             package_skill._render_platform_skill(
-                "{{PLATFORM_INLINE_ENTRY}}",
+                "{{PLATFORM_COMMAND}}",
                 "linux",
             )
 

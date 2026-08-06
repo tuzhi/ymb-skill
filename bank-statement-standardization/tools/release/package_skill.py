@@ -41,17 +41,16 @@ PLATFORM_LAUNCHERS = {
     "macos": Path("scripts") / "run-posix.sh",
     "windows": Path("scripts") / "run-windows.cmd",
 }
-PLATFORM_ENTRY_PLACEHOLDER = "{{PLATFORM_INLINE_ENTRY}}"
-PLATFORM_INLINE_ENTRIES = {
+PLATFORM_COMMAND_PLACEHOLDER = "{{PLATFORM_COMMAND}}"
+PLATFORM_COMMANDS = {
     "macos": (
-        '!`sh "${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh" '
-        '"${CODEBUDDY_SKILL_DIR}/scripts/orchestrator.py" run '
-        '--folder "$ARGUMENTS" --run-root "./runs"`'
+        'sh "${CODEBUDDY_SKILL_DIR}/scripts/run-posix.sh" '
+        '"${CODEBUDDY_SKILL_DIR}/scripts/orchestrator.py" run'
     ),
     "windows": (
-        '!`cmd.exe /d /s /c ""${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd" '
-        '"${CODEBUDDY_SKILL_DIR}\\scripts\\orchestrator.py" run '
-        '--folder "$ARGUMENTS" --run-root ".\\runs""`'
+        'cmd.exe /d /s /c call '
+        '"${CODEBUDDY_SKILL_DIR}\\scripts\\run-windows.cmd" '
+        '"${CODEBUDDY_SKILL_DIR}\\scripts\\orchestrator.py" run'
     ),
 }
 
@@ -110,16 +109,16 @@ def _is_included(relative_path):
 
 
 def _render_platform_skill(content, platform):
-    """把单一 SKILL.md 发布变量渲染为指定平台的内联快速入口。"""
+    """把单一 SKILL.md 的启动命令变量渲染为指定平台命令。"""
     if platform not in SUPPORTED_PLATFORMS:
         raise ValueError(f"unsupported platform: {platform}")
-    if content.count(PLATFORM_ENTRY_PLACEHOLDER) != 1:
+    if content.count(PLATFORM_COMMAND_PLACEHOLDER) != 1:
         raise ValueError("SKILL.md 必须且只能包含一个平台入口变量")
     rendered = content.replace(
-        PLATFORM_ENTRY_PLACEHOLDER,
-        PLATFORM_INLINE_ENTRIES[platform],
+        PLATFORM_COMMAND_PLACEHOLDER,
+        PLATFORM_COMMANDS[platform],
     )
-    if PLATFORM_ENTRY_PLACEHOLDER in rendered:
+    if PLATFORM_COMMAND_PLACEHOLDER in rendered:
         raise ValueError("SKILL.md 平台入口变量渲染失败")
     return rendered.rstrip() + "\n"
 

@@ -36,6 +36,69 @@
       pattern: '^\s*\d{12,}\s*$'
       replacement: ''
   reader_id: pdfplumber_coordinate_table
+- id: md5:fa649447a118b2028758eb29b8dd0401
+  file_type: pdf
+  bank: 交通银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 交通银行个人客户交易清单
+      - Bocom Personal Account Details
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '账号/卡号Account/Card No:\s*([0-9*]+)'
+    - field: 本方名称
+      pattern: '户名Account Name:\s*(.+?)\s+查询止日'
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    columns:
+      required:
+        序号Serial:
+          field: null
+          match: reader_header
+        交易日期Trans Date:
+          field: 交易日期
+          match: reader_header
+        交易时间Trans Time:
+          field: 交易时间
+          match: reader_header
+        交易类型Trading Type:
+          field: 银行备注
+          match: reader_header
+        借贷状态Dc Flg:
+          field: 收支方向
+          match: reader_header
+        交易金额Trans Amt:
+          field: 交易金额
+          match: reader_header
+        余额Balance:
+          field: 账户余额
+          match: reader_header
+        对方账号Payment Receipt:
+          field: 对手账户
+          match: reader_header
+        对方户名Payment Receipt:
+          field: 对手名称
+          match: reader_header
+        交易地点Trading Place:
+          field: 交易渠道
+          match: reader_header
+        摘要Abstract:
+          field: 银行备注
+          match: reader_header
+  reader_options:
+    extract_mapping:
+    - source: 借贷状态Dc Flg
+      field: 收支方向
+      pattern: ^C$
+      replacement: 收入
+    - source: 借贷状态Dc Flg
+      field: 收支方向
+      pattern: ^D$
+      replacement: 支出
+  reader_id: pdfplumber_table
 - id: md5:3a12345edcf754cba36162616ca4737d
   file_type: pdf
   bank: 江西农商银行
