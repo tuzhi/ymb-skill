@@ -1,0 +1,30 @@
+{
+  "files": {
+    "md5:3d8a039aea42e53b24a96671329f46bd": {
+      "name": "hqmx_20260729110506.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/黄么其/hqmx_20260729110506__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:6c51495092e9abac017b130c6e41991d",
+        "series_family": "",
+        "router_bank": "中国建设银行",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "中国建设银行 · 个人",
+      "record_count": 307
+    },
+    "md5:69535de72f68da8b88ca28e66704a366": {
+      "name": "交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/黄么其/交通银行交易流水(申请时间2026年07月21日16时08分08秒)__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:fa649447a118b2028758eb29b8dd0401",
+        "series_family": "",
+        "router_bank": "交通银行",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "交通银行 · 个人",
+      "record_count": 2930
+    }
+  }
+}

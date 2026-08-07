@@ -1,6 +1,6 @@
 import csv
-import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-ORCHESTRATOR_PATH = SKILL_ROOT / "scripts" / "orchestrator.py"
-spec = importlib.util.spec_from_file_location("orchestrator_stage_1_results", ORCHESTRATOR_PATH)
-orchestrator = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(orchestrator)
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
+
+from runtime import runner as runner_runtime  # noqa: E402
 
 
 def runner_args(run_root, folder, *, client="测试客户", parent_run_id=""):
@@ -31,7 +31,7 @@ def runner_args(run_root, folder, *, client="测试客户", parent_run_id=""):
 
 class StageOneResultsAndQCTest(unittest.TestCase):
     def write_standardized(self, path, source_name, transaction_time="2026-01-01"):
-        columns = sorted(orchestrator.V.STD_REQUIRED)
+        columns = sorted(runner_runtime.V.STD_REQUIRED)
         row = {column: "1" for column in columns}
         row["交易唯一编号"] = f"TX-{source_name}"
         row["交易时间"] = transaction_time
@@ -63,14 +63,14 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             source.mkdir()
             (source / "正常.pdf").write_bytes(b"good")
             (source / "失败.pdf").write_bytes(b"bad")
-            runner = orchestrator.Runner(runner_args(root / "runs", source))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source))
 
             def standardize(context):
                 if Path(context.path).name == "失败.pdf":
                     raise RuntimeError("模拟 Parser 失败")
                 return self.standardize_success(context)
 
-            with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
+            with patch.object(runner_runtime.S, "standardize_file", side_effect=standardize):
                 with self.assertRaisesRegex(RuntimeError, "模拟 Parser 失败"):
                     runner.stage_1_standardize()
 
@@ -97,7 +97,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             )
             run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
             self.assertEqual(run_result["next_action"], "NEED_REPAIR")
-            public = orchestrator.public_result(run_result, runner.run_dir)
+            public = runner_runtime.public_result(run_result, runner.run_dir)
             self.assertEqual(
                 public["request"]["input_refs"],
                 ["stage_1_results.json", "input/失败.pdf"],
@@ -111,19 +111,19 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             (source / "流水.pdf").write_bytes(b"same-content")
             run_root = root / "runs"
 
-            parent = orchestrator.Runner(runner_args(run_root, source))
+            parent = runner_runtime.Runner(runner_args(run_root, source))
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ):
                 parent.stage_1_standardize()
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, source, parent_run_id=parent.run_id)
             )
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=AssertionError("复用文件不应重新标准化"),
             ):
@@ -145,9 +145,9 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             (source / "流水.pdf").write_bytes(b"same-content")
             run_root = root / "runs"
 
-            parent = orchestrator.Runner(runner_args(run_root, source))
+            parent = runner_runtime.Runner(runner_args(run_root, source))
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ):
@@ -162,11 +162,11 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             }
             parent.write_stage_1_results(parent_results)
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, source, parent_run_id=parent.run_id)
             )
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
@@ -188,7 +188,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             run_root = root / "runs"
             failed_names = {"D.pdf", "E.pdf"}
 
-            parent = orchestrator.Runner(runner_args(run_root, source))
+            parent = runner_runtime.Runner(runner_args(run_root, source))
 
             def parent_standardize(context):
                 if Path(context.path).name in failed_names:
@@ -196,7 +196,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 return self.standardize_success(context)
 
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=parent_standardize,
             ):
@@ -213,11 +213,11 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 "ERROR",
             )
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, source, parent_run_id=parent.run_id)
             )
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
@@ -248,19 +248,19 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             (child_source / "B.pdf").write_bytes(b"same-content")
             run_root = root / "runs"
 
-            parent = orchestrator.Runner(runner_args(run_root, parent_source))
+            parent = runner_runtime.Runner(runner_args(run_root, parent_source))
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ):
                 parent.stage_1_standardize()
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, child_source, parent_run_id=parent.run_id)
             )
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
@@ -285,19 +285,19 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 (child_source / name).write_bytes(content)
             run_root = root / "runs"
 
-            parent = orchestrator.Runner(runner_args(run_root, parent_source))
+            parent = runner_runtime.Runner(runner_args(run_root, parent_source))
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ):
                 parent.stage_1_standardize()
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, child_source, parent_run_id=parent.run_id)
             )
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
@@ -307,7 +307,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(len(result["reused"]), 2)
             self.assertEqual(len(result["added"]), 1)
             self.assertEqual(result["rerun"], [])
-            self.assertEqual(result["removed"], [f"md5:{orchestrator.md5(parent_source / 'A.pdf')}"])
+            self.assertEqual(result["removed"], [f"md5:{runner_runtime.md5(parent_source / 'A.pdf')}"])
 
     def test_same_run_duplicate_content_is_standardized_once(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -316,10 +316,10 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             source.mkdir()
             (source / "A.pdf").write_bytes(b"same-content")
             (source / "B.pdf").write_bytes(b"same-content")
-            runner = orchestrator.Runner(runner_args(root / "runs", source))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source))
 
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
@@ -337,10 +337,10 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             source = root / "input"
             source.mkdir()
             (source / "流水.pdf").write_bytes(b"content")
-            runner = orchestrator.Runner(runner_args(root / "runs", source))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source))
 
             with patch.object(
-                orchestrator.S,
+                runner_runtime.S,
                 "standardize_file",
                 side_effect=self.standardize_success,
             ):
@@ -355,7 +355,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertNotIn("qc", runner.manifest)
 
             self.assertEqual(
-                orchestrator.Q.update_status(qc, final=True),
+                runner_runtime.Q.update_status(qc, final=True),
                 "PASS_WITH_WARNINGS",
             )
 
@@ -364,7 +364,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             root = Path(tmp)
             source = root / "input"
             source.mkdir()
-            runner = orchestrator.Runner(runner_args(root / "runs", source))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source))
 
             def declared_stage_1(work):
                 output = Path(work) / "流水__standardized.csv"
@@ -384,7 +384,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                         }
                     }
                 })
-                return orchestrator.StageResult(
+                return runner_runtime.StageResult(
                     "stage_1_standardize",
                     {"mode": "manifest_declared_standardized_input"},
                 )
@@ -401,26 +401,26 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                     runner.stage_1_standardize()
 
     def test_qc_executor_runs_remaining_rule_after_exception(self):
-        results = orchestrator.Q.empty_results()
+        results = runner_runtime.Q.empty_results()
         registry = {
             "file.first": {
-                "scope": orchestrator.Q.FILE,
-                "checkpoint": orchestrator.Q.BEFORE_STAGE_1,
-                "level": orchestrator.Q.SOFT,
+                "scope": runner_runtime.Q.FILE,
+                "checkpoint": runner_runtime.Q.BEFORE_STAGE_1,
+                "level": runner_runtime.Q.SOFT,
                 "handler": lambda _context: (_ for _ in ()).throw(RuntimeError("boom")),
             },
             "file.second": {
-                "scope": orchestrator.Q.FILE,
-                "checkpoint": orchestrator.Q.BEFORE_STAGE_1,
-                "level": orchestrator.Q.SOFT,
+                "scope": runner_runtime.Q.FILE,
+                "checkpoint": runner_runtime.Q.BEFORE_STAGE_1,
+                "level": runner_runtime.Q.SOFT,
                 "handler": lambda _context: {"passed": True, "message": ""},
             },
         }
 
-        bucket = orchestrator.Q.execute_checkpoint(
+        bucket = runner_runtime.Q.execute_checkpoint(
             results,
-            orchestrator.Q.FILE,
-            orchestrator.Q.BEFORE_STAGE_1,
+            runner_runtime.Q.FILE,
+            runner_runtime.Q.BEFORE_STAGE_1,
             {},
             file_id="md5:test",
             registry=registry,

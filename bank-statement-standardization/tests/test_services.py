@@ -16,22 +16,88 @@ for path in (SKILL_ROOT, CORE_PACKAGE):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from services import StatementService, YamlRuleService  # noqa: E402
-from services import yaml_rule_service as yaml_service_module  # noqa: E402
-from scripts import repair_coordinator as coordinator_cli  # noqa: E402
-from ymb_standardization_core.contracts import RouteDecision  # noqa: E402
-from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402
-    routing_rules_version,
+from services import (  # noqa: E402
+    InputFile,
+    StandardizationRequest,
+    StatementService,
+    YamlRuleService,
 )
-
-
-class _Upload:
-    def __init__(self, filename, content):
-        self.filename = filename
-        self.file = io.BytesIO(content)
+from services.models import RunReference  # noqa: E402
+from runtime.models import PipelineExecutionResult  # noqa: E402
+from scripts import repair_coordinator as coordinator_cli  # noqa: E402
 
 
 class StatementServiceTests(unittest.TestCase):
+    def test_execute_standardization_uses_supplied_rule_snapshot_and_returns_dto(self):
+        production = (
+            CORE_PACKAGE
+            / "ymb_standardization_core"
+            / "config"
+            / "routing"
+            / "routing_rules.yaml"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "流水.xlsx"
+            source.write_bytes(b"excel")
+            rules = YamlRuleService.deserialize(production.read_text(encoding="utf-8"))
+            service = StatementService(Path(tmp) / "runs", submit=lambda execute: None)
+            execution = PipelineExecutionResult(
+                exit_code=0,
+                run_id="run-1",
+                client_name="客户甲",
+                parent_run_id="",
+                status="DONE",
+                file_results={
+                    "files": {
+                        "md5:test": {
+                            "name": "流水.xlsx",
+                            "relative_path": "流水.xlsx",
+                            "status": "DONE",
+                        },
+                    },
+                },
+                stages={"stage_1_standardize": {"status": "DONE"}},
+                stage_summaries={
+                    "stage_2_integrate": {"integrated_rows": 10},
+                },
+                qc={"status": "PASS"},
+                artifacts=({"artifact_id": "artifacts/交付物.xlsx"},),
+                run_result={"next_action": "DELIVER"},
+            )
+            active = mock.Mock()
+            active.result.return_value = execution
+            service._active_runs["run-1"] = active
+            with (
+                mock.patch.object(
+                    service,
+                    "_start_run",
+                    return_value=RunReference("run-1", ""),
+                ) as start,
+                mock.patch.object(
+                    service,
+                    "_get_run",
+                    side_effect=AssertionError("正常 Service 路径不应回读 Run 文件"),
+                ),
+            ):
+                result = service.execute_standardization(
+                    StandardizationRequest(
+                        client_name="客户甲",
+                        files=(InputFile("流水.xlsx", str(source)),),
+                    ),
+                    rules,
+                )
+
+            self.assertEqual(result.status, "DONE")
+            self.assertEqual(result.rules_version, rules.version)
+            self.assertEqual(result.stage_summaries, execution.stage_summaries)
+            self.assertEqual(result.file_results[0]["file_id"], "md5:test")
+            self.assertEqual(result.qc, {"status": "PASS"})
+            self.assertEqual(
+                result.artifacts,
+                [{"artifact_id": "artifacts/交付物.xlsx"}],
+            )
+            self.assertIs(start.call_args.kwargs["routing_rules_snapshot"], rules)
+
     @staticmethod
     def _finish_run(run_root, run_id):
         manifest_path = Path(run_root) / run_id / "manifest.json"
@@ -44,13 +110,21 @@ class StatementServiceTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_start_run_accepts_upload_stream_and_returns_aggregated_detail(self):
+    def test_start_run_accepts_input_file_and_returns_aggregated_detail(self):
         with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.xlsx"
+            source.write_bytes(b"excel")
             submitted = []
             service = StatementService(tmp, submit=lambda execute: submitted.append(execute))
 
-            reference = service.start_run("客户甲", [_Upload("流水.xlsx", b"excel")])
-            detail = service.get_run(reference.run_id)
+            reference = service._start_run(
+                "客户甲",
+                [InputFile("流水.xlsx", str(source))],
+            )
+            receipt_dir = Path(tmp) / reference.run_id / "receipts"
+            receipt_dir.mkdir(exist_ok=True)
+            (receipt_dir / "invalid.json").write_text("not-json", encoding="utf-8")
+            detail = service._get_run(reference.run_id)
 
             self.assertEqual(reference.status, "RUNNING")
             self.assertEqual(detail.client_name, "客户甲")
@@ -62,43 +136,32 @@ class StatementServiceTests(unittest.TestCase):
             )
             self.assertTrue(manifest["routing_rules_version"].startswith("sha256-"))
             self.assertTrue(detail.artifacts)
-            artifact = service.get_artifact(reference.run_id, "stage_1_results.json")
-            self.assertEqual(json.loads(artifact.read()), {"files": {}})
 
     def test_incremental_run_inherits_parent_and_applies_remove_and_add(self):
         with tempfile.TemporaryDirectory() as tmp:
+            old_source = Path(tmp) / "source-old.xlsx"
+            old_source.write_bytes(b"old")
+            new_source = Path(tmp) / "source-new.xlsx"
+            new_source.write_bytes(b"new")
             service = StatementService(tmp, submit=lambda execute: None)
-            parent = service.start_run("客户甲", [_Upload("旧.xlsx", b"old")])
-            old_id = service.get_run(parent.run_id).files[0]["file_id"]
+            parent = service._start_run(
+                "客户甲",
+                [InputFile("旧.xlsx", str(old_source))],
+            )
+            old_id = service._get_run(parent.run_id).files[0]["file_id"]
             self._finish_run(tmp, parent.run_id)
 
-            child = service.start_run(
+            child = service._start_run(
                 None,
-                [_Upload("新.xlsx", b"new")],
+                [InputFile("新.xlsx", str(new_source))],
                 parent_run_id=parent.run_id,
                 remove_file_ids=[old_id],
             )
-            detail = service.get_run(child.run_id)
+            detail = service._get_run(child.run_id)
 
             self.assertEqual(detail.parent_run_id, parent.run_id)
             self.assertEqual(detail.client_name, "客户甲")
             self.assertEqual([item["name"] for item in detail.files], ["新.xlsx"])
-
-    def test_delete_rejects_running_and_referenced_parent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            service = StatementService(tmp, submit=lambda execute: None)
-            parent = service.start_run("客户甲", [_Upload("旧.xlsx", b"old")])
-            with self.assertRaisesRegex(RuntimeError, "RUNNING"):
-                service.delete_run(parent.run_id)
-
-            self._finish_run(tmp, parent.run_id)
-            child = service.start_run(None, [], parent_run_id=parent.run_id)
-            self._finish_run(tmp, child.run_id)
-
-            with self.assertRaisesRegex(RuntimeError, "子运行引用"):
-                service.delete_run(parent.run_id)
-            service.delete_run(child.run_id)
-            service.delete_run(parent.run_id)
 
     def test_password_child_run_writes_hints_without_consuming_ai_attempt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -123,7 +186,7 @@ class StatementServiceTests(unittest.TestCase):
             )
             service = StatementService(root, submit=lambda execute: None)
 
-            child = service.start_run(
+            child = service._start_run(
                 None,
                 [],
                 parent_run_id="parent-run",
@@ -144,11 +207,11 @@ class StatementServiceTests(unittest.TestCase):
             parent = Path(tmp) / "parent-run"
             parent.mkdir()
             service = mock.Mock()
-            service.start_run.return_value = SimpleNamespace(
+            service._start_run.return_value = SimpleNamespace(
                 run_id="child-run",
                 parent_run_id="parent-run",
             )
-            service.get_run.return_value = SimpleNamespace(
+            service._get_run.return_value = SimpleNamespace(
                 status="DONE",
                 run_result={"next_action": "DELIVER"},
             )
@@ -172,7 +235,7 @@ class StatementServiceTests(unittest.TestCase):
 
             self.assertNotIn("secret", argv)
             self.assertEqual(json.loads(output.getvalue())["next_action"], "DELIVER")
-            service.start_run.assert_called_once_with(
+            service._start_run.assert_called_once_with(
                 None,
                 [],
                 parent_run_id="parent-run",
@@ -262,8 +325,8 @@ class StatementServiceTests(unittest.TestCase):
                 "repair_result_sha256": "sha256-test",
             }
             service = mock.Mock()
-            service.start_run.return_value = SimpleNamespace(run_id="child-run")
-            service.get_run.return_value = SimpleNamespace(
+            service._start_run.return_value = SimpleNamespace(run_id="child-run")
+            service._get_run.return_value = SimpleNamespace(
                 run_result={"run_id": "child-run", "status": "DONE", "next_action": "DELIVER"},
             )
             with mock.patch.object(coordinator_cli, "StatementService", return_value=service):
@@ -272,7 +335,7 @@ class StatementServiceTests(unittest.TestCase):
 
             self.assertEqual(result["next_action"], "DELIVER")
             self.assertEqual(repeated, result)
-            service.start_run.assert_called_once_with(
+            service._start_run.assert_called_once_with(
                 None,
                 [],
                 parent_run_id="parent-run",
@@ -321,7 +384,7 @@ class StatementServiceTests(unittest.TestCase):
                 }],
             }), encoding="utf-8")
             service = StatementService(root, submit=lambda execute: None)
-            child = service.start_run(
+            child = service._start_run(
                 None,
                 [],
                 parent_run_id="parent-run",
@@ -341,7 +404,7 @@ class StatementServiceTests(unittest.TestCase):
 
 
 class YamlRuleServiceTests(unittest.TestCase):
-    def test_draft_must_pass_isolated_file_test_before_publish(self):
+    def test_yaml_codec_round_trips_original_content(self):
         production = (
             CORE_PACKAGE
             / "ymb_standardization_core"
@@ -349,167 +412,10 @@ class YamlRuleServiceTests(unittest.TestCase):
             / "routing"
             / "routing_rules.yaml"
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            production_copy = root / "routing_rules.yaml"
-            production_copy.write_text(production.read_text(encoding="utf-8"), encoding="utf-8")
-            run_input = root / "runs" / "run-1" / "input"
-            run_input.mkdir(parents=True)
-            (run_input / "sample.xlsx").write_bytes(b"fake")
-            service = YamlRuleService(
-                run_root=root / "runs",
-                storage_root=root / "rule-store",
-                production_rules_path=production_copy,
-            )
-            initial_version = routing_rules_version(
-                production_copy.read_text(encoding="utf-8")
-            )
-
-            draft = service.create_draft()
-            with self.assertRaisesRegex(RuntimeError, "已经存在草稿"):
-                service.create_draft()
-            service.save_draft("not: [valid")
-            invalid = service.test_draft("run-1")
-            self.assertFalse(invalid.passed)
-            with self.assertRaisesRegex(RuntimeError, "必须先通过"):
-                service.publish_draft()
-
-            content = "# draft version\n" + production_copy.read_text(encoding="utf-8")
-            service.save_draft(content)
-            matched = SimpleNamespace(route_info=RouteDecision({
-                "decision": "matched",
-                "fingerprint_id": "md5:test",
-                "reader_id": "openpyxl_grid",
-            }))
-            with mock.patch.object(yaml_service_module, "read_rows", return_value=matched):
-                result = service.test_draft("run-1")
-
-            self.assertTrue(result.passed)
-            self.assertEqual(result.source_run_id, "run-1")
-            self.assertTrue(result.test_id.startswith("rule-test-"))
-            self.assertEqual(result.draft_version, routing_rules_version(content))
-            self.assertEqual(
-                result.summary,
-                {
-                    "total": 1,
-                    "supported": 1,
-                    "matched": 1,
-                    "unmatched": 0,
-                    "ambiguous": 0,
-                    "incomplete": 0,
-                    "errors": 0,
-                    "skipped": 0,
-                    "failed": 0,
-                },
-            )
-            test_result_path = (
-                root / "rule-store" / "tests" / result.test_id / "result.json"
-            )
-            persisted = json.loads(test_result_path.read_text(encoding="utf-8"))
-            self.assertEqual(persisted["source_run_id"], "run-1")
-            self.assertEqual(persisted["files"][0]["relative_path"], "sample.xlsx")
-
-            service.draft_path.write_text(content + "\n# untested change\n", encoding="utf-8")
-            self.assertFalse(service._draft().tested)
-            with self.assertRaisesRegex(RuntimeError, "已通过测试的版本不一致"):
-                service.publish_draft()
-            service.save_draft(content)
-            with mock.patch.object(yaml_service_module, "read_rows", return_value=matched):
-                service.test_draft("run-1")
-            published = service.publish_draft()
-            self.assertEqual(service.download_rules().read(), content.encode("utf-8"))
-            self.assertEqual(service.download_rules(published.version).read(), content.encode("utf-8"))
-            self.assertFalse((root / "rule-store" / "drafts" / "routing_rules.yaml").exists())
-            service.create_draft()
-
-            rolled_back = service.rollback(initial_version)
-            self.assertNotEqual(rolled_back.version, published.version)
-            self.assertIn(
-                f"rolled_back_from: {initial_version}",
-                service.download_rules().read().decode("utf-8"),
-            )
-
-    def test_draft_tests_entire_run_snapshot_and_keeps_results_outside_run(self):
-        production = (
-            CORE_PACKAGE
-            / "ymb_standardization_core"
-            / "config"
-            / "routing"
-            / "routing_rules.yaml"
-        )
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            production_copy = root / "routing_rules.yaml"
-            content = production.read_text(encoding="utf-8")
-            production_copy.write_text(content, encoding="utf-8")
-            run_input = root / "runs" / "run-directory" / "input"
-            nested = run_input / "银行A"
-            nested.mkdir(parents=True)
-            (run_input / "主账户.xlsx").write_bytes(b"excel")
-            (nested / "补充流水.pdf").write_bytes(b"pdf")
-            (nested / "说明.txt").write_text("仅用于说明", encoding="utf-8")
-            service = YamlRuleService(
-                run_root=root / "runs",
-                storage_root=root / "rule-store",
-                production_rules_path=production_copy,
-            )
-            service.create_draft()
-
-            def route_for(path, route_rules):
-                decision = (
-                    "matched_incomplete"
-                    if str(path).endswith("补充流水.pdf")
-                    else "matched"
-                )
-                return SimpleNamespace(route_info=RouteDecision({
-                    "decision": decision,
-                    "fingerprint_id": "md5:test",
-                    "reader_id": (
-                        "pdfplumber_coordinate_table"
-                        if str(path).endswith(".pdf")
-                        else "openpyxl_grid"
-                    ),
-                }))
-
-            with mock.patch.object(yaml_service_module, "read_rows", side_effect=route_for):
-                result = service.test_draft("run-directory")
-
-            self.assertFalse(result.passed)
-            self.assertEqual(
-                result.summary,
-                {
-                    "total": 3,
-                    "supported": 2,
-                    "matched": 1,
-                    "unmatched": 0,
-                    "ambiguous": 0,
-                    "incomplete": 1,
-                    "errors": 0,
-                    "skipped": 1,
-                    "failed": 1,
-                },
-            )
-            self.assertEqual(
-                {item["relative_path"] for item in result.files},
-                {"主账户.xlsx", "银行A/补充流水.pdf", "银行A/说明.txt"},
-            )
-            persisted = (
-                root
-                / "rule-store"
-                / "tests"
-                / result.test_id
-                / "result.json"
-            )
-            self.assertTrue(persisted.is_file())
-            self.assertFalse(
-                any((root / "runs" / "run-directory").rglob("result.json"))
-            )
-            with self.assertRaisesRegex(RuntimeError, "必须先通过"):
-                service.publish_draft()
-
-            with self.assertRaises(TypeError):
-                service.test_draft("run-directory", ["md5:not-supported"])
-
+        content = production.read_text(encoding="utf-8")
+        snapshot = YamlRuleService.deserialize(content)
+        self.assertEqual(YamlRuleService.serialize(snapshot), content)
+        self.assertTrue(snapshot.version.startswith("sha256-"))
 
 if __name__ == "__main__":
     unittest.main()

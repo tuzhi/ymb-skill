@@ -1,8 +1,4 @@
-"""流水线阶段间的轻量公开契约。"""
-
-
-from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping
+"""流水线阶段间的常量与契约转换函数。"""
 
 
 YAML_ROUTE_FIELDS = (
@@ -26,30 +22,3 @@ def yaml_route_summary(report):
         "router_bank": str(image.get("router_bank") or image.get("bank") or "未识别").strip(),
         "yaml_match_status": decision,
     }
-
-
-@dataclass(frozen=True)
-class IntegrationContext:
-    customer: str
-    inputs: tuple[str, ...]
-    out_dir: str | None = None
-    self_accounts: tuple[str, ...] = field(default_factory=tuple)
-    file_routes: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
-
-    @classmethod
-    def create(cls, customer: str, inputs: Iterable[str], out_dir=None, self_accounts=(), file_routes=None):
-        return cls(
-            customer=customer,
-            inputs=tuple(inputs),
-            out_dir=out_dir,
-            self_accounts=tuple(self_accounts or ()),
-            file_routes=dict(file_routes or {}),
-        )
-
-
-class StageResult(dict):
-    """可直接写入 receipt 的阶段结果，并携带明确的阶段身份。"""
-
-    def __init__(self, stage_id: str, values: dict[str, Any] | None = None, **kwargs):
-        super().__init__(values or {}, **kwargs)
-        self.stage_id = stage_id

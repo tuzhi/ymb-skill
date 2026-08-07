@@ -141,8 +141,8 @@ class PackageSkillTest(unittest.TestCase):
             self.assertEqual(
                 [archive.name for archive in archives],
                 [
-                    "bank-statement-standardization_v1.4.9_macos.zip",
-                    "bank-statement-standardization_v1.4.9_windows.zip",
+                    "bank-statement-standardization_v1.4.10_macos.zip",
+                    "bank-statement-standardization_v1.4.10_windows.zip",
                 ],
             )
             packages = {}
@@ -158,8 +158,8 @@ class PackageSkillTest(unittest.TestCase):
                         )),
                     }
 
-            macos = packages["bank-statement-standardization_v1.4.9_macos.zip"]
-            windows = packages["bank-statement-standardization_v1.4.9_windows.zip"]
+            macos = packages["bank-statement-standardization_v1.4.10_macos.zip"]
+            windows = packages["bank-statement-standardization_v1.4.10_windows.zip"]
             posix_path = "bank-statement-standardization/scripts/run-posix.sh"
             windows_path = "bank-statement-standardization/scripts/run-windows.cmd"
             self.assertIn(posix_path, macos["names"])
@@ -192,7 +192,7 @@ class PackageSkillTest(unittest.TestCase):
                 self.assertNotIn("allowed-tools: Bash, Agent", skill)
                 self.assertIn("独立 Skill 不创建 Agent", skill)
                 self.assertNotIn('subagent_type="general-purpose"', skill)
-                self.assertEqual(packaged["manifest"]["skill"]["version"], "1.4.9")
+                self.assertEqual(packaged["manifest"]["skill"]["version"], "1.4.10")
                 self.assertIn("bank-statement-standardization/roles/repair.md", names)
                 self.assertIn("bank-statement-standardization/references/prompt-1-字段映射.md", names)
                 self.assertNotIn("bank-statement-standardization/roles/fallback.md", names)

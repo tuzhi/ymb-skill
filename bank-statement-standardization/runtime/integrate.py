@@ -34,7 +34,7 @@ except ImportError:
     sys.exit("需要 pandas/numpy：pip install pandas numpy")
 
 from ymb_standardization_core import core as S  # 复用余额连续性行序整理（best_continuity_order）
-from .contracts import IntegrationContext
+from .models import IntegrationContext
 
 NUMERIC = ["收入金额", "支出金额", "交易金额", "账户余额"]
 ALIPAY_TRADE_ORDER_RE = re.compile(r"支付宝交易订单号=([^；;]+)")

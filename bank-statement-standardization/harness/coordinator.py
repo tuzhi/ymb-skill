@@ -8,8 +8,9 @@ import csv
 import hashlib
 import json
 
-from runtime import run_result as R
-from runtime.run_result import atomic_write_json
+from runtime import failure_policy as F
+from runtime.models import run_result as R
+from runtime.result_store import atomic_write_json
 
 from .contracts import (
     CHILD_RUN_READY,
@@ -19,9 +20,9 @@ from .contracts import (
     REPAIR,
     REQUEST_USER,
     UNSUPPORTED,
-    RepairRequest,
     validate_repair_payload,
 )
+from .models import RepairRequest
 from .protocols import protocol_path
 
 
@@ -97,7 +98,7 @@ class RepairCoordinator:
             raise ValueError("RunResult 与 Run 目录不一致")
         if self.run_result.get("next_action") != R.NEED_REPAIR:
             raise ValueError("当前 Run 不需要 AI Repair")
-        if self.attempt > R.MAX_AI_REPAIR_ATTEMPTS:
+        if self.attempt > F.MAX_AI_REPAIR_ATTEMPTS:
             raise RuntimeError("AI 修复次数已达上限")
         if not self.input_root.is_dir():
             raise FileNotFoundError("父 Run 缺少 input 快照")

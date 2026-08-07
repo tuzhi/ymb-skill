@@ -18,7 +18,7 @@ from ymb_standardization_core.readers.routing.rule_loader import (
     apply_required_reader_header_gate,
     load_excel_route_rules,
 )
-from ymb_standardization_core.contracts import RouteDecision
+from ymb_standardization_core.models import RouteDecision
 from ymb_standardization_core.models import ReadResult
 from ymb_standardization_core.transforms import (
     apply_reader_options,

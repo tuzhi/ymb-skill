@@ -1,0 +1,14 @@
+{
+  "stage": "stage_2_integrate",
+  "status": "script_ok",
+  "at": "2026-08-07T09:59:49.788095+08:00",
+  "details": {
+    "orchestrator_handler": "Runner.stage_2_integrate",
+    "result": {
+      "integrated_csv": "artifacts/_工作区/黄么其/黄么其__整合流水.csv",
+      "integrated_report": "artifacts/_工作区/黄么其/黄么其__整合报告.json",
+      "integrated_rows": 3237,
+      "accounts": 2
+    }
+  }
+}

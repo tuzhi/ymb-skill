@@ -1,5 +1,6 @@
 import importlib.util
 import hashlib
+import io
 import json
 import tempfile
 import unittest
@@ -13,6 +14,9 @@ ORCHESTRATOR_PATH = SKILL_ROOT / "scripts" / "orchestrator.py"
 spec = importlib.util.spec_from_file_location("orchestrator_single_manifest", ORCHESTRATOR_PATH)
 orchestrator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orchestrator)
+
+from runtime import runner as runner_runtime  # noqa: E402
+from runtime.models import PipelineExecutionResult  # noqa: E402
 
 
 def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_run_id=""):
@@ -29,6 +33,75 @@ def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_r
 
 
 class OrchestratorSingleManifestTest(unittest.TestCase):
+    def test_cli_uses_runner_memory_result_without_reading_run_result_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            run_id = "20260806T120000+0800-abcdef12"
+            execution = PipelineExecutionResult(
+                exit_code=0,
+                run_id=run_id,
+                client_name="测试客户",
+                parent_run_id="",
+                status="DONE",
+                file_results={"files": {}},
+                stages={},
+                stage_summaries={},
+                qc={"status": "PASS"},
+                artifacts=(),
+                run_result={
+                    "contract_version": 1,
+                    "run_id": run_id,
+                    "status": "DONE",
+                    "next_action": "DELIVER",
+                    "artifact_refs": [],
+                    "context_ref": "manifest.json",
+                    "message": "完成",
+                    "reason_code": "",
+                },
+            )
+            runner = SimpleNamespace(
+                run_id=run_id,
+                run_dir=str(root / "runs" / run_id),
+                run_result_path=str(root / "runs" / run_id / "run_result.json"),
+                execute=Mock(return_value=execution),
+            )
+            stdout = io.StringIO()
+            with (
+                patch.object(
+                    orchestrator._execution_plan,
+                    "load_or_create_execution_plan",
+                    return_value=(run_id, "plan-key"),
+                ),
+                patch.object(
+                    orchestrator._execution_plan,
+                    "claim_planned_run",
+                    return_value=(runner.run_dir, True),
+                ),
+                patch.object(orchestrator._runner_runtime, "Runner", return_value=runner),
+                patch.object(
+                    orchestrator._execution_plan,
+                    "release_execution_plan",
+                ) as release,
+                patch.object(orchestrator.sys, "stdout", stdout),
+            ):
+                exit_code = orchestrator.main([
+                    "run",
+                    "--folder",
+                    str(source),
+                    "--run-root",
+                    str(root / "runs"),
+                ])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(json.loads(stdout.getvalue())["next_action"], "DELIVER")
+            release.assert_called_once_with(
+                str(root / "runs"),
+                "plan-key",
+                run_id,
+            )
+
     def test_new_run_writes_only_manifest_with_run_context(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -36,7 +109,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
 
-            runner = orchestrator.Runner(runner_args(root / "runs", source, client="斑马商业"))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source, client="斑马商业"))
 
             manifest_path = Path(runner.run_dir) / "manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -90,7 +163,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            context = orchestrator.load_parent_run_context(str(run_root), "parent-run")
+            context = runner_runtime.load_parent_run_context(str(run_root), "parent-run")
 
             self.assertEqual(context["parent_client"], "斑马商业")
 
@@ -114,7 +187,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
 
-            runner = orchestrator.Runner(
+            runner = runner_runtime.Runner(
                 runner_args(run_root, source, client="错误包重跑目录", parent_run_id="parent-run")
             )
 
@@ -141,7 +214,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
 
             with self.assertRaisesRegex(RuntimeError, "父运行客户名称不一致"):
-                orchestrator.Runner(
+                runner_runtime.Runner(
                     runner_args(
                         run_root,
                         source,
@@ -158,12 +231,12 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
 
-            runner = orchestrator.Runner(
+            runner = runner_runtime.Runner(
                 runner_args(root / "runs-stage-1", source, client="斑马商业")
             )
             stage_id = "stage_1_standardize"
             snapshot = Path(runner.input_dir) / "流水.csv"
-            file_id = "md5:" + orchestrator.md5(str(snapshot))
+            file_id = "md5:" + runner_runtime.md5(str(snapshot))
             runner.write_stage_1_results({"files": {file_id: {
                 "name": "流水.csv",
                 "relative_path": "流水.csv",
@@ -181,7 +254,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertNotIn("action", run_result)
             self.assertEqual(run_result["next_action"], "NEED_REPAIR")
             self.assertEqual(run_result["context_ref"], "stage_1_results.json")
-            public = orchestrator.public_result(run_result, runner.run_dir)
+            public = runner_runtime.public_result(run_result, runner.run_dir)
             self.assertEqual(public["status"], "NEED_REPAIR")
             self.assertEqual(public["role"], "repair")
             self.assertIn("request", public)
@@ -193,7 +266,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source = root / "input"
             source.mkdir()
             (source / "加密流水.pdf").write_bytes(b"%PDF-1.4\n")
-            runner = orchestrator.Runner(
+            runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
 
@@ -218,12 +291,12 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             raw = source / "流水.pdf"
             raw.write_bytes(b"%PDF-1.4\n")
-            runner = orchestrator.Runner(
+            runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
             snapshot = Path(runner.input_dir) / raw.name
-            file_id = "md5:" + orchestrator.md5(str(snapshot))
-            runner.manifest["ai_repair_attempt"] = orchestrator.R.MAX_AI_REPAIR_ATTEMPTS
+            file_id = "md5:" + runner_runtime.md5(str(snapshot))
+            runner.manifest["ai_repair_attempt"] = runner_runtime.F.MAX_AI_REPAIR_ATTEMPTS
             runner.write_manifest()
             runner.write_stage_1_results({"files": {file_id: {
                 "name": raw.name,
@@ -256,7 +329,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "stage_3_tag",
                 "stage_4_package",
             ):
-                runner = orchestrator.Runner(
+                runner = runner_runtime.Runner(
                     runner_args(root / f"runs-{stage_id}", source, client="斑马商业")
                 )
                 runner.handle_stage_failure(stage_id, runner.manifest[stage_id], RuntimeError(f"{stage_id}-测试失败"))
@@ -283,7 +356,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
 
-            parent = orchestrator.Runner(runner_args(run_root, source, client="斑马商业"))
+            parent = runner_runtime.Runner(runner_args(run_root, source, client="斑马商业"))
             parent.handle_stage_failure(
                 "stage_1_standardize",
                 parent.manifest["stage_1_standardize"],
@@ -292,10 +365,10 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             # Repair 以父 Run 输入快照为基础创建 Child Run。
             (source / "_file_hints.yaml").write_text("files: {}\n", encoding="utf-8")
 
-            parent_context = orchestrator.load_parent_run_context(str(run_root), parent.run_id)
+            parent_context = runner_runtime.load_parent_run_context(str(run_root), parent.run_id)
             self.assertEqual(parent_context["parent_run_id"], parent.run_id)
 
-            child = orchestrator.Runner(
+            child = runner_runtime.Runner(
                 runner_args(run_root, source, client="斑马商业", parent_run_id=parent.run_id)
             )
             self.assertTrue((Path(child.input_dir) / "_file_hints.yaml").exists())
@@ -339,9 +412,9 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             raw = source / "交通银行流水.pdf"
             raw.write_bytes(b"%PDF-1.4\n")
 
-            parent = orchestrator.Runner(runner_args(run_root, source, client="测试客户"))
+            parent = runner_runtime.Runner(runner_args(run_root, source, client="测试客户"))
             parent_raw = Path(parent.input_dir) / raw.name
-            file_id = "md5:" + orchestrator.md5(str(parent_raw))
+            file_id = "md5:" + runner_runtime.md5(str(parent_raw))
             parent.write_stage_1_results({"files": {file_id: {
                 "name": raw.name,
                 "relative_path": raw.name,
@@ -393,7 +466,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             args.ai_repair_attempt_increment = 1
             args.repair_result_snapshot = str(result_path)
             args.repair_result_sha256 = hashlib.sha256(result_path.read_bytes()).hexdigest()
-            child = orchestrator.Runner(args)
+            child = runner_runtime.Runner(args)
 
             stage_result = child.stage_1_standardize()
             validation = child.validate_stage("stage_1_standardize")
@@ -411,17 +484,21 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source = root / "input"
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
-            runner = orchestrator.Runner(runner_args(root / "runs", source, client="斑马商业"))
+            runner = runner_runtime.Runner(runner_args(root / "runs", source, client="斑马商业"))
             for stage_id, stage in runner.manifest.items():
                 if stage_id.startswith("stage_"):
                     stage["status"] = "DONE"
             runner.manifest["stage_2_integrate"]["status"] = ""
             runner.write_manifest()
-            runner.execute_stage_script = Mock(return_value={"integrated_rows": 1})
+            integrated_csv = Path(runner.run_dir) / "artifacts" / "整合流水.csv"
+            runner.execute_stage_script = Mock(return_value={
+                "integrated_csv": str(integrated_csv),
+                "integrated_rows": 1,
+            })
             runner.validate_stage = Mock(side_effect=AssertionError("下游不应调用 stage validator"))
 
             with patch.object(
-                orchestrator.time,
+                runner_runtime.time,
                 "perf_counter",
                 side_effect=[10.0, 12.3456],
             ):
@@ -433,8 +510,18 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 2.346,
             )
             runner.validate_stage.assert_not_called()
-            receipts = [path.name for path in Path(runner.receipt_dir).glob("*.json")]
-            self.assertFalse(any("stage_2_integrate__validator" in name for name in receipts))
+            receipt_paths = list(Path(runner.receipt_dir).glob("*.json"))
+            self.assertFalse(any(
+                "stage_2_integrate__validator" in path.name
+                for path in receipt_paths
+            ))
+            expected = {
+                "integrated_csv": "artifacts/整合流水.csv",
+                "integrated_rows": 1,
+            }
+            self.assertEqual(runner.stage_summaries["stage_2_integrate"], expected)
+            receipt = json.loads(receipt_paths[0].read_text(encoding="utf-8"))
+            self.assertEqual(receipt["details"]["result"], expected)
 
     def test_failed_stage_records_duration_seconds(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -442,7 +529,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source = root / "input"
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
-            runner = orchestrator.Runner(
+            runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
             for stage_id, stage in runner.manifest.items():
@@ -456,7 +543,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
 
             with (
                 patch.object(
-                    orchestrator.time,
+                    runner_runtime.time,
                     "perf_counter",
                     side_effect=[20.0, 21.2349],
                 ),
@@ -478,9 +565,89 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 1.235,
             )
 
+    def test_execute_returns_structured_result_on_unrouted_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            runner = runner_runtime.Runner(
+                runner_args(root / "runs", source, client="斑马商业")
+            )
+            runner.run_manifest_stages = Mock(
+                side_effect=RuntimeError("未路由测试失败")
+            )
+
+            execution = runner.execute()
+
+            self.assertIsInstance(
+                execution,
+                PipelineExecutionResult,
+            )
+            self.assertEqual(execution.exit_code, 1)
+            self.assertEqual(execution.status, "ERROR")
+            self.assertEqual(execution.error, "未路由测试失败")
+            self.assertEqual(execution.run_result["next_action"], "REPORT_ERROR")
+
+    def test_execution_result_uses_runner_memory_for_stage_and_qc_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            runner = runner_runtime.Runner(
+                runner_args(root / "runs", source, client="斑马商业")
+            )
+            file_results = {
+                "files": {
+                    "md5:test": {
+                        "name": "流水.csv",
+                        "relative_path": "流水.csv",
+                        "status": "DONE",
+                    },
+                },
+            }
+            qc_results = {"status": "PASS", "files": {}, "customer": {}}
+            runner.write_stage_1_results(file_results)
+            runner.write_qc_results(qc_results)
+            input_reference = runner._remember_artifact(
+                str(Path(runner.input_dir) / "流水.csv")
+            )
+            runner.write_run_result(
+                status="DONE",
+                next_action="DELIVER",
+                context_ref="manifest.json",
+            )
+
+            with (
+                patch.object(
+                    runner_runtime,
+                    "read_json_if_exists",
+                    side_effect=AssertionError("不应回读 Stage 1 文件"),
+                ),
+                patch.object(
+                    runner_runtime.Q,
+                    "load_results",
+                    side_effect=AssertionError("不应回读 QC 文件"),
+                ),
+            ):
+                execution = runner._pipeline_execution_result(0)
+
+            self.assertIs(execution.file_results, file_results)
+            self.assertIs(execution.qc, qc_results)
+            self.assertEqual(input_reference, "input/流水.csv")
+            artifact_ids = {
+                item["artifact_id"]
+                for item in execution.artifacts
+            }
+            self.assertIn("stage_1_results.json", artifact_ids)
+            self.assertIn("qc_results.json", artifact_ids)
+            self.assertIn("run_result.json", artifact_ids)
+            self.assertNotIn("input/流水.csv", artifact_ids)
+
     def test_execute_reuses_final_delivery_validation_result(self):
         with tempfile.TemporaryDirectory() as tmp:
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.run_dir = tmp
             runner.final_validation_result = {
                 "deliverable": str(Path(tmp) / "客户_已清洗_待分析.xlsx"),
@@ -515,11 +682,18 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner.run_manifest_stages = Mock()
             runner.receipt = Mock()
             runner.emit = Mock()
+            runner.run_result = None
 
-            with patch.object(orchestrator.V, "validate_final") as validate_final:
-                status = runner.execute()
+            with patch.object(runner_runtime.V, "validate_final") as validate_final:
+                execution = runner.execute()
 
-            self.assertEqual(status, 0)
+            self.assertIsInstance(
+                execution,
+                PipelineExecutionResult,
+            )
+            self.assertEqual(execution.exit_code, 0)
+            self.assertEqual(execution.status, "DONE")
+            self.assertEqual(execution.run_result["next_action"], "DELIVER")
             validate_final.assert_not_called()
             details = runner.receipt.call_args.args[2]
             self.assertEqual(details, runner.final_validation_result)
@@ -553,7 +727,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             )
             (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
             runner.manifest = {"skipped_inputs": []}
@@ -566,8 +740,8 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             }
 
             with (
-                patch.object(orchestrator.P, "finalize_deliverable", return_value=final["deliverable"]),
-                patch.object(orchestrator.V, "validate_final", return_value=final) as validate_final,
+                patch.object(runner_runtime.P, "finalize_deliverable", return_value=final["deliverable"]),
+                patch.object(runner_runtime.V, "validate_final", return_value=final) as validate_final,
             ):
                 result = runner.stage_4_package()
 
@@ -588,7 +762,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
             (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
             runner.manifest = {"skipped_inputs": []}
@@ -601,8 +775,8 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             }
 
             with (
-                patch.object(orchestrator.P, "finalize_deliverable") as finalize,
-                patch.object(orchestrator.V, "validate_final", return_value=final) as validate_final,
+                patch.object(runner_runtime.P, "finalize_deliverable") as finalize,
+                patch.object(runner_runtime.V, "validate_final", return_value=final) as validate_final,
             ):
                 runner.stage_4_package()
 
@@ -620,13 +794,13 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             report_path.write_text("{}", encoding="utf-8")
             report = {"客户整合概览": {"整合交易数": 2, "整合账户数": 1}}
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.work_dir = lambda: str(work)
             runner.load_stage_1_routes = lambda: {}
 
             with patch.object(
-                orchestrator.I,
+                runner_runtime.I,
                 "integrate_context",
                 return_value=(str(integrated), str(report_path), report),
             ):
@@ -644,12 +818,12 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             report_path.write_text("{}", encoding="utf-8")
             report = {"标签梳理概览": {"交易总数": 2, "规则命中率": 1.0}}
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.skill_dir = str(SKILL_ROOT)
             runner.work_dir = lambda: str(work)
 
             with patch.object(
-                orchestrator.T,
+                runner_runtime.T,
                 "tag",
                 return_value=(str(tagged), str(report_path), report),
             ):

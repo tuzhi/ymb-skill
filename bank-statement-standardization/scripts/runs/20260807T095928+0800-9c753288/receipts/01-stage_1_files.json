@@ -1,0 +1,27 @@
+{
+  "stage": "stage_1_files",
+  "status": "ok",
+  "at": "2026-08-07T09:59:49.227719+08:00",
+  "details": {
+    "added": [
+      "md5:3d8a039aea42e53b24a96671329f46bd",
+      "md5:69535de72f68da8b88ca28e66704a366"
+    ],
+    "reused": [],
+    "repaired": [],
+    "rerun": [],
+    "removed": [],
+    "decisions": {
+      "md5:3d8a039aea42e53b24a96671329f46bd": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:69535de72f68da8b88ca28e66704a366": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      }
+    }
+  }
+}

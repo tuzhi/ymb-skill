@@ -1,0 +1,11 @@
+{"at": "2026-08-07T09:59:28.909838+08:00", "level": "INFO", "code": "STAGE_START", "message": "开始阶段 stage_1_standardize：单文件标准化与字段映射", "stage": "stage_1_standardize", "name": "单文件标准化与字段映射", "status": ""}
+{"at": "2026-08-07T09:59:49.241759+08:00", "level": "INFO", "code": "STAGE_DONE", "message": "阶段 stage_1_standardize 已通过脚本和检测", "stage": "stage_1_standardize"}
+{"at": "2026-08-07T09:59:49.241893+08:00", "level": "INFO", "code": "STAGE_START", "message": "开始阶段 stage_2_integrate：单客户多文件整合与验证", "stage": "stage_2_integrate", "name": "单客户多文件整合与验证", "status": ""}
+{"at": "2026-08-07T09:59:49.788520+08:00", "level": "INFO", "code": "STAGE_DONE", "message": "阶段 stage_2_integrate 程序执行完成", "stage": "stage_2_integrate"}
+{"at": "2026-08-07T09:59:49.788571+08:00", "level": "INFO", "code": "STAGE_START", "message": "开始阶段 stage_2b_portfolio_balance：组合余额与余额校验", "stage": "stage_2b_portfolio_balance", "name": "组合余额与余额校验", "status": ""}
+{"at": "2026-08-07T09:59:49.831649+08:00", "level": "INFO", "code": "STAGE_DONE", "message": "阶段 stage_2b_portfolio_balance 程序执行完成", "stage": "stage_2b_portfolio_balance"}
+{"at": "2026-08-07T09:59:49.831688+08:00", "level": "INFO", "code": "STAGE_START", "message": "开始阶段 stage_3_tag：交易打标与规则沉淀", "stage": "stage_3_tag", "name": "交易打标与规则沉淀", "status": ""}
+{"at": "2026-08-07T09:59:50.531037+08:00", "level": "INFO", "code": "STAGE_DONE", "message": "阶段 stage_3_tag 程序执行完成", "stage": "stage_3_tag"}
+{"at": "2026-08-07T09:59:50.531081+08:00", "level": "INFO", "code": "STAGE_START", "message": "开始阶段 stage_4_package：单文件交付物组装", "stage": "stage_4_package", "name": "单文件交付物组装", "status": ""}
+{"at": "2026-08-07T09:59:52.558868+08:00", "level": "INFO", "code": "STAGE_DONE", "message": "阶段 stage_4_package 程序执行完成", "stage": "stage_4_package"}
+{"at": "2026-08-07T09:59:52.558968+08:00", "level": "INFO", "code": "PIPELINE_SUCCESS", "message": "正式交付物已通过核验：/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/scripts/runs/20260807T095928+0800-9c753288/artifacts/黄么其_已清洗_待分析.xlsx"}

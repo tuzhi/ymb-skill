@@ -1,0 +1,38 @@
+{
+  "skill": {
+    "name": "bank-statement-standardization",
+    "version": "1.4.10"
+  },
+  "stage_1_standardize": {
+    "name": "单文件标准化与字段映射",
+    "duration_seconds": 20.332,
+    "status": "DONE"
+  },
+  "stage_2_integrate": {
+    "name": "单客户多文件整合与验证",
+    "duration_seconds": 0.547,
+    "status": "DONE"
+  },
+  "stage_2b_portfolio_balance": {
+    "name": "组合余额与余额校验",
+    "duration_seconds": 0.043,
+    "status": "DONE"
+  },
+  "stage_3_tag": {
+    "name": "交易打标与规则沉淀",
+    "duration_seconds": 0.699,
+    "status": "DONE"
+  },
+  "stage_4_package": {
+    "name": "单文件交付物组装",
+    "duration_seconds": 2.028,
+    "status": "DONE"
+  },
+  "client": "黄么其",
+  "parent_run_id": "",
+  "rerun_reason": "",
+  "password_attempt": 0,
+  "ai_repair_attempt": 0,
+  "routing_rules_version": "sha256-89db0c894c693a9fbf8caa3df3a187ea7bbd4b35428af362b4d0bdcd327d4963",
+  "skipped_inputs": []
+}

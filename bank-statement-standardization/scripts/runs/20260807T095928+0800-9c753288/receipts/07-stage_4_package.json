@@ -1,0 +1,21 @@
+{
+  "stage": "stage_4_package",
+  "status": "script_ok",
+  "at": "2026-08-07T09:59:52.558367+08:00",
+  "details": {
+    "orchestrator_handler": "Runner.stage_4_package",
+    "result": {
+      "deliverable": "artifacts/黄么其_已清洗_待分析.xlsx",
+      "deliverable_rows": 3237,
+      "sheets": [
+        "封面与说明",
+        "整合打标流水",
+        "组合日余额(虚拟账户)",
+        "账户清单",
+        "余额校验",
+        "标签汇总",
+        "人工复核事项"
+      ]
+    }
+  }
+}

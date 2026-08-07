@@ -3,7 +3,6 @@
 该包只负责把原始文件解析并映射为统一标准字段；状态机、整合、打标和交付物组装仍留在外层脚本。
 """
 
-from .contracts import RouteDecision, StandardizationContext
 from .core import (
     NotABankStatement,
     SourceFormatQualityError,
@@ -11,7 +10,7 @@ from .core import (
     standardize,
     standardize_file,
 )
-from .models import ReadResult
+from .models import ReadResult, RouteDecision, StandardizationContext
 
 __all__ = [
     "NotABankStatement",

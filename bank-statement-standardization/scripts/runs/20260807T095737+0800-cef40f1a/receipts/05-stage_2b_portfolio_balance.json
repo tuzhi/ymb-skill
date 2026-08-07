@@ -1,0 +1,14 @@
+{
+  "stage": "stage_2b_portfolio_balance",
+  "status": "script_ok",
+  "at": "2026-08-07T09:59:16.936206+08:00",
+  "details": {
+    "orchestrator_handler": "Runner.stage_2b_portfolio_balance",
+    "result": {
+      "portfolio_csv": "artifacts/_工作区/黄么其/黄么其__整合流水__组合日余额.csv",
+      "portfolio_report": "artifacts/_工作区/黄么其/黄么其__整合流水__余额校验.json",
+      "accounts": 2,
+      "warning_accounts": 0
+    }
+  }
+}

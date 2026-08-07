@@ -1,0 +1,21 @@
+{
+  "run_id": "20260807T095737+0800-cef40f1a",
+  "status": "DONE",
+  "next_action": "DELIVER",
+  "reason_code": "",
+  "artifact_refs": [
+    "artifacts/黄么其_已清洗_待分析.xlsx"
+  ],
+  "context_ref": "manifest.json",
+  "message": "全部 Pipeline、QC 和 Validator 已通过",
+  "summary": {
+    "input_file_count": 2,
+    "processed_file_count": 2,
+    "qc_status": "PASS_WITH_WARNINGS",
+    "warning_count": 1,
+    "warning_summary": [
+      "全部有效文件覆盖不足两年：2025-07-21 至 2026-07-28"
+    ]
+  },
+  "contract_version": 1
+}

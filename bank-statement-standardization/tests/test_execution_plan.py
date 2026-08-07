@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -11,6 +12,12 @@ from unittest.mock import patch
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 ORCHESTRATOR_SCRIPT = SKILL_ROOT / "scripts" / "orchestrator.py"
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
+
+from runtime import execution_plan  # noqa: E402
+from runtime.models import PipelineExecutionResult  # noqa: E402
+from runtime.runner import protocol_exit_status, resolve_run_root  # noqa: E402
 
 
 class ExecutionPlanTest(unittest.TestCase):
@@ -28,10 +35,10 @@ class ExecutionPlanTest(unittest.TestCase):
             run_root = Path(tmp) / "runs"
             run_id = "20260804T155026+0800-3ab67cad"
 
-            first_dir, first_claimed = self.orchestrator.claim_planned_run(
+            first_dir, first_claimed = execution_plan.claim_planned_run(
                 str(run_root), run_id
             )
-            second_dir, second_claimed = self.orchestrator.claim_planned_run(
+            second_dir, second_claimed = execution_plan.claim_planned_run(
                 str(run_root), run_id
             )
 
@@ -43,7 +50,7 @@ class ExecutionPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             expected = Path(os.path.abspath(os.path.join(tmp, "runs")))
 
-            actual = Path(self.orchestrator.resolve_run_root(None, cwd=tmp))
+            actual = Path(resolve_run_root(None, cwd=tmp))
 
             self.assertEqual(actual, expected)
             self.assertNotEqual(actual.parent, SKILL_ROOT)
@@ -54,10 +61,10 @@ class ExecutionPlanTest(unittest.TestCase):
             input_path.mkdir()
             run_root = Path(tmp) / "runs"
 
-            first = self.orchestrator.load_or_create_execution_plan(
+            first = execution_plan.load_or_create_execution_plan(
                 str(input_path), str(run_root)
             )
-            second = self.orchestrator.load_or_create_execution_plan(
+            second = execution_plan.load_or_create_execution_plan(
                 str(input_path), str(run_root)
             )
 
@@ -68,7 +75,7 @@ class ExecutionPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             run_root = Path(tmp) / "runs"
             run_id = "20260804T155026+0800-3ab67cad"
-            run_dir, _ = self.orchestrator.claim_planned_run(str(run_root), run_id)
+            run_dir, _ = execution_plan.claim_planned_run(str(run_root), run_id)
             expected = {
                 "run_id": run_id,
                 "status": "DONE",
@@ -79,7 +86,7 @@ class ExecutionPlanTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            actual = self.orchestrator.wait_for_run_result(run_dir, 0.1)
+            actual = execution_plan.wait_for_run_result(run_dir, 0.1)
 
             self.assertEqual(actual, expected)
 
@@ -95,12 +102,12 @@ class ExecutionPlanTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            self.orchestrator.release_execution_plan(
+            execution_plan.release_execution_plan(
                 str(run_root), plan_key, "different-run"
             )
             self.assertTrue(plan_path.exists())
 
-            self.orchestrator.release_execution_plan(
+            execution_plan.release_execution_plan(
                 str(run_root), plan_key, "20260804T155026+0800-3ab67cad"
             )
             self.assertFalse(plan_path.exists())
@@ -128,8 +135,8 @@ class ExecutionPlanTest(unittest.TestCase):
             "next_action": "NEED_REPAIR",
         }
 
-        self.assertEqual(self.orchestrator.protocol_exit_status(result), 0)
-        self.assertEqual(self.orchestrator.protocol_exit_status({}, 3), 3)
+        self.assertEqual(protocol_exit_status(result), 0)
+        self.assertEqual(protocol_exit_status({}, 3), 3)
 
     def test_main_calls_runner_directly_and_releases_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,7 +153,6 @@ class ExecutionPlanTest(unittest.TestCase):
                 "message": "需要诊断",
                 "contract_version": 1,
             }
-
             class FakeRunner:
                 def __init__(self, args):
                     self.run_id = args.run_id
@@ -154,11 +160,20 @@ class ExecutionPlanTest(unittest.TestCase):
 
                 def execute(self):
                     result = dict(final_result, run_id=self.run_id)
-                    Path(self.run_result_path).write_text(
-                        json.dumps(result),
-                        encoding="utf-8",
+                    return PipelineExecutionResult(
+                        exit_code=1,
+                        run_id=self.run_id,
+                        client_name="input",
+                        parent_run_id="",
+                        status="ERROR",
+                        file_results={"files": {}},
+                        stages={},
+                        stage_summaries={},
+                        qc={},
+                        artifacts=(),
+                        run_result=result,
+                        error="需要诊断",
                     )
-                    return 1
 
             output = StringIO()
             public_result = {
@@ -170,8 +185,12 @@ class ExecutionPlanTest(unittest.TestCase):
                 "request": {},
             }
             with (
-                patch.object(self.orchestrator, "Runner", FakeRunner),
-                patch.object(self.orchestrator, "public_result", return_value=public_result),
+                patch.object(self.orchestrator._runner_runtime, "Runner", FakeRunner),
+                patch.object(
+                    self.orchestrator._runner_runtime,
+                    "public_result",
+                    return_value=public_result,
+                ),
                 redirect_stdout(output),
             ):
                 status = self.orchestrator.main([

@@ -158,6 +158,7 @@ class RoutingRulesSnapshot:
     version: str
     pdf_rules: tuple[PdfRouteRule, ...]
     excel_rules: tuple[ExcelRouteRule, ...]
+    source_yaml: str = ""
 
 
 _ROUTING_RULES_LOCK = RLock()
@@ -941,6 +942,7 @@ def build_routing_rules_snapshot(content):
         version=routing_rules_version(content),
         pdf_rules=rules["pdf"],
         excel_rules=rules["excel"],
+        source_yaml=content,
     )
 
 

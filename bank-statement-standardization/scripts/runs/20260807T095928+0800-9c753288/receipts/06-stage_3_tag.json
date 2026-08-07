@@ -1,0 +1,14 @@
+{
+  "stage": "stage_3_tag",
+  "status": "script_ok",
+  "at": "2026-08-07T09:59:50.530451+08:00",
+  "details": {
+    "orchestrator_handler": "Runner.stage_3_tag",
+    "result": {
+      "tagged_csv": "artifacts/_工作区/黄么其/黄么其__打标流水.csv",
+      "tag_report": "artifacts/_工作区/黄么其/黄么其__标签报告.json",
+      "tagged_rows": 3237,
+      "rule_hit_rate": 0.88
+    }
+  }
+}

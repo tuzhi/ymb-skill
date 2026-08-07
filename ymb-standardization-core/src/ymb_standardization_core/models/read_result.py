@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-from ymb_standardization_core.contracts import RouteDecision
+from .routing import RouteDecision
 
 
 @dataclass

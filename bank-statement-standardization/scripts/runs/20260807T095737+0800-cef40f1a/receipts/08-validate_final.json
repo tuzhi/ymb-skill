@@ -1,0 +1,18 @@
+{
+  "stage": "validate_final",
+  "status": "ok",
+  "at": "2026-08-07T09:59:25.069438+08:00",
+  "details": {
+    "deliverable": "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/scripts/runs/20260807T095737+0800-cef40f1a/artifacts/黄么其_已清洗_待分析.xlsx",
+    "deliverable_rows": 3237,
+    "sheets": [
+      "封面与说明",
+      "整合打标流水",
+      "组合日余额(虚拟账户)",
+      "账户清单",
+      "余额校验",
+      "标签汇总",
+      "人工复核事项"
+    ]
+  }
+}

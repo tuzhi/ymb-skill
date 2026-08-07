@@ -1,0 +1,44 @@
+{
+  "stage": "stage_1_standardize",
+  "status": "script_ok",
+  "at": "2026-08-07T09:59:49.229237+08:00",
+  "details": {
+    "orchestrator_handler": "Runner.stage_1_standardize",
+    "result": {
+      "processed_files": 2,
+      "standardized": [
+        {
+          "input": "input/hqmx_20260729110506.pdf",
+          "csv": "artifacts/_工作区/黄么其/hqmx_20260729110506__pdf__standardized.csv",
+          "rows": 307
+        },
+        {
+          "input": "input/交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf",
+          "csv": "artifacts/_工作区/黄么其/交通银行交易流水(申请时间2026年07月21日16时08分08秒)__pdf__standardized.csv",
+          "rows": 2930
+        }
+      ],
+      "stage_1_results": "stage_1_results.json",
+      "added": [
+        "md5:3d8a039aea42e53b24a96671329f46bd",
+        "md5:69535de72f68da8b88ca28e66704a366"
+      ],
+      "reused": [],
+      "repaired": [],
+      "rerun": [],
+      "removed": [],
+      "decisions": {
+        "md5:3d8a039aea42e53b24a96671329f46bd": {
+          "decision": "ADDED",
+          "reason": "new_md5",
+          "result_status": "DONE"
+        },
+        "md5:69535de72f68da8b88ca28e66704a366": {
+          "decision": "ADDED",
+          "reason": "new_md5",
+          "result_status": "DONE"
+        }
+      }
+    }
+  }
+}

@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
   "openpyxl>=3.1.5,<4",
+  "pandas>=2.2.3,<3",
+  "numpy>=1.26,<3",
 ]
 
 [tool.setuptools]
 py-modules = []
+packages = ["bank_statement_bi_analysis", "bank_statement_bi_analysis.models"]

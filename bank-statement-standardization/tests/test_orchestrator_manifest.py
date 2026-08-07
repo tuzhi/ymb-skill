@@ -1,6 +1,6 @@
-import importlib.util
 import csv
 import json
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -10,10 +10,11 @@ from unittest.mock import patch
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-ORCHESTRATOR_PATH = SKILL_ROOT / "scripts" / "orchestrator.py"
-spec = importlib.util.spec_from_file_location("orchestrator", ORCHESTRATOR_PATH)
-orchestrator = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(orchestrator)
+if str(SKILL_ROOT) not in sys.path:
+    sys.path.insert(0, str(SKILL_ROOT))
+
+from runtime import input_snapshot  # noqa: E402
+from runtime import runner as runner_runtime  # noqa: E402
 
 
 class OrchestratorManifestTest(unittest.TestCase):
@@ -24,7 +25,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             "metadata": {"sheet": "企业流水"},
         }
 
-        summary = orchestrator.failure_route_summary({
+        summary = runner_runtime.failure_route_summary({
             "decision": "unmatched",
             "reader_id": "openpyxl_grid",
             "routing_evidence": evidence,
@@ -33,7 +34,7 @@ class OrchestratorManifestTest(unittest.TestCase):
         self.assertEqual(summary["routing_evidence"], evidence)
 
     def _write_standardized_csv(self, path, source_name):
-        columns = list(orchestrator.V.STD_REQUIRED)
+        columns = list(runner_runtime.V.STD_REQUIRED)
         row = {column: "1" for column in columns}
         for column in columns:
             if "来源文件" in column:
@@ -64,7 +65,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 archive.writestr("docProps/custom.xml", custom_properties)
             self._write_standardized_csv(source / "有效流水__standardized.csv", "有效流水.xlsx")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
@@ -91,7 +92,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             statement = source / "招商银行交易流水.pdf"
             statement.write_bytes(b"%PDF-1.4\n")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
@@ -102,10 +103,10 @@ class OrchestratorManifestTest(unittest.TestCase):
             }
             runner.write_manifest = lambda: None
 
-            original = orchestrator.S.standardize_file
+            original = runner_runtime.S.standardize_file
             try:
-                orchestrator.S.standardize_file = lambda _context: (_ for _ in ()).throw(
-                    orchestrator.S.SourceFormatQualityError(
+                runner_runtime.S.standardize_file = lambda _context: (_ for _ in ()).throw(
+                    runner_runtime.S.SourceFormatQualityError(
                         "已识别为招商银行个人流水，但原始导出缺少必需可选列：对手信息。"
                         "请重新导出招商银行交易流水，并勾选“对手信息”"
                     )
@@ -113,7 +114,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "阶段一处理完成但存在失败文件.*对手信息"):
                     runner.stage_1_standardize()
             finally:
-                orchestrator.S.standardize_file = original
+                runner_runtime.S.standardize_file = original
 
             self.assertEqual(runner.manifest["skipped_inputs"], [])
 
@@ -126,7 +127,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             statement = nested / "流水.pdf"
             statement.write_bytes(b"%PDF-1.4\n")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
@@ -146,7 +147,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                     "路由信息": {},
                 }
 
-            with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
+            with patch.object(runner_runtime.S, "standardize_file", side_effect=standardize):
                 result = runner.stage_1_standardize()
 
             self.assertEqual(result["processed_files"], 1)
@@ -162,7 +163,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             empty_source.write_bytes(b"%PDF-1.4\nempty")
             valid_source.write_bytes(b"%PDF-1.4\nvalid")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
@@ -178,7 +179,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 stem = Path(context.path).stem
                 output = work / f"{stem}__pdf__standardized.csv"
                 if Path(context.path) == empty_source:
-                    output.write_text(",".join(sorted(orchestrator.V.STD_REQUIRED)) + "\n", encoding="utf-8")
+                    output.write_text(",".join(sorted(runner_runtime.V.STD_REQUIRED)) + "\n", encoding="utf-8")
                     rows = 0
                 else:
                     self._write_standardized_csv(output, valid_source.name)
@@ -188,7 +189,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                     "路由信息": {},
                 }
 
-            with patch.object(orchestrator.S, "standardize_file", side_effect=standardize):
+            with patch.object(runner_runtime.S, "standardize_file", side_effect=standardize):
                 with self.assertRaisesRegex(RuntimeError, "阶段一处理完成但存在失败文件.*CSV 无交易数据"):
                     runner.stage_1_standardize()
 
@@ -208,7 +209,7 @@ class OrchestratorManifestTest(unittest.TestCase):
         if not source.exists():
             self.skipTest("本地未提供建行个人横向 PDF 样本")
 
-        file_kind, _preamble, rows, route = orchestrator.S.read_rows(str(source))
+        file_kind, _preamble, rows, route = runner_runtime.S.read_rows(str(source))
 
         self.assertEqual(file_kind, "pdf")
         self.assertEqual(route["reader_id"], "pdfplumber_coordinate_table")
@@ -223,7 +224,7 @@ class OrchestratorManifestTest(unittest.TestCase):
         self.assertNotIn("生成时间", "".join(rows[-1]))
 
         _kind, _preamble, continuation_rows, continuation_route = (
-            orchestrator.S.read_rows(str(continuation))
+            runner_runtime.S.read_rows(str(continuation))
         )
         self.assertEqual(continuation_route["fingerprint_id"], route["fingerprint_id"])
         self.assertEqual(len(continuation_rows), 34)
@@ -233,8 +234,8 @@ class OrchestratorManifestTest(unittest.TestCase):
         self.assertNotIn("生成时间", "".join(continuation_rows[-1]))
 
         with tempfile.TemporaryDirectory() as tmp:
-            csv_path, _mapping_path, report = orchestrator.S.standardize_file(
-                orchestrator.S.StandardizationContext(
+            csv_path, _mapping_path, report = runner_runtime.S.standardize_file(
+                runner_runtime.S.StandardizationContext(
                     path=str(source),
                     out_dir=tmp,
                     write_mapping=False,
@@ -259,7 +260,7 @@ class OrchestratorManifestTest(unittest.TestCase):
         if not source.exists():
             self.skipTest("本地未提供建行个人竖向 PDF 样本")
 
-        file_kind, _preamble, rows, route = orchestrator.S.read_rows(str(source))
+        file_kind, _preamble, rows, route = runner_runtime.S.read_rows(str(source))
 
         self.assertEqual(file_kind, "pdf")
         self.assertEqual(route["reader_id"], "pdfplumber_table")
@@ -279,7 +280,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
             (summary / "manifest.json").write_text("{}", encoding="utf-8")
 
-            rows = orchestrator.inventory(str(root))
+            rows = input_snapshot.inventory(str(root))
             paths = {row["path"].replace("\\", "/") for row in rows}
 
             self.assertNotIn("summary/tokenized_batch_bundle_token_vault.json", paths)
@@ -300,7 +301,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             (summary / "tokenized_batch_bundle_token_vault.json").write_text("secret", encoding="utf-8")
             (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
 
-            target = orchestrator.snapshot_input_folder(str(source), str(root / "run"))
+            target = input_snapshot.snapshot_input_folder(str(source), str(root / "run"))
 
             self.assertEqual(Path(target), root / "run" / "input")
             self.assertEqual((root / "run" / "input" / "流水.xlsx").read_text(encoding="utf-8"), "raw")
@@ -316,7 +317,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             (source / "流水.csv").write_text("raw", encoding="utf-8")
             (run_dir / "traceback.txt").write_text("diagnostic", encoding="utf-8")
 
-            target = Path(orchestrator.snapshot_input_folder(str(source), str(run_dir)))
+            target = Path(input_snapshot.snapshot_input_folder(str(source), str(run_dir)))
 
             self.assertTrue((target / "流水.csv").is_file())
             self.assertFalse((target / "runs" / "run-001" / "traceback.txt").exists())
@@ -331,7 +332,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 zf.writestr(mojibake_name, "raw-xls")
                 zf.writestr("张运贞/嵌套/补充.csv", "nested")
 
-            target, details = orchestrator.prepare_input_snapshot(str(zip_path), str(root / "run"))
+            target, details = input_snapshot.prepare_input_snapshot(str(zip_path), str(root / "run"))
 
             self.assertEqual(Path(target), root / "run" / "input")
             self.assertEqual((Path(target) / "25年1-5月.xls").read_text(encoding="utf-8"), "raw-xls")
@@ -351,7 +352,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 zf.writestr("../escape.csv", "bad")
 
             with self.assertRaisesRegex(RuntimeError, "非法 zip 路径"):
-                orchestrator.prepare_input_snapshot(str(zip_path), str(root / "run"))
+                input_snapshot.prepare_input_snapshot(str(zip_path), str(root / "run"))
 
             self.assertFalse((root / "escape.csv").exists())
 
@@ -372,7 +373,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 parent_run_id="",
                 rerun_reason="",
             )
-            runner = orchestrator.Runner(args)
+            runner = runner_runtime.Runner(args)
 
             self.assertEqual(Path(runner.args.folder), Path(runner.run_dir) / "input")
             self.assertEqual(
@@ -390,7 +391,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             (summary / "token_vault_manifest.json").write_text("secret", encoding="utf-8")
             (summary / "tokenized_batch_bundle_token_vault_ref.json").write_text("ref", encoding="utf-8")
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.run_id = "test-run"
             runner.run_dir = str(root / "run")
             runner.args = SimpleNamespace(folder=str(input_dir), error_bundle_mode="full")
@@ -422,7 +423,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.manifest_path = str(runtime)
             runner.manifest = json.loads(runtime.read_text(encoding="utf-8"))
 
@@ -462,7 +463,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(
                 folder=str(bundle),
                 client="tokenized_batch_bundle",
@@ -504,7 +505,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             routes = runner.load_stage_1_routes()
             self.assertEqual(set(routes), {"001_raw-a__standardized.csv", "002_raw-b__standardized.csv"})
             self.assertTrue(all(route["yaml_match_status"] == "unmatched" for route in routes.values()))
-            validation = orchestrator.V.validate_standardize(
+            validation = runner_runtime.V.validate_standardize(
                 str(work),
                 file_routes=routes,
                 stage_1_results=results,
@@ -540,7 +541,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            runner = orchestrator.Runner.__new__(orchestrator.Runner)
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.template_manifest_path = str(template)
             runner.manifest_path = str(runtime)
 
@@ -580,7 +581,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            context = orchestrator.load_parent_run_context(str(run_root), "parent-run")
+            context = runner_runtime.load_parent_run_context(str(run_root), "parent-run")
 
             self.assertEqual(context["parent_run_id"], "parent-run")
             self.assertEqual(context["parent_client"], "斑马商业")
@@ -590,7 +591,7 @@ class OrchestratorManifestTest(unittest.TestCase):
     def test_load_parent_run_context_rejects_missing_parent(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(RuntimeError, "parent run 不存在"):
-                orchestrator.load_parent_run_context(str(Path(tmp) / "runs"), "missing-run")
+                runner_runtime.load_parent_run_context(str(Path(tmp) / "runs"), "missing-run")
 
 if __name__ == "__main__":
     unittest.main()

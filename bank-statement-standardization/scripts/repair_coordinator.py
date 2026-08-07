@@ -15,7 +15,7 @@ if str(SKILL_ROOT) not in sys.path:
 
 from harness.contracts import CHILD_RUN_READY  # noqa: E402
 from harness.coordinator import RepairCoordinator  # noqa: E402
-from runtime.run_result import atomic_write_json  # noqa: E402
+from runtime.result_store import atomic_write_json  # noqa: E402
 from services.statement_service import StatementService  # noqa: E402
 
 
@@ -43,7 +43,7 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
         if not child_run_id:
             raise RuntimeError("child_run_launch 缺少 child_run_id")
     else:
-        reference = service.start_run(
+        reference = service._start_run(
             None,
             [],
             parent_run_id=coordinator.run_id,
@@ -58,7 +58,7 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
             "repair_result_sha256": checksum,
             "child_run_id": child_run_id,
         })
-    detail = service.get_run(child_run_id)
+    detail = service._get_run(child_run_id)
     if not detail.run_result:
         raise RuntimeError(f"Child Run 尚未生成 RunResult：{child_run_id}")
     result = dict(detail.run_result)
@@ -128,13 +128,13 @@ def main() -> int:
             raise ValueError("密码不能为空")
         run_dir = Path(args.run_dir).resolve()
         service = StatementService(run_dir.parent, submit=lambda execute: execute())
-        reference = service.start_run(
+        reference = service._start_run(
             None,
             [],
             parent_run_id=run_dir.name,
             file_passwords={args.file: password},
         )
-        detail = service.get_run(reference.run_id)
+        detail = service._get_run(reference.run_id)
         if not detail.run_result:
             raise RuntimeError(f"密码 Child Run 尚未生成 RunResult：{reference.run_id}")
         result = dict(detail.run_result)

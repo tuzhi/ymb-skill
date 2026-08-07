@@ -1,0 +1,36 @@
+{
+  "status": "PASS_WITH_WARNINGS",
+  "files": {
+    "md5:3d8a039aea42e53b24a96671329f46bd": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:69535de72f68da8b88ca28e66704a366": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    }
+  },
+  "customer": {
+    "customer.coverage_two_years": {
+      "level": "SOFT",
+      "passed": false,
+      "message": "全部有效文件覆盖不足两年：2025-07-21 至 2026-07-28"
+    }
+  }
+}

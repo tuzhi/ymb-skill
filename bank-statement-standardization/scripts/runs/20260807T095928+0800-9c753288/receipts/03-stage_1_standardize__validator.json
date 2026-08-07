@@ -1,0 +1,12 @@
+{
+  "stage": "stage_1_standardize__validator",
+  "status": "ok",
+  "at": "2026-08-07T09:59:49.241601+08:00",
+  "details": {
+    "result": {
+      "standardized_files": 2,
+      "standardized_rows": 3237,
+      "skipped_inputs": 0
+    }
+  }
+}

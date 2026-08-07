@@ -1,31 +1,16 @@
-"""流水线对薄 Skill 暴露的紧凑结果契约。"""
+"""把流水线失败事实分类为确定性的后续动作。"""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any, Iterable, Mapping
-import json
-import os
-import tempfile
 
-
-CONTRACT_VERSION = 1
-
-DELIVER = "DELIVER"
-REQUEST_USER = "REQUEST_USER"
-EXECUTE_PIPELINE = "EXECUTE_PIPELINE"
-NEED_REPAIR = "NEED_REPAIR"
-MAINTAINER_REQUIRED = "MAINTAINER_REQUIRED"
-REPORT_ERROR = "REPORT_ERROR"
-NEXT_ACTIONS = {
-    DELIVER,
-    REQUEST_USER,
-    EXECUTE_PIPELINE,
+from .models.run_result import (
+    FailureRoute,
     NEED_REPAIR,
-    MAINTAINER_REQUIRED,
     REPORT_ERROR,
-}
+    REQUEST_USER,
+)
+
 
 INPUT_PASSWORD_REQUIRED = "INPUT_PASSWORD_REQUIRED"
 INPUT_PASSWORD_INVALID = "INPUT_PASSWORD_INVALID"
@@ -42,65 +27,6 @@ DOWNSTREAM_STAGE_FAILURE = "DOWNSTREAM_STAGE_FAILURE"
 
 MAX_PASSWORD_ATTEMPTS = 3
 MAX_AI_REPAIR_ATTEMPTS = 2
-
-
-@dataclass(frozen=True)
-class FailureRoute:
-    reason_code: str
-    next_action: str
-    message: str
-
-
-@dataclass(frozen=True)
-class RunResult:
-    run_id: str
-    status: str
-    next_action: str
-    reason_code: str = ""
-    artifact_refs: tuple[str, ...] = field(default_factory=tuple)
-    context_ref: str = ""
-    message: str = ""
-    action: Mapping[str, Any] = field(default_factory=dict)
-    summary: Mapping[str, Any] = field(default_factory=dict)
-    contract_version: int = CONTRACT_VERSION
-
-    def __post_init__(self) -> None:
-        if self.next_action not in NEXT_ACTIONS:
-            raise ValueError(f"next_action 无效：{self.next_action}")
-        if not isinstance(self.action, Mapping):
-            raise ValueError("action 必须是 object")
-        if not isinstance(self.summary, Mapping):
-            raise ValueError("summary 必须是 object")
-
-    def to_dict(self) -> dict[str, Any]:
-        value = asdict(self)
-        value["artifact_refs"] = list(self.artifact_refs)
-        if not self.action:
-            value.pop("action")
-        if not self.summary:
-            value.pop("summary")
-        return value
-
-
-def atomic_write_json(path: str | os.PathLike[str], value: Mapping[str, Any]) -> None:
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(dict(value), stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, target)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def write_run_result(path: str | os.PathLike[str], result: RunResult) -> RunResult:
-    atomic_write_json(path, result.to_dict())
-    return result
 
 
 def _failure_records(records: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:

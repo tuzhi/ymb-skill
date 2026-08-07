@@ -11,7 +11,7 @@ allowed-tools: Bash
 
 ## 执行
 
-Skill 触发后自动执行一次本安装包的平台入口。执行前不读取输入、依赖、源码、manifest、references 或角色 Prompt。
+Skill 触发后根据用户输入目录参数自动执行一次本安装包的平台入口。执行前不读取输入、依赖、源码、manifest、references 或角色 Prompt。
 
 !`{{PLATFORM_COMMAND}} --folder "$ARGUMENTS" --run-root "./runs"`
 

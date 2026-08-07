@@ -5,7 +5,7 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.9 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
+v1.4.10 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -117,9 +117,9 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 ### 1) Claude Code / Claude 桌面端
 ```bash
 mkdir -p ~/.claude/skills
-unzip dist/bank-statement-standardization_v1.4.9_macos.zip -d ~/.claude/skills/
+unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.claude/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.9_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
 - 项目级（仅当前项目可用）：放到项目根目录的 `.claude/skills/` 下。
 - 重启或新开会话后，说「帮我把这些银行流水标准化/出一份已清洗待分析表」即自动触发。
 
@@ -128,17 +128,17 @@ Kimi Code 兼容 Claude Code 的 skill 机制，默认读取用户目录与项�
 ```bash
 # 用户级（全局可用）
 mkdir -p ~/.kimi/skills
-unzip dist/bank-statement-standardization_v1.4.9_macos.zip -d ~/.kimi/skills/
+unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.kimi/skills/
 # 若你的 Kimi Code 复用 Claude 配置目录，则改放 ~/.claude/skills/（同上）
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.9_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
 - 装好后用 `/skills`（或客户端内「技能/Skills」面板）确认已列出 `bank-statement-standardization`。
 - 国内网络无需代理；脚本仅用本地 Python，不联网。
 
 ### 3) WorkBuddy（职场助手客户端）
 WorkBuddy 通过「技能/插件」目录加载 Agent Skill。进入「设置 → 技能/Skills → 导入」，按操作系统选择
-  `bank-statement-standardization_v1.4.9_macos.zip` 或
-  `bank-statement-standardization_v1.4.9_windows.zip`。需要完整 AI Repair 时，再安装
+  `bank-statement-standardization_v1.4.10_macos.zip` 或
+  `bank-statement-standardization_v1.4.10_windows.zip`。需要完整 AI Repair 时，再安装
   `bank-statement-standardization-expert_v1.0.3.zip`。
 - 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
   Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
@@ -148,19 +148,19 @@ OpenClaw 兼容 Claude Code 的 skills/插件加载：
 ```bash
 # 用户级
 mkdir -p ~/.openclaw/skills
-unzip dist/bank-statement-standardization_v1.4.9_macos.zip -d ~/.openclaw/skills/
+unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.openclaw/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.9_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 平台 `.zip` 分发（推荐发给同事/批量部署）
 本仓库从同一份 Skill 源码生成两个互斥平台包，用户只安装其中一个：
 ```bash
 # macOS
-unzip bank-statement-standardization_v1.4.9_macos.zip -d ~/.workbuddy/skills/
+unzip bank-statement-standardization_v1.4.10_macos.zip -d ~/.workbuddy/skills/
 
 # Windows：通过 WorkBuddy 技能面板导入
-# bank-statement-standardization_v1.4.9_windows.zip
+# bank-statement-standardization_v1.4.10_windows.zip
 ```
 - macOS 包只含 `run-posix.sh` 及对应 `!` 内联命令；Windows 包只含 `run-windows.cmd` 及对应 `!` 内联命令。Skill 触发时命令自动执行，不需要模型先阅读代码块再决定调用 Bash。两个包内部 Skill 名均为 `bank-statement-standardization`，不得同时安装。
 - 完整专家模式还需导入 `bank-statement-standardization-expert_v1.0.3.zip`；包内只包含主专家和 Repair 文字 Agent 定义，独立 Skill 遇到 `NEED_REPAIR` 时只返回结构化结果，不自行创建 Agent。

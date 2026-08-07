@@ -16,7 +16,12 @@ for path in (str(CORE_ROOT), str(SKILL_ROOT), str(SCRIPTS)):
 
 from ymb_standardization_core.contracts import RouteDecision, StandardizationContext
 from ymb_standardization_core import core
-from runtime.contracts import IntegrationContext, StageResult, yaml_route_summary
+from runtime.contracts import yaml_route_summary
+from runtime.models import (
+    IntegrationContext,
+    PipelineExecutionResult,
+    StageResult,
+)
 
 
 def load_module(name, path):
@@ -28,6 +33,7 @@ def load_module(name, path):
 
 from runtime import deliverable as package_deliverable
 from runtime import integrate
+from runtime import runner as runner_runtime
 
 orchestrator = load_module("orchestrator_contract_test", SCRIPTS / "orchestrator.py")
 
@@ -107,11 +113,41 @@ class StageContractsTest(unittest.TestCase):
         self.assertEqual(result.stage_id, "stage_2_integrate")
         self.assertEqual(json.loads(json.dumps(result)), {"integrated_rows": 10})
 
+    def test_pipeline_execution_result_defines_memory_handoff_contract(self):
+        result = PipelineExecutionResult(
+            exit_code=0,
+            run_id="run-1",
+            client_name="客户甲",
+            parent_run_id="",
+            status="DONE",
+            file_results={"files": {}},
+            stages={"stage_1_standardize": {"status": "DONE"}},
+            stage_summaries={"stage_2_integrate": {"integrated_rows": 10}},
+            qc={"status": "PASS"},
+            artifacts=({"artifact_id": "交付物.zip"},),
+            run_result={"next_action": "DELIVER"},
+        )
+
+        self.assertEqual(result.stage_summaries["stage_2_integrate"]["integrated_rows"], 10)
+        self.assertEqual(result.artifacts[0]["artifact_id"], "交付物.zip")
+        self.assertIsNone(result.error)
+
     def test_orchestrator_uses_public_package_boundary(self):
         self.assertTrue(hasattr(package_deliverable, "finalize_deliverable"))
         self.assertFalse(hasattr(package_deliverable, "_finalize"))
-        self.assertFalse(hasattr(orchestrator.Runner, "run_pipeline"))
-        self.assertFalse(hasattr(orchestrator.Runner, "validate"))
+        self.assertFalse(hasattr(runner_runtime.Runner, "run_pipeline"))
+        self.assertFalse(hasattr(runner_runtime.Runner, "validate"))
+
+    def test_orchestrator_is_only_a_cli_boundary(self):
+        self.assertTrue(callable(orchestrator.main))
+        for legacy_symbol in (
+            "Runner",
+            "PipelineExecutionResult",
+            "load_parent_run_context",
+            "prepare_input_snapshot",
+            "resolve_run_root",
+        ):
+            self.assertFalse(hasattr(orchestrator, legacy_symbol), legacy_symbol)
 
 
 if __name__ == "__main__":

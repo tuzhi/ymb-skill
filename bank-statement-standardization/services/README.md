@@ -1,0 +1,70 @@
+# Python 同步执行接口
+
+Python 只负责确定性配置转换与同步计算；任务、草稿、规则版本、测试记录和发布状态由上层应用持久化。
+
+## YamlRuleService
+
+```python
+deserialize(yaml_content: str) -> RoutingRulesSnapshot
+serialize(snapshot: RoutingRulesSnapshot) -> str
+```
+
+`deserialize` 同时完成 YAML 语法、规则结构、Reader/Handler 引用校验并计算 `version`。
+快照是不可变对象，并保留 `source_yaml`，所以 `serialize` 不会丢失注释和原始顺序。正式或草稿由调用场景决定，不写入快照。
+
+## StatementService
+
+```python
+execute_standardization(
+    request: StandardizationRequest,
+    rules: RoutingRulesSnapshot,
+) -> StandardizationResult
+```
+
+`execute_standardization` 同步执行 Stage 1～4、QC 和 Validator。Run 启动时固定传入的规则快照，
+整个 Stage 1 不会因外部 YAML 变化而混用版本。正式任务和草稿测试使用同一个接口；
+上层传入正式或草稿的规则快照，并负责记录任务用途。
+
+DTO 定义在 `models/`：
+
+- `InputFile(file_name, file_path, file_md5="")`
+- `StandardizationRequest(client_name, files, parent_run_id=None, remove_file_ids=(), file_passwords={})`
+- `StandardizationResult(run_id, parent_run_id, client_name, status, rules_version, file_results, stages, qc, stage_summaries, artifacts, run_result, error)`
+- `ServiceError(code, message, details={})`
+
+## BiAnalysisService
+
+BI 接口位于 `../../bank-statement-bi-analysis/bank_statement_bi_analysis/`：
+
+```python
+execute_analysis(request: BiAnalysisRequest) -> BiAnalysisResult
+```
+
+DTO 定义：
+
+- `BiAnalysisRequest(bi_run_id, statement_run_id, standardized_file_path, client_name, output_dir="", whitelist_path="", loans_path="", new_loan=None)`
+- `BiAnalysisResult(bi_run_id, statement_run_id, status, artifacts, ai_analysis_summary, chart_data, error)`
+
+当前 BI V4 引擎生成 Excel 原生图表，但尚未生成 ECharts JSON，因此 `chart_data.charts` 当前为空数组；
+接口保留该字段，后续由同一 BI 引擎补齐，Service 不伪造图表数据。
+
+## 调用示例
+
+```python
+from services import (
+    InputFile,
+    StandardizationRequest,
+    StatementService,
+    YamlRuleService,
+)
+
+rules = YamlRuleService.deserialize(production_yaml)
+service = StatementService("./runs")
+result = service.execute_standardization(
+    StandardizationRequest(
+        client_name="客户甲",
+        files=(InputFile("流水.xlsx", "/data/流水.xlsx", "md5:..."),),
+    ),
+    rules,
+)
+```

@@ -29,7 +29,7 @@ import argparse, csv, json, os, re, sys, hashlib, shutil
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from ymb_standardization_core.contracts import StandardizationContext
+from ymb_standardization_core.models import StandardizationContext
 
 try:
     import pandas as pd
