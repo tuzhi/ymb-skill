@@ -1289,5 +1289,35 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["bank"], "微信支付")
         self.assertGreater(len(result.rows), 1000)
 
+    def test_cib_biff_wide_export_routes_by_published_fingerprint(self):
+        module = load_input_router()
+        headers = [
+            "唯一流水编号", "银行流水号", "账号", "户名", "凭证代号", "币种", "现/转",
+            "借方金额(支出)", "贷方金额(收入)", "账户余额", "摘要", "对方账号",
+            "对方户名", "对方银行", "对方行号", "记账日期", "交易时间", "用途", "备注",
+        ]
+        rows = [
+            ["打印时间：2026-01-01\n活期账号：<ACCOUNT>\n户名：<OWNER>\n开户行：兴业银行"],
+            headers,
+            ["流水", "银行流水", "账号", "户名", "", "人民币", "转账", 1, 0, 99,
+             "摘要", "对方账号", "对方户名", "对方银行", "", "2026-01-01",
+             "2026-01-01 10:00:00", "用途", "备注"],
+        ]
+        context = {
+            "metadata": {"application": "BIFF/XLS", "creator": "cib", "sheet": "Sheet0"},
+            "styles": [],
+            "date_patterns": ["yyyy-mm-dd", "yyyy-mm-dd hh:mm:ss"],
+        }
+
+        route = module.route_excel(rows, "Sheet0", context=context)
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["fingerprint_id"], "md5:0c2a869c611aec5fd6b0255d2e6ba305")
+        self.assertEqual(route["bank"], "兴业银行")
+        self.assertEqual(route["account_type"], "未知")
+        self.assertEqual(route["source_order"], "descending")
+        self.assertEqual(route["column_mapping"]["借方金额(支出)"], "支出金额")
+        self.assertEqual(route["column_mapping"]["贷方金额(收入)"], "收入金额")
+
 if __name__ == "__main__":
     unittest.main()

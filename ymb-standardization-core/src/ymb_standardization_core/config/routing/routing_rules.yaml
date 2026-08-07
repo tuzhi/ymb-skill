@@ -3212,3 +3212,45 @@
   reader_options:
     source_order: descending
     require_monetary_value: true
+- id: md5:0c2a869c611aec5fd6b0255d2e6ba305
+  file_type: excel
+  bank: 兴业银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        application: BIFF/XLS
+        creator: cib
+        sheet: Sheet0
+    identity:
+      any:
+      - 唯一流水编号
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '活期账号[:：]\s*(\d+)'
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\r\n]+)'
+    columns:
+      all:
+        唯一流水编号: null
+        银行流水号: null
+        账号: 本方账户
+        户名: 本方名称
+        凭证代号: null
+        币种: null
+        现/转: null
+        借方金额(支出): 支出金额
+        贷方金额(收入): 收入金额
+        账户余额: 账户余额
+        摘要: 银行备注
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方银行: __对手开户行
+        对方行号: null
+        记账日期: 交易日期
+        交易时间: 交易时间
+        用途: 银行备注
+        备注: 银行备注
+  reader_options:
+    source_order: descending
+  reader_id: openpyxl_grid
