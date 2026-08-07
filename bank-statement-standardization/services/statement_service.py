@@ -16,6 +16,7 @@ import yaml
 
 from runtime.failure_policy import MAX_PASSWORD_ATTEMPTS
 from runtime import standardize as S
+from runtime import result_store as RS
 from runtime.models import PipelineExecutionResult
 from runtime.runner import Runner, load_parent_run_context
 
@@ -199,14 +200,10 @@ class StatementService:
 
     def _get_run(self, run_id: str) -> RunDetail:
         run_dir = self._run_dir(run_id)
-        manifest = _read_json(run_dir / "manifest.json", {})
+        pipeline_result = RS.load_pipeline_result(run_dir)
         stage_1_results = _read_json(run_dir / "stage_1_results.json", {"files": {}})
         qc = _read_json(run_dir / "qc_results.json", {})
-        stages = {
-            key: value
-            for key, value in manifest.items()
-            if str(key).startswith("stage_") and isinstance(value, dict)
-        }
+        stages = dict(pipeline_result.get("stages") or {})
         files = []
         for path in sorted((run_dir / "input").rglob("*")):
             if not path.is_file():
@@ -223,15 +220,15 @@ class StatementService:
         error = self._error_summary(run_dir)
         return RunDetail(
             run_id=run_id,
-            parent_run_id=str(manifest.get("parent_run_id") or ""),
-            client_name=str(manifest.get("client") or ""),
+            parent_run_id=str(pipeline_result.get("parent_run_id") or ""),
+            client_name=str(pipeline_result.get("client_name") or ""),
             status=self._status(run_id, stages),
             files=files,
             stages=stages,
             stage_1_results=stage_1_results,
             qc=qc,
             artifacts=self._artifact_entries(run_dir),
-            run_result=_read_json(run_dir / "run_result.json", {}),
+            run_result=RS.run_result_from_pipeline(pipeline_result),
             error=error,
         )
 
@@ -429,7 +426,6 @@ class StatementService:
         if artifact_dir.is_dir():
             candidates.extend(path for path in artifact_dir.rglob("*") if path.is_file())
         for name in (
-            "run_result.json",
             "stage_1_results.json",
             "qc_results.json",
             "token_usage.json",

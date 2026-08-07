@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/runtime/runner.py", line 1900, in execute
+    self.run_pipeline_stages()
+  File "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/runtime/runner.py", line 1796, in run_pipeline_stages
+    script_result = self.execute_stage_script(stage_id)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/runtime/runner.py", line 1601, in execute_stage_script
+    return handlers[stage_id]()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/runtime/runner.py", line 1480, in stage_1_standardize
+    raise RuntimeError(f"阶段一处理完成但存在失败文件：{detail}")
+RuntimeError: 阶段一处理完成但存在失败文件：兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls：原始Excel未唯一命中已发布 YAML 指纹，禁止使用通用 Reader 生成正式标准化产物；请创建或维护 YAML 草稿并测试发布后重跑

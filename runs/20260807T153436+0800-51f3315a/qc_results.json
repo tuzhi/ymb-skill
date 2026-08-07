@@ -1,0 +1,139 @@
+{
+  "status": "RUNNING",
+  "files": {
+    "md5:c39cd8c2842bc2dd643e5e74388cf30a": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:4e995644e23d7ff4b1b431f756e82b15": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:1dd3dcc347fd2cc162c0386999790d6a": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:275930d20ea6acc07cdfb1d48be8a323": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:907ca500c0764eabd65da1c2851668db": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:eaf9a1c01fb262e8fead72280e848250": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:fd97a4d6e405e555f50270084bad6edb": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:1aeb5ec0ec9028eb00d8965ecfb93dd1": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:d2ba7ed206a08ab2356ff0350ed76de6": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:20cef0853dd9f87f8fa924b4801aabce": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    },
+    "md5:ebe4dc9facd8a8d0cc90a4bac49feeaa": {
+      "file.openable": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      },
+      "file.source_format_quality": {
+        "level": "HARD",
+        "passed": true,
+        "message": ""
+      }
+    }
+  },
+  "customer": {
+    "customer.coverage_two_years": {
+      "level": "SOFT",
+      "passed": false,
+      "message": "全部有效文件覆盖不足两年：2025-07-01 至 2026-07-21"
+    }
+  }
+}

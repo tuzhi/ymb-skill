@@ -1,0 +1,11 @@
+{
+  "contract_version": 1,
+  "run_id": "20260807T153436+0800-51f3315a",
+  "measurement_scope": "repair_sessions_only",
+  "measurement_status": "not_started",
+  "ai_session_count": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cached_input_tokens": 0,
+  "sessions": []
+}

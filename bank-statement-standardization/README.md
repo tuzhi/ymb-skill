@@ -1,11 +1,11 @@
 ﻿# 银行流水标准化技能包 · bank-statement-standardization
 
 把各家银行、各种格式（Excel `.xlsx/.xls`、CSV、PDF）的原始银行流水，标准化成统一中文字段口径，
-并按 `assets/manifest.template.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
+并按 `assets/pipeline_result.template.json` 的英文阶段 ID 完成 `stage_1_standardize → stage_2_integrate → stage_2b_portfolio_balance → stage_3_tag → stage_4_package` 主流程，
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.10 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
+v1.4.11 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -39,7 +39,7 @@ bank-statement-standardization/
 │   ├── deliverable.py       # stage_4_package，仅组装上游既有产物
 │   ├── validators.py        # 阶段一与最终交付验收
 │   ├── contracts.py         # 跨阶段公开契约
-│   └── run_result.py        # DELIVER / REQUEST_USER / NEED_REPAIR / REPORT_ERROR
+│   └── models/run_result.py # DELIVER / REQUEST_USER / NEED_REPAIR / REPORT_ERROR
 ├── tools/                   # 仓库维护工具，不进入 Skill 分发包
 │   ├── qa/                  # 支持矩阵、基准与全量测试工具
 │   ├── rules/               # tag_rules.csv 生成工具
@@ -49,7 +49,7 @@ bank-statement-standardization/
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
-    ├── manifest.template.json # 单一运行事实源模板：client / parent run / 阶段状态
+    ├── pipeline_result.template.json # 整体运行结果模板：Run / Stage / 最终决策
     └── tag_rules.csv        # 打标规则库（约7200条，由规则文档生成；可替换为机构规则库）
 ```
 
@@ -86,7 +86,7 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
-每个 Run 固定生成 `manifest.json`、`run_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`token_usage.json` 只统计 Repair 宿主回传的用量，不代表入口会话的总 Token；宿主未回传时使用 `measurement_status=unavailable` 和 `null`，不以 `0` 表示未知。正常 stdout 只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，可直接完成结果说明，无需为此回读 manifest/QC。完整事件与回执留在 Run 目录。
+每个 Run 固定生成 `pipeline_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`pipeline_result.json` 保存 Run 上下文、顶层最终决策、最终 `deliverables`，并将每个 Stage 的状态、耗时和紧凑摘要统一放在 `stages.<stage_id>`；逐文件明细与 QC 通过 `refs` 指向独立事实文件。新 Run 不再生成 `manifest.json` 或 `run_result.json`。`token_usage.json` 是独立 Harness 统计文件，不进入 Pipeline 业务结果引用；它只统计 Repair 宿主回传的用量，不代表入口会话的总 Token。宿主未回传时使用 `measurement_status=unavailable` 和 `null`，不以 `0` 表示未知。正常 stdout 仍只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，无需回读结果文件。完整事件与回执留在 Run 目录。
 
 生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
 
@@ -117,9 +117,9 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 ### 1) Claude Code / Claude 桌面端
 ```bash
 mkdir -p ~/.claude/skills
-unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.claude/skills/
+unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.claude/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
 - 项目级（仅当前项目可用）：放到项目根目录的 `.claude/skills/` 下。
 - 重启或新开会话后，说「帮我把这些银行流水标准化/出一份已清洗待分析表」即自动触发。
 
@@ -128,17 +128,17 @@ Kimi Code 兼容 Claude Code 的 skill 机制，默认读取用户目录与项�
 ```bash
 # 用户级（全局可用）
 mkdir -p ~/.kimi/skills
-unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.kimi/skills/
+unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.kimi/skills/
 # 若你的 Kimi Code 复用 Claude 配置目录，则改放 ~/.claude/skills/（同上）
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
 - 装好后用 `/skills`（或客户端内「技能/Skills」面板）确认已列出 `bank-statement-standardization`。
 - 国内网络无需代理；脚本仅用本地 Python，不联网。
 
 ### 3) WorkBuddy（职场助手客户端）
 WorkBuddy 通过「技能/插件」目录加载 Agent Skill。进入「设置 → 技能/Skills → 导入」，按操作系统选择
-  `bank-statement-standardization_v1.4.10_macos.zip` 或
-  `bank-statement-standardization_v1.4.10_windows.zip`。需要完整 AI Repair 时，再安装
+  `bank-statement-standardization_v1.4.11_macos.zip` 或
+  `bank-statement-standardization_v1.4.11_windows.zip`。需要完整 AI Repair 时，再安装
   `bank-statement-standardization-expert_v1.0.3.zip`。
 - 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
   Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
@@ -148,19 +148,19 @@ OpenClaw 兼容 Claude Code 的 skills/插件加载：
 ```bash
 # 用户级
 mkdir -p ~/.openclaw/skills
-unzip dist/bank-statement-standardization_v1.4.10_macos.zip -d ~/.openclaw/skills/
+unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.openclaw/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.10_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 平台 `.zip` 分发（推荐发给同事/批量部署）
 本仓库从同一份 Skill 源码生成两个互斥平台包，用户只安装其中一个：
 ```bash
 # macOS
-unzip bank-statement-standardization_v1.4.10_macos.zip -d ~/.workbuddy/skills/
+unzip bank-statement-standardization_v1.4.11_macos.zip -d ~/.workbuddy/skills/
 
 # Windows：通过 WorkBuddy 技能面板导入
-# bank-statement-standardization_v1.4.10_windows.zip
+# bank-statement-standardization_v1.4.11_windows.zip
 ```
 - macOS 包只含 `run-posix.sh` 及对应 `!` 内联命令；Windows 包只含 `run-windows.cmd` 及对应 `!` 内联命令。Skill 触发时命令自动执行，不需要模型先阅读代码块再决定调用 Bash。两个包内部 Skill 名均为 `bank-statement-standardization`，不得同时安装。
 - 完整专家模式还需导入 `bank-statement-standardization-expert_v1.0.3.zip`；包内只包含主专家和 Repair 文字 Agent 定义，独立 Skill 遇到 `NEED_REPAIR` 时只返回结构化结果，不自行创建 Agent。
@@ -171,7 +171,7 @@ unzip bank-statement-standardization_v1.4.10_macos.zip -d ~/.workbuddy/skills/
 ```bash
 # 正式入口直接使用宿主机 Python
 python scripts/orchestrator.py run --folder "<某客户文件夹>"
-# 成功标志：runs/<run-id>/manifest.json 各阶段 status 均为 DONE，且 receipts/ 回执完整
+# 成功标志：runs/<run-id>/pipeline_result.json 的 stages 均为 DONE、next_action 为 DELIVER
 ```
 若客户端「技能列表/`/skills`」里能看到 `bank-statement-standardization`，即安装成功。
 

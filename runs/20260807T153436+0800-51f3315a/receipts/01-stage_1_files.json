@@ -1,0 +1,81 @@
+{
+  "stage": "stage_1_files",
+  "status": "partial",
+  "at": "2026-08-07T15:36:18.465666+08:00",
+  "details": {
+    "added": [
+      "md5:1aeb5ec0ec9028eb00d8965ecfb93dd1",
+      "md5:1dd3dcc347fd2cc162c0386999790d6a",
+      "md5:20cef0853dd9f87f8fa924b4801aabce",
+      "md5:275930d20ea6acc07cdfb1d48be8a323",
+      "md5:4e995644e23d7ff4b1b431f756e82b15",
+      "md5:907ca500c0764eabd65da1c2851668db",
+      "md5:c39cd8c2842bc2dd643e5e74388cf30a",
+      "md5:d2ba7ed206a08ab2356ff0350ed76de6",
+      "md5:eaf9a1c01fb262e8fead72280e848250",
+      "md5:ebe4dc9facd8a8d0cc90a4bac49feeaa",
+      "md5:fd97a4d6e405e555f50270084bad6edb"
+    ],
+    "reused": [],
+    "repaired": [],
+    "rerun": [],
+    "removed": [],
+    "decisions": {
+      "md5:c39cd8c2842bc2dd643e5e74388cf30a": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:4e995644e23d7ff4b1b431f756e82b15": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:1dd3dcc347fd2cc162c0386999790d6a": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "ERROR"
+      },
+      "md5:275930d20ea6acc07cdfb1d48be8a323": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:907ca500c0764eabd65da1c2851668db": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:eaf9a1c01fb262e8fead72280e848250": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:fd97a4d6e405e555f50270084bad6edb": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:1aeb5ec0ec9028eb00d8965ecfb93dd1": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:d2ba7ed206a08ab2356ff0350ed76de6": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:20cef0853dd9f87f8fa924b4801aabce": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      },
+      "md5:ebe4dc9facd8a8d0cc90a4bac49feeaa": {
+        "decision": "ADDED",
+        "reason": "new_md5",
+        "result_status": "DONE"
+      }
+    }
+  }
+}

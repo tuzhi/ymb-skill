@@ -84,7 +84,7 @@ class PackageSkillTest(unittest.TestCase):
             ".DS_Store",
             "testdata/sample.xlsx",
             "testoutput/run/final.xlsx",
-            "runs/run-id/manifest.json",
+            "runs/run-id/pipeline_result.json",
             "原始流水数据/source.xlsx",
             "tools/qa/audit_testdata_support.py",
         ):
@@ -141,8 +141,8 @@ class PackageSkillTest(unittest.TestCase):
             self.assertEqual(
                 [archive.name for archive in archives],
                 [
-                    "bank-statement-standardization_v1.4.10_macos.zip",
-                    "bank-statement-standardization_v1.4.10_windows.zip",
+                    "bank-statement-standardization_v1.4.11_macos.zip",
+                    "bank-statement-standardization_v1.4.11_windows.zip",
                 ],
             )
             packages = {}
@@ -153,13 +153,13 @@ class PackageSkillTest(unittest.TestCase):
                         "skill": zf.read(
                             "bank-statement-standardization/SKILL.md"
                         ).decode("utf-8"),
-                        "manifest": json.loads(zf.read(
-                            "bank-statement-standardization/assets/manifest.template.json"
+                        "pipeline_template": json.loads(zf.read(
+                            "bank-statement-standardization/assets/pipeline_result.template.json"
                         )),
                     }
 
-            macos = packages["bank-statement-standardization_v1.4.10_macos.zip"]
-            windows = packages["bank-statement-standardization_v1.4.10_windows.zip"]
+            macos = packages["bank-statement-standardization_v1.4.11_macos.zip"]
+            windows = packages["bank-statement-standardization_v1.4.11_windows.zip"]
             posix_path = "bank-statement-standardization/scripts/run-posix.sh"
             windows_path = "bank-statement-standardization/scripts/run-windows.cmd"
             self.assertIn(posix_path, macos["names"])
@@ -192,7 +192,10 @@ class PackageSkillTest(unittest.TestCase):
                 self.assertNotIn("allowed-tools: Bash, Agent", skill)
                 self.assertIn("独立 Skill 不创建 Agent", skill)
                 self.assertNotIn('subagent_type="general-purpose"', skill)
-                self.assertEqual(packaged["manifest"]["skill"]["version"], "1.4.10")
+                self.assertEqual(
+                    packaged["pipeline_template"]["skill_version"],
+                    "1.4.11",
+                )
                 self.assertIn("bank-statement-standardization/roles/repair.md", names)
                 self.assertIn("bank-statement-standardization/references/prompt-1-字段映射.md", names)
                 self.assertNotIn("bank-statement-standardization/roles/fallback.md", names)

@@ -16,7 +16,16 @@ orchestrator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orchestrator)
 
 from runtime import runner as runner_runtime  # noqa: E402
+from runtime import result_store as result_store  # noqa: E402
 from runtime.models import PipelineExecutionResult  # noqa: E402
+
+
+def stored_pipeline(runner):
+    return json.loads(Path(runner.pipeline_result_path).read_text(encoding="utf-8"))
+
+
+def stored_run_result(runner):
+    return result_store.run_result_from_pipeline(stored_pipeline(runner))
 
 
 def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_run_id=""):
@@ -56,7 +65,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     "status": "DONE",
                     "next_action": "DELIVER",
                     "artifact_refs": [],
-                    "context_ref": "manifest.json",
+                    "context_ref": "pipeline_result.json",
                     "message": "完成",
                     "reason_code": "",
                 },
@@ -64,7 +73,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = SimpleNamespace(
                 run_id=run_id,
                 run_dir=str(root / "runs" / run_id),
-                run_result_path=str(root / "runs" / run_id / "run_result.json"),
+                pipeline_result_path=str(root / "runs" / run_id / "pipeline_result.json"),
                 execute=Mock(return_value=execution),
             )
             stdout = io.StringIO()
@@ -102,7 +111,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 run_id,
             )
 
-    def test_new_run_writes_only_manifest_with_run_context(self):
+    def test_new_run_writes_only_pipeline_result_with_run_context(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "斑马商业对公流水"
@@ -111,13 +120,28 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
 
             runner = runner_runtime.Runner(runner_args(root / "runs", source, client="斑马商业"))
 
-            manifest_path = Path(runner.run_dir) / "manifest.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(manifest["client"], "斑马商业")
-            self.assertEqual(manifest["parent_run_id"], "")
-            self.assertEqual(manifest["rerun_reason"], "")
-            self.assertEqual(manifest["password_attempt"], 0)
-            self.assertEqual(manifest["ai_repair_attempt"], 0)
+            pipeline_result = stored_pipeline(runner)
+            self.assertEqual(pipeline_result["client_name"], "斑马商业")
+            self.assertEqual(pipeline_result["parent_run_id"], "")
+            self.assertEqual(pipeline_result["rerun_reason"], "")
+            self.assertEqual(pipeline_result["attempts"]["password"], 0)
+            self.assertEqual(pipeline_result["attempts"]["ai_repair"], 0)
+            self.assertEqual(pipeline_result["skill_version"], "1.4.11")
+            self.assertEqual(pipeline_result["refs"], {
+                "stage_1": "stage_1_results.json",
+                "qc": "qc_results.json",
+            })
+            self.assertEqual(pipeline_result["deliverables"], [])
+            for removed in (
+                "exit_code",
+                "run_result",
+                "stage_summaries",
+                "artifacts",
+                "file_results_ref",
+                "qc_ref",
+                "token_usage_ref",
+            ):
+                self.assertNotIn(removed, pipeline_result)
             usage = json.loads(
                 (Path(runner.run_dir) / "token_usage.json").read_text(encoding="utf-8")
             )
@@ -128,15 +152,16 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "repair_sessions_only",
             )
             self.assertNotIn("skill_contracts", usage)
+            self.assertFalse((Path(runner.run_dir) / "manifest.json").exists())
+            self.assertFalse((Path(runner.run_dir) / "run_result.json").exists())
             self.assertFalse((Path(runner.run_dir) / "run_manifest.json").exists())
-            for stage_id, stage in manifest.items():
-                if not stage_id.startswith("stage_"):
-                    continue
+            for stage_id, stage in pipeline_result["stages"].items():
                 self.assertNotIn("ai_fallback_dir", stage)
                 self.assertNotIn("started_at", stage)
                 self.assertIsNone(stage["duration_seconds"])
                 self.assertNotIn("script", stage)
                 self.assertNotIn("validator", stage)
+                self.assertNotIn("name", stage)
                 if stage_id != "stage_1_standardize":
                     self.assertNotIn("ai_fallback_refs", stage)
                     self.assertNotIn("ai_fallback_used", stage)
@@ -192,7 +217,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             )
 
             self.assertEqual(runner.args.client, "斑马商业")
-            self.assertEqual(runner.manifest["client"], "斑马商业")
+            self.assertEqual(runner.pipeline_state["client_name"], "斑马商业")
 
     def test_child_run_rejects_explicit_client_conflict(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,13 +269,17 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "reason_code": "MAPPING_FAILED",
                 "message": "阶段一测试失败",
             }}})
-            runner.handle_stage_failure(stage_id, runner.manifest[stage_id], RuntimeError("阶段一测试失败"))
+            runner.handle_stage_failure(
+                stage_id,
+                runner.stages[stage_id],
+                RuntimeError("阶段一测试失败"),
+            )
 
-            manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest[stage_id]["status"], "ERROR")
-            self.assertNotIn("ai_fallback_used", manifest[stage_id])
+            pipeline_result = stored_pipeline(runner)
+            self.assertEqual(pipeline_result["stages"][stage_id]["status"], "ERROR")
+            self.assertNotIn("ai_fallback_used", pipeline_result["stages"][stage_id])
             self.assertFalse((Path(runner.run_dir) / "fallback").exists())
-            run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            run_result = result_store.run_result_from_pipeline(pipeline_result)
             self.assertNotIn("action", run_result)
             self.assertEqual(run_result["next_action"], "NEED_REPAIR")
             self.assertEqual(run_result["context_ref"], "stage_1_results.json")
@@ -272,11 +301,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
 
             runner.handle_stage_failure(
                 "stage_1_standardize",
-                runner.manifest["stage_1_standardize"],
+                runner.stages["stage_1_standardize"],
                 RuntimeError("PDFPasswordIncorrect: password required"),
             )
 
-            result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            result = stored_run_result(runner)
             self.assertEqual(result["next_action"], "REQUEST_USER")
             self.assertEqual(result["reason_code"], "INPUT_PASSWORD_REQUIRED")
             self.assertEqual(result["action"]["operation"], "retry-password")
@@ -296,8 +325,10 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             )
             snapshot = Path(runner.input_dir) / raw.name
             file_id = "md5:" + runner_runtime.md5(str(snapshot))
-            runner.manifest["ai_repair_attempt"] = runner_runtime.F.MAX_AI_REPAIR_ATTEMPTS
-            runner.write_manifest()
+            runner.pipeline_state["attempts"]["ai_repair"] = (
+                runner_runtime.F.MAX_AI_REPAIR_ATTEMPTS
+            )
+            runner.write_pipeline_result()
             runner.write_stage_1_results({"files": {file_id: {
                 "name": raw.name,
                 "relative_path": raw.name,
@@ -308,11 +339,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
 
             runner.handle_stage_failure(
                 "stage_1_standardize",
-                runner.manifest["stage_1_standardize"],
+                runner.stages["stage_1_standardize"],
                 RuntimeError("Repair CSV 验证失败"),
             )
 
-            result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            result = stored_run_result(runner)
             self.assertEqual(result["next_action"], "MAINTAINER_REQUIRED")
             self.assertIn("次数已达上限", result["message"])
 
@@ -332,15 +363,20 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 runner = runner_runtime.Runner(
                     runner_args(root / f"runs-{stage_id}", source, client="斑马商业")
                 )
-                runner.handle_stage_failure(stage_id, runner.manifest[stage_id], RuntimeError(f"{stage_id}-测试失败"))
+                runner.handle_stage_failure(
+                    stage_id,
+                    runner.stages[stage_id],
+                    RuntimeError(f"{stage_id}-测试失败"),
+                )
 
-                manifest = json.loads((Path(runner.run_dir) / "manifest.json").read_text(encoding="utf-8"))
-                self.assertEqual(manifest[stage_id]["status"], "ERROR")
-                self.assertNotIn("ai_fallback_refs", manifest[stage_id])
-                self.assertNotIn("ai_fallback_used", manifest[stage_id])
-                self.assertNotIn("ai_fallback_artifacts", manifest[stage_id])
+                pipeline_result = stored_pipeline(runner)
+                stage = pipeline_result["stages"][stage_id]
+                self.assertEqual(stage["status"], "ERROR")
+                self.assertNotIn("ai_fallback_refs", stage)
+                self.assertNotIn("ai_fallback_used", stage)
+                self.assertNotIn("ai_fallback_artifacts", stage)
                 self.assertFalse((Path(runner.run_dir) / "repair").exists())
-                result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+                result = result_store.run_result_from_pipeline(pipeline_result)
                 self.assertEqual(result["next_action"], "REPORT_ERROR")
                 self.assertEqual(result["reason_code"], "DOWNSTREAM_STAGE_FAILURE")
                 events = Path(runner.event_path).read_text(encoding="utf-8")
@@ -359,7 +395,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             parent = runner_runtime.Runner(runner_args(run_root, source, client="斑马商业"))
             parent.handle_stage_failure(
                 "stage_1_standardize",
-                parent.manifest["stage_1_standardize"],
+                parent.stages["stage_1_standardize"],
                 RuntimeError("字段映射失败"),
             )
             # Repair 以父 Run 输入快照为基础创建 Child Run。
@@ -372,10 +408,10 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 runner_args(run_root, source, client="斑马商业", parent_run_id=parent.run_id)
             )
             self.assertTrue((Path(child.input_dir) / "_file_hints.yaml").exists())
-            for stage_id, spec in child.manifest.items():
+            for stage_id, spec in child.stages.items():
                 if stage_id.startswith("stage_") and stage_id != "stage_1_standardize":
                     spec["status"] = "DONE"
-            child.write_manifest()
+            child.write_pipeline_result()
 
             def fixed_stage_1():
                 work = Path(child.work_dir())
@@ -396,11 +432,14 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 return {"standardized_files": 1}
 
             child.execute_stage_script = lambda stage_id: fixed_stage_1()
-            child.run_manifest_stages()
+            child.run_pipeline_stages()
 
-            self.assertEqual(child.manifest["parent_run_id"], parent.run_id)
-            self.assertEqual(child.manifest["rerun_reason"], "ai_repair_after_stage_1_failure")
-            self.assertEqual(child.manifest["stage_1_standardize"]["status"], "DONE")
+            self.assertEqual(child.pipeline_state["parent_run_id"], parent.run_id)
+            self.assertEqual(
+                child.pipeline_state["rerun_reason"],
+                "ai_repair_after_stage_1_failure",
+            )
+            self.assertEqual(child.stages["stage_1_standardize"]["status"], "DONE")
             self.assertEqual(child.stage_validation_results["stage_1_standardize"]["standardized_rows"], 1)
 
     def test_child_run_consumes_authorized_repair_csv_for_failed_raw_file(self):
@@ -428,8 +467,8 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     "yaml_match_status": "unmatched",
                 },
             }}})
-            parent.manifest["stage_1_standardize"]["status"] = "ERROR"
-            parent.write_manifest()
+            parent.stages["stage_1_standardize"]["status"] = "ERROR"
+            parent.write_pipeline_result()
 
             attempt = Path(parent.run_dir) / "repair" / "attempt-01"
             repaired = attempt / "standardized" / "交通银行__standardized.csv"
@@ -485,11 +524,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
             runner = runner_runtime.Runner(runner_args(root / "runs", source, client="斑马商业"))
-            for stage_id, stage in runner.manifest.items():
+            for stage_id, stage in runner.stages.items():
                 if stage_id.startswith("stage_"):
                     stage["status"] = "DONE"
-            runner.manifest["stage_2_integrate"]["status"] = ""
-            runner.write_manifest()
+            runner.stages["stage_2_integrate"]["status"] = ""
+            runner.write_pipeline_result()
             integrated_csv = Path(runner.run_dir) / "artifacts" / "整合流水.csv"
             runner.execute_stage_script = Mock(return_value={
                 "integrated_csv": str(integrated_csv),
@@ -502,11 +541,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "perf_counter",
                 side_effect=[10.0, 12.3456],
             ):
-                runner.run_manifest_stages()
+                runner.run_pipeline_stages()
 
-            self.assertEqual(runner.manifest["stage_2_integrate"]["status"], "DONE")
+            self.assertEqual(runner.stages["stage_2_integrate"]["status"], "DONE")
             self.assertEqual(
-                runner.manifest["stage_2_integrate"]["duration_seconds"],
+                runner.stages["stage_2_integrate"]["duration_seconds"],
                 2.346,
             )
             runner.validate_stage.assert_not_called()
@@ -532,11 +571,11 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
-            for stage_id, stage in runner.manifest.items():
+            for stage_id, stage in runner.stages.items():
                 if stage_id.startswith("stage_"):
                     stage["status"] = "DONE"
-            runner.manifest["stage_2_integrate"]["status"] = ""
-            runner.write_manifest()
+            runner.stages["stage_2_integrate"]["status"] = ""
+            runner.write_pipeline_result()
             runner.execute_stage_script = Mock(
                 side_effect=RuntimeError("阶段二测试失败")
             )
@@ -549,19 +588,15 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 ),
                 self.assertRaisesRegex(RuntimeError, "阶段二测试失败"),
             ):
-                runner.run_manifest_stages()
+                runner.run_pipeline_stages()
 
-            manifest = json.loads(
-                (Path(runner.run_dir) / "manifest.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+            stages = stored_pipeline(runner)["stages"]
             self.assertEqual(
-                manifest["stage_2_integrate"]["status"],
+                stages["stage_2_integrate"]["status"],
                 "ERROR",
             )
             self.assertEqual(
-                manifest["stage_2_integrate"]["duration_seconds"],
+                stages["stage_2_integrate"]["duration_seconds"],
                 1.235,
             )
 
@@ -574,7 +609,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
-            runner.run_manifest_stages = Mock(
+            runner.run_pipeline_stages = Mock(
                 side_effect=RuntimeError("未路由测试失败")
             )
 
@@ -616,7 +651,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner.write_run_result(
                 status="DONE",
                 next_action="DELIVER",
-                context_ref="manifest.json",
+                context_ref="pipeline_result.json",
             )
 
             with (
@@ -642,47 +677,45 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             }
             self.assertIn("stage_1_results.json", artifact_ids)
             self.assertIn("qc_results.json", artifact_ids)
-            self.assertIn("run_result.json", artifact_ids)
+            self.assertNotIn("pipeline_result.json", artifact_ids)
             self.assertNotIn("input/流水.csv", artifact_ids)
 
     def test_execute_reuses_final_delivery_validation_result(self):
         with tempfile.TemporaryDirectory() as tmp:
-            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
-            runner.run_dir = tmp
+            root = Path(tmp)
+            source = root / "input"
+            source.mkdir()
+            (source / "流水.csv").write_text("raw", encoding="utf-8")
+            runner = runner_runtime.Runner(
+                runner_args(root / "runs", source, client="客户")
+            )
             runner.final_validation_result = {
-                "deliverable": str(Path(tmp) / "客户_已清洗_待分析.xlsx"),
+                "deliverable": str(Path(runner.out_dir) / "客户_已清洗_待分析.xlsx"),
                 "deliverable_rows": 1,
                 "sheets": ["整合打标流水"],
             }
+            Path(runner.final_validation_result["deliverable"]).write_bytes(b"xlsx")
             runner.warning_events = []
-            runner.manifest = {"skipped_inputs": []}
-            (Path(tmp) / "stage_1_results.json").write_text(
-                json.dumps({
-                    "files": {
-                        "md5:a": {"status": "DONE"},
-                        "md5:b": {"status": "DONE"},
+            runner.write_stage_1_results({
+                "files": {
+                    "md5:a": {"status": "DONE"},
+                    "md5:b": {"status": "DONE"},
+                }
+            })
+            runner.write_qc_results({
+                "status": "PASS_WITH_WARNINGS",
+                "files": {},
+                "customer": {
+                    "customer.coverage_two_years": {
+                        "level": "SOFT",
+                        "passed": False,
+                        "message": "覆盖不足两年",
                     }
-                }),
-                encoding="utf-8",
-            )
-            (Path(tmp) / "qc_results.json").write_text(
-                json.dumps({
-                    "status": "PASS_WITH_WARNINGS",
-                    "files": {},
-                    "customer": {
-                        "customer.coverage_two_years": {
-                            "level": "SOFT",
-                            "passed": False,
-                            "message": "覆盖不足两年",
-                        }
-                    },
-                }),
-                encoding="utf-8",
-            )
-            runner.run_manifest_stages = Mock()
+                },
+            })
+            runner.run_pipeline_stages = Mock()
             runner.receipt = Mock()
             runner.emit = Mock()
-            runner.run_result = None
 
             with patch.object(runner_runtime.V, "validate_final") as validate_final:
                 execution = runner.execute()
@@ -697,9 +730,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             validate_final.assert_not_called()
             details = runner.receipt.call_args.args[2]
             self.assertEqual(details, runner.final_validation_result)
-            run_result = json.loads(
-                (Path(tmp) / "run_result.json").read_text(encoding="utf-8")
-            )
+            run_result = stored_run_result(runner)
             self.assertEqual(run_result["next_action"], "DELIVER")
             self.assertEqual(run_result["summary"], {
                 "input_file_count": 2,
@@ -708,6 +739,13 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 "warning_count": 1,
                 "warning_summary": ["覆盖不足两年"],
             })
+            pipeline_result = stored_pipeline(runner)
+            self.assertEqual(
+                pipeline_result["deliverables"],
+                ["artifacts/客户_已清洗_待分析.xlsx"],
+            )
+            self.assertNotIn("artifacts", pipeline_result)
+            self.assertNotIn("run_result", pipeline_result)
             self.assertFalse((Path(tmp) / "fallback").exists())
 
     def test_stage_4_runs_final_delivery_validation_inside_program(self):
@@ -730,7 +768,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
-            runner.manifest = {"skipped_inputs": []}
+            runner.pipeline_state = {"skipped_inputs": []}
             runner.final_validation_result = None
             runner.work_dir = lambda: str(work)
             final = {
@@ -765,7 +803,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
-            runner.manifest = {"skipped_inputs": []}
+            runner.pipeline_state = {"skipped_inputs": []}
             runner.final_validation_result = None
             runner.work_dir = lambda: str(work)
             final = {

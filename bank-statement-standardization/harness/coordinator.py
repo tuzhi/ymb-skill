@@ -10,6 +10,7 @@ import json
 
 from runtime import failure_policy as F
 from runtime.models import run_result as R
+from runtime import result_store as RS
 from runtime.result_store import atomic_write_json
 
 from .contracts import (
@@ -82,11 +83,12 @@ class RepairCoordinator:
     def __init__(self, run_dir: str | Path):
         self.run_dir = Path(run_dir).resolve()
         self.run_id = self.run_dir.name
-        self.run_result = _read_json(self.run_dir / "run_result.json")
-        self.manifest = _read_json(self.run_dir / "manifest.json")
+        self.pipeline_result = RS.load_pipeline_result(self.run_dir)
+        self.run_result = RS.run_result_from_pipeline(self.pipeline_result)
         self.stage_results = _read_json(self.run_dir / "stage_1_results.json")
         self.input_root = (self.run_dir / "input").resolve()
-        self.attempt = int(self.manifest.get("ai_repair_attempt") or 0) + 1
+        attempts = self.pipeline_result.get("attempts") or {}
+        self.attempt = int(attempts.get("ai_repair") or 0) + 1
         self.repair_root = self.run_dir / "repair" / f"attempt-{self.attempt:02d}"
         self.request_path = self.repair_root / "repair_request.json"
         self.receipt_path = self.repair_root / "session-receipt.json"

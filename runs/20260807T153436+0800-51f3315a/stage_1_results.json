@@ -1,0 +1,378 @@
+{
+  "files": {
+    "md5:c39cd8c2842bc2dd643e5e74388cf30a": {
+      "name": "KA0200037e4266b90670001.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/KA0200037e4266b90670001__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:46cb259aaeb59d1ed620281dcd3f1714",
+        "series_family": "",
+        "router_bank": "中国银行",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "中国银行 · 个人",
+      "record_count": 182
+    },
+    "md5:4e995644e23d7ff4b1b431f756e82b15": {
+      "name": "hqmx_20260721122618.xls",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/hqmx_20260721122618__xls__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:23e855a4237def17360251e88e3ffca6",
+        "series_family": "",
+        "router_bank": "中国建设银行",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "中国建设银行 · 个人",
+      "record_count": 403
+    },
+    "md5:1dd3dcc347fd2cc162c0386999790d6a": {
+      "name": "兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls",
+      "relative_path": "兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls",
+      "status": "ERROR",
+      "message": "原始Excel未唯一命中已发布 YAML 指纹，禁止使用通用 Reader 生成正式标准化产物；请创建或维护 YAML 草稿并测试发布后重跑",
+      "reason_code": "ROUTE_UNMATCHED",
+      "route": {
+        "fingerprint_id": "",
+        "series_family": "",
+        "router_bank": "未识别",
+        "yaml_match_status": "unmatched",
+        "reader_id": "openpyxl_grid",
+        "candidate_fingerprints": [],
+        "identity_evidence": [],
+        "columns_evidence": [
+          "Sheet0"
+        ],
+        "metadata_evidence": [],
+        "missing_required_columns": [],
+        "routing_evidence": {
+          "file_type": "excel",
+          "reader_id": "openpyxl_grid",
+          "sheet": "Sheet0",
+          "identity_candidates": [
+            "打印时间：2026-07-21 12:21:39\n本期日期范围：2025-07-20 00:00:00 至 2026-07-20 23:59:59\n活期账号：<REDACTED_NUMBER>\n户名：义乌市亿星文具用品有限公司\n开户行：兴业银行义乌国贸支行\n币种：人民币\n期末账户余额：1,859,763.95"
+          ],
+          "header_candidates": [
+            [
+              "唯一流水编号",
+              "银行流水号",
+              "账号",
+              "户名",
+              "凭证代号",
+              "币种",
+              "现/转",
+              "借方金额(支出)",
+              "贷方金额(收入)",
+              "账户余额",
+              "摘要",
+              "对方账号",
+              "对方户名",
+              "对方银行",
+              "对方行号",
+              "记账日期",
+              "交易时间",
+              "用途",
+              "备注"
+            ]
+          ],
+          "metadata": {
+            "sheet": "Sheet0",
+            "creator": "cib",
+            "application": "BIFF/XLS"
+          },
+          "style_candidates": [
+            {
+              "text": "打印时间：2026-07-21 12:21:39\n本期日期范围：2025-07-20 00:00:00 至 2026-07-20 23:59:59\n活期账号：<REDACTED_NUMBER>\n户名：义乌市亿星文具用品有限公司\n开户行：兴业银行义乌国贸支行\n币种：人民币\n期末账户余额：1,859,763.95",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 1,
+              "col": 1,
+              "number_format": "General"
+            },
+            {
+              "text": "唯一流水编号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 1,
+              "number_format": "General"
+            },
+            {
+              "text": "银行流水号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 2,
+              "number_format": "General"
+            },
+            {
+              "text": "账号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 3,
+              "number_format": "General"
+            },
+            {
+              "text": "户名",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 4,
+              "number_format": "General"
+            },
+            {
+              "text": "凭证代号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 5,
+              "number_format": "General"
+            },
+            {
+              "text": "币种",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 6,
+              "number_format": "General"
+            },
+            {
+              "text": "现/转",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 7,
+              "number_format": "General"
+            },
+            {
+              "text": "借方金额(支出)",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 8,
+              "number_format": "General"
+            },
+            {
+              "text": "贷方金额(收入)",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 9,
+              "number_format": "General"
+            },
+            {
+              "text": "账户余额",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 10,
+              "number_format": "General"
+            },
+            {
+              "text": "摘要",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 11,
+              "number_format": "General"
+            },
+            {
+              "text": "对方账号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 12,
+              "number_format": "General"
+            },
+            {
+              "text": "对方户名",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 13,
+              "number_format": "General"
+            },
+            {
+              "text": "对方银行",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 14,
+              "number_format": "General"
+            },
+            {
+              "text": "对方行号",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 15,
+              "number_format": "General"
+            },
+            {
+              "text": "记账日期",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 16,
+              "number_format": "General"
+            },
+            {
+              "text": "交易时间",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 17,
+              "number_format": "General"
+            },
+            {
+              "text": "用途",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 18,
+              "number_format": "General"
+            },
+            {
+              "text": "备注",
+              "font": "Arial",
+              "size": 10.0,
+              "bold": false,
+              "row": 2,
+              "col": 19,
+              "number_format": "General"
+            }
+          ],
+          "date_patterns": [
+            "yyyy-mm-dd",
+            "yyyy-mm-dd hh:mm:ss",
+            "yyyymmdd"
+          ]
+        }
+      }
+    },
+    "md5:275930d20ea6acc07cdfb1d48be8a323": {
+      "name": "工商银行历史明细（申请单号：26072112275157585886）.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/工商银行历史明细（申请单号：26072112275157585886）__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d933e13d10427ffb9d2590d52325b15e",
+        "series_family": "icbc_personal_history_openpdf",
+        "router_bank": "中国工商银行",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "中国工商银行 · 个人",
+      "record_count": 985
+    },
+    "md5:907ca500c0764eabd65da1c2851668db": {
+      "name": "微信支付交易明细证明(20250720-20260720)——【解压密码可在微信支付公众号查看】.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/微信支付交易明细证明(20250720-20260720)——【解压密码可在微信支付公众号查看】__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:736db5142663fe121ee00a19d869e2a9",
+        "series_family": "",
+        "router_bank": "微信支付",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "微信支付 · 个人",
+      "record_count": 4687
+    },
+    "md5:eaf9a1c01fb262e8fead72280e848250": {
+      "name": "支付宝交易明细(20250701-20251231).pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20250701-20251231)__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 492
+    },
+    "md5:fd97a4d6e405e555f50270084bad6edb": {
+      "name": "支付宝交易明细(20250701-20251231)_1.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20250701-20251231)_1__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 10000
+    },
+    "md5:1aeb5ec0ec9028eb00d8965ecfb93dd1": {
+      "name": "支付宝交易明细(20250701-20251231)_2.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20250701-20251231)_2__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 7695
+    },
+    "md5:d2ba7ed206a08ab2356ff0350ed76de6": {
+      "name": "支付宝交易明细(20260101-20260720).pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20260101-20260720)__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 652
+    },
+    "md5:20cef0853dd9f87f8fa924b4801aabce": {
+      "name": "支付宝交易明细(20260101-20260721)_1.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20260101-20260721)_1__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 10000
+    },
+    "md5:ebe4dc9facd8a8d0cc90a4bac49feeaa": {
+      "name": "支付宝交易明细(20260101-20260721)_2.pdf",
+      "status": "DONE",
+      "output": "artifacts/_工作区/刘明才/支付宝交易明细(20260101-20260721)_2__pdf__standardized.csv",
+      "route": {
+        "fingerprint_id": "md5:d6adc02bebd0a0b6f6ee4af2bae3f5a6",
+        "series_family": "",
+        "router_bank": "支付宝",
+        "yaml_match_status": "matched"
+      },
+      "recognized_type": "支付宝 · 个人",
+      "record_count": 5217
+    }
+  }
+}

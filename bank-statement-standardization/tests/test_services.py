@@ -100,13 +100,13 @@ class StatementServiceTests(unittest.TestCase):
 
     @staticmethod
     def _finish_run(run_root, run_id):
-        manifest_path = Path(run_root) / run_id / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for stage_id, spec in manifest.items():
-            if stage_id.startswith("stage_") and isinstance(spec, dict):
+        result_path = Path(run_root) / run_id / "pipeline_result.json"
+        pipeline_result = json.loads(result_path.read_text(encoding="utf-8"))
+        for spec in pipeline_result["stages"].values():
+            if isinstance(spec, dict):
                 spec["status"] = "DONE"
-        manifest_path.write_text(
-            json.dumps(manifest, ensure_ascii=False),
+        result_path.write_text(
+            json.dumps(pipeline_result, ensure_ascii=False),
             encoding="utf-8",
         )
 
@@ -131,10 +131,10 @@ class StatementServiceTests(unittest.TestCase):
             self.assertEqual(detail.status, "RUNNING")
             self.assertEqual([item["name"] for item in detail.files], ["流水.xlsx"])
             self.assertEqual(len(submitted), 1)
-            manifest = json.loads(
-                (Path(tmp) / reference.run_id / "manifest.json").read_text(encoding="utf-8")
+            pipeline_result = json.loads(
+                (Path(tmp) / reference.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
-            self.assertTrue(manifest["routing_rules_version"].startswith("sha256-"))
+            self.assertTrue(pipeline_result["rules_version"].startswith("sha256-"))
             self.assertTrue(detail.artifacts)
 
     def test_incremental_run_inherits_parent_and_applies_remove_and_add(self):
@@ -194,13 +194,18 @@ class StatementServiceTests(unittest.TestCase):
             )
 
             child_dir = root / child.run_id
-            manifest = json.loads((child_dir / "manifest.json").read_text(encoding="utf-8"))
+            pipeline_result = json.loads(
+                (child_dir / "pipeline_result.json").read_text(encoding="utf-8")
+            )
             hints = (child_dir / "input" / "_file_hints.yaml").read_text(encoding="utf-8")
             self.assertIn("open_password: secret", hints)
-            self.assertEqual(manifest["password_attempt"], 1)
-            self.assertEqual(manifest["ai_repair_attempt"], 0)
-            self.assertEqual(manifest["rerun_reason"], "password_retry")
-            self.assertNotIn("secret", (child_dir / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(pipeline_result["attempts"]["password"], 1)
+            self.assertEqual(pipeline_result["attempts"]["ai_repair"], 0)
+            self.assertEqual(pipeline_result["rerun_reason"], "password_retry")
+            self.assertNotIn(
+                "secret",
+                (child_dir / "pipeline_result.json").read_text(encoding="utf-8"),
+            )
 
     def test_password_retry_cli_reads_secret_from_stdin_not_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -392,13 +397,13 @@ class StatementServiceTests(unittest.TestCase):
                 repair_result_sha256=service._sha256_path(snapshot),
             )
 
-            child_manifest = json.loads(
-                (root / child.run_id / "manifest.json").read_text(encoding="utf-8")
+            child_result = json.loads(
+                (root / child.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
             parent_manifest = json.loads((parent / "manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(child_manifest["parent_run_id"], "parent-run")
-            self.assertEqual(child_manifest["ai_repair_attempt"], 1)
-            self.assertEqual(child_manifest["repair_snapshot"]["scope"], "run_only")
+            self.assertEqual(child_result["parent_run_id"], "parent-run")
+            self.assertEqual(child_result["attempts"]["ai_repair"], 1)
+            self.assertEqual(child_result["repair_snapshot"]["scope"], "run_only")
             self.assertTrue((root / child.run_id / "repair" / "standardized" / repaired.name).is_file())
             self.assertEqual(parent_manifest["stage_1_standardize"]["status"], "ERROR")
 

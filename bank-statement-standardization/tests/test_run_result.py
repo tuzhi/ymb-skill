@@ -65,14 +65,23 @@ class RunResultTests(unittest.TestCase):
         self.assertEqual(route.reason_code, F.DOWNSTREAM_STAGE_FAILURE)
         self.assertEqual(route.next_action, R.REPORT_ERROR)
 
-    def test_run_result_round_trip(self):
+    def test_pipeline_result_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "run_result.json"
-            result = R.RunResult("run-1", "DONE", R.DELIVER, artifact_refs=("a.xlsx",))
-            STORE.write_run_result(path, result)
-            self.assertIn('"next_action": "DELIVER"', path.read_text(encoding="utf-8"))
-            self.assertNotIn('"action"', path.read_text(encoding="utf-8"))
-            self.assertNotIn('"summary"', path.read_text(encoding="utf-8"))
+            path = Path(tmp) / STORE.PIPELINE_RESULT_FILENAME
+            STORE.atomic_write_json(path, {
+                "schema_version": 1,
+                "run_id": "run-1",
+                "status": "DONE",
+                "next_action": "DELIVER",
+                "reason_code": "",
+                "message": "done",
+                "deliverables": ["a.xlsx"],
+            })
+            stored = STORE.run_result_from_pipeline(STORE.load_pipeline_result(tmp))
+            self.assertEqual(stored["next_action"], "DELIVER")
+            self.assertEqual(stored["artifact_refs"], ["a.xlsx"])
+            self.assertNotIn("action", stored)
+            self.assertNotIn("summary", stored)
 
     def test_run_result_serializes_action_only_when_present(self):
         result = R.RunResult(

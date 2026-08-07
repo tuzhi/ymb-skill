@@ -81,8 +81,8 @@ class ExecutionPlanTest(unittest.TestCase):
                 "status": "DONE",
                 "next_action": "DELIVER",
             }
-            (Path(run_dir) / "run_result.json").write_text(
-                json.dumps(expected),
+            (Path(run_dir) / "pipeline_result.json").write_text(
+                json.dumps({"run_result": expected}),
                 encoding="utf-8",
             )
 
@@ -156,7 +156,9 @@ class ExecutionPlanTest(unittest.TestCase):
             class FakeRunner:
                 def __init__(self, args):
                     self.run_id = args.run_id
-                    self.run_result_path = str(run_root / self.run_id / "run_result.json")
+                    self.pipeline_result_path = str(
+                        run_root / self.run_id / "pipeline_result.json"
+                    )
 
                 def execute(self):
                     result = dict(final_result, run_id=self.run_id)

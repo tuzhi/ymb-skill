@@ -13,6 +13,7 @@ import time
 import uuid
 
 from .models.run_result import CONTRACT_VERSION
+from . import result_store as RS
 
 
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
@@ -94,10 +95,16 @@ def claim_planned_run(run_root, run_id):
 
 def wait_for_run_result(run_dir, timeout_seconds, poll_seconds=0.25):
     deadline = time.monotonic() + max(0.0, float(timeout_seconds))
-    result_path = Path(run_dir) / "run_result.json"
+    root = Path(run_dir)
+    result_path = root / RS.PIPELINE_RESULT_FILENAME
+    legacy_result_path = root / RS.LEGACY_RUN_RESULT_FILENAME
     while time.monotonic() <= deadline:
-        result = _read_json(result_path, {})
-        if result:
+        if result_path.is_file() or legacy_result_path.is_file():
+            pipeline_result = RS.load_pipeline_result(root)
+            result = RS.run_result_from_pipeline(pipeline_result)
+        else:
+            result = {}
+        if result and result.get("next_action") != "EXECUTE_PIPELINE":
             return result
         time.sleep(poll_seconds)
     return {}

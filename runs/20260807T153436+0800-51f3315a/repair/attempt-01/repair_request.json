@@ -1,0 +1,29 @@
+{
+  "request_id": "20260807T153436+0800-51f3315a:1:repair:4542192b7617ef61",
+  "run_id": "20260807T153436+0800-51f3315a",
+  "run_dir": "/Users/tuzhi/Developer/ymb-skill/runs/20260807T153436+0800-51f3315a",
+  "attempt": 1,
+  "role": "repair",
+  "role_prompt_ref": "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/roles/repair.md",
+  "input_refs": [
+    "stage_1_results.json",
+    "input/兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls"
+  ],
+  "failed_files": [
+    {
+      "file_id": "md5:1dd3dcc347fd2cc162c0386999790d6a",
+      "source_md5": "md5:1dd3dcc347fd2cc162c0386999790d6a",
+      "name": "兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls",
+      "input_ref": "input/兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls",
+      "status": "ERROR",
+      "reason_code": "ROUTE_UNMATCHED",
+      "message": "原始Excel未唯一命中已发布 YAML 指纹，禁止使用通用 Reader 生成正式标准化产物；请创建或维护 YAML 草稿并测试发布后重跑"
+    }
+  ],
+  "repair_dir": "/Users/tuzhi/Developer/ymb-skill/runs/20260807T153436+0800-51f3315a/repair/attempt-01",
+  "output_contract_ref": "/Users/tuzhi/Developer/ymb-skill/bank-statement-standardization/harness/protocols/v1/repair-result.template.json",
+  "fresh_session_required": true,
+  "inherit_chat_history": false,
+  "stage_id": "stage_1_standardize",
+  "contract_version": 1
+}

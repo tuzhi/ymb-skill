@@ -18,6 +18,18 @@ from runtime import runner as runner_runtime  # noqa: E402
 
 
 class OrchestratorManifestTest(unittest.TestCase):
+    @staticmethod
+    def _configure_pipeline_state(runner, client="测试客户"):
+        runner.pipeline_state = {
+            "skill": {},
+            "client_name": client,
+            "skipped_inputs": [],
+        }
+        runner.stages = {
+            "stage_1_standardize": {"route_artifact": ""},
+        }
+        runner.write_pipeline_result = lambda: None
+
     def test_failure_route_summary_preserves_nested_routing_evidence(self):
         evidence = {
             "identity_candidates": ["测试银行企业账户收支明细"],
@@ -69,18 +81,13 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
-            runner.manifest = {
-                "skipped_inputs": [],
-                "client": "测试客户",
-                "stage_1_standardize": {"route_artifact": ""},
-            }
-            runner.write_manifest = lambda: None
+            self._configure_pipeline_state(runner)
 
             result = runner.stage_1_standardize()
 
             self.assertEqual(result["processed_files"], 1)
-            self.assertEqual(len(runner.manifest["skipped_inputs"]), 1)
-            skipped = runner.manifest["skipped_inputs"][0]
+            self.assertEqual(len(runner.pipeline_state["skipped_inputs"]), 1)
+            skipped = runner.pipeline_state["skipped_inputs"][0]
             self.assertEqual(skipped["name"], "转换流水.xlsx")
             self.assertIn("Kingsoft PDF to WPS 120", skipped["reason"])
 
@@ -96,12 +103,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
-            runner.manifest = {
-                "skipped_inputs": [],
-                "client": "测试客户",
-                "stage_1_standardize": {"route_artifact": ""},
-            }
-            runner.write_manifest = lambda: None
+            self._configure_pipeline_state(runner)
 
             original = runner_runtime.S.standardize_file
             try:
@@ -116,7 +118,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             finally:
                 runner_runtime.S.standardize_file = original
 
-            self.assertEqual(runner.manifest["skipped_inputs"], [])
+            self.assertEqual(runner.pipeline_state["skipped_inputs"], [])
 
     def test_stage_one_recursively_reads_nested_customer_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -131,12 +133,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
-            runner.manifest = {
-                "skipped_inputs": [],
-                "client": "测试客户",
-                "stage_1_standardize": {"route_artifact": ""},
-            }
-            runner.write_manifest = lambda: None
+            self._configure_pipeline_state(runner)
 
             def standardize(context):
                 work = Path(context.out_dir)
@@ -167,12 +164,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
-            runner.manifest = {
-                "skipped_inputs": [],
-                "client": "测试客户",
-                "stage_1_standardize": {"route_artifact": ""},
-            }
-            runner.write_manifest = lambda: None
+            self._configure_pipeline_state(runner)
 
             def standardize(context):
                 work = Path(context.out_dir)
@@ -194,7 +186,7 @@ class OrchestratorManifestTest(unittest.TestCase):
                     runner.stage_1_standardize()
 
             self.assertTrue((Path(runner.work_dir()) / "空流水__pdf__standardized.csv").exists())
-            self.assertEqual(runner.manifest["skipped_inputs"], [])
+            self.assertEqual(runner.pipeline_state["skipped_inputs"], [])
             results = runner.load_stage_1_results()["files"]
             statuses = {record["name"]: record["status"] for record in results.values()}
             self.assertEqual(statuses["空流水.pdf"], "ERROR")
@@ -408,7 +400,7 @@ class OrchestratorManifestTest(unittest.TestCase):
 
     def test_first_pending_stage_skips_skill_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
-            runtime = Path(tmp) / "manifest.json"
+            runtime = Path(tmp) / "pipeline_result.json"
             runtime.write_text(
                 json.dumps(
                     {
@@ -416,7 +408,9 @@ class OrchestratorManifestTest(unittest.TestCase):
                             "name": "bank-statement-standardization",
                             "version": "1.2.6",
                         },
-                        "stage_1_standardize": {"status": ""},
+                        "stages": {
+                            "stage_1_standardize": {"status": ""},
+                        },
                     },
                     ensure_ascii=False,
                 ),
@@ -424,8 +418,9 @@ class OrchestratorManifestTest(unittest.TestCase):
             )
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
-            runner.manifest_path = str(runtime)
-            runner.manifest = json.loads(runtime.read_text(encoding="utf-8"))
+            runner.pipeline_result_path = str(runtime)
+            runner.pipeline_state = json.loads(runtime.read_text(encoding="utf-8"))
+            runner.stages = runner.pipeline_state["stages"]
 
             stage_id, spec = runner.first_pending_stage()
 
@@ -473,12 +468,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             )
             runner.out_dir = str(tmp_path / "artifacts")
             runner.run_dir = str(tmp_path)
-            runner.manifest = {
-                "skipped_inputs": [],
-                "client": "tokenized_batch_bundle",
-                "stage_1_standardize": {"route_artifact": ""},
-            }
-            runner.write_manifest = lambda: None
+            self._configure_pipeline_state(runner, "tokenized_batch_bundle")
             runner.emit = lambda *args, **kwargs: None
 
             result = runner.stage_1_standardize()
@@ -488,7 +478,10 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(result["processed_files"], 2)
             self.assertEqual(result["upstream_manifest"]["schema_version"], "bank-statement-standardization.manifest/v1")
             self.assertEqual(runner.args.client, "tokenized_batch_bundle")
-            self.assertEqual(runner.manifest["client"], "tokenized_batch_bundle")
+            self.assertEqual(
+                runner.pipeline_state["client_name"],
+                "tokenized_batch_bundle",
+            )
             self.assertNotIn("archive_name", result["upstream_manifest"])
             self.assertEqual(result["upstream_manifest"]["archive_id"], "tv_20260612_fa8d03d0")
             self.assertTrue(result["upstream_manifest"]["archive_name_present"])
@@ -496,7 +489,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertTrue((work / "002_raw-b__standardized.csv").is_file())
             self.assertFalse((work / "001_raw-a__mapping.json").exists())
             self.assertFalse((work / "002_raw-b__mapping.json").exists())
-            self.assertNotIn("file_routes", runner.manifest["stage_1_standardize"])
+            self.assertNotIn("file_routes", runner.stages["stage_1_standardize"])
             results = runner.load_stage_1_results()
             self.assertEqual(
                 {record["status"] for record in results["files"].values()},
@@ -513,27 +506,29 @@ class OrchestratorManifestTest(unittest.TestCase):
             )
             self.assertEqual(validation["standardized_files"], 2)
 
-    def test_copy_stage_manifest_resets_runtime_fields(self):
+    def test_initialize_pipeline_result_resets_runtime_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            template = tmp_path / "manifest.json"
-            runtime = tmp_path / "run" / "manifest.json"
+            template = tmp_path / "pipeline_result.template.json"
+            runtime = tmp_path / "run" / "pipeline_result.json"
             runtime.parent.mkdir()
             template.write_text(
                 json.dumps(
                     {
-                        "stage_1_standardize": {
-                            "name": "stage 1",
-                            "script": "scripts/standardize.py",
-                            "ai_fallback_refs": [],
-                            "ai_fallback_info": "Prompt 1A 用于加密 PDF/Excel 无法打开时，向用户索要密码并写入 _file_hints.yaml 后重跑阶段一。",
-                            "validator": "scripts/validate_stage.py::validate_standardize",
-                            "ai_fallback_used": True,
-                            "ai_fallback_dir": "C:/Users/28307/WorkBuddy/runs/old-run/fallback/stage_1_standardize",
-                            "ai_fallback_artifacts": ["old_patch.py"],
-                            "started_at": "2026-06-08T18:38:26.495086+08:00",
-                            "duration_seconds": 45.504,
-                            "status": "DONE",
+                        "stages": {
+                            "stage_1_standardize": {
+                                "name": "stage 1",
+                                "script": "scripts/standardize.py",
+                                "ai_fallback_refs": [],
+                                "ai_fallback_info": "legacy prompt",
+                                "validator": "scripts/validate_stage.py::validate_standardize",
+                                "ai_fallback_used": True,
+                                "ai_fallback_dir": "old/fallback",
+                                "ai_fallback_artifacts": ["old_patch.py"],
+                                "started_at": "2026-06-08T18:38:26.495086+08:00",
+                                "duration_seconds": 45.504,
+                                "status": "DONE",
+                            }
                         }
                     },
                     ensure_ascii=False,
@@ -542,13 +537,16 @@ class OrchestratorManifestTest(unittest.TestCase):
             )
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
-            runner.template_manifest_path = str(template)
-            runner.manifest_path = str(runtime)
+            runner.run_id = "run-1"
+            runner.pipeline_result_template_path = str(template)
+            runner.pipeline_result_path = str(runtime)
+            runner.stage_summaries = {}
+            runner.artifacts = {}
 
-            runner.copy_stage_manifest()
+            runner.initialize_pipeline_result()
 
             data = json.loads(runtime.read_text(encoding="utf-8"))
-            stage = data["stage_1_standardize"]
+            stage = data["stages"]["stage_1_standardize"]
             self.assertNotIn("ai_fallback_used", stage)
             self.assertNotIn("ai_fallback_artifacts", stage)
             self.assertNotIn("ai_fallback_dir", stage)

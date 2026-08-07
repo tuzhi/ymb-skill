@@ -13,6 +13,7 @@ if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
 from runtime import runner as runner_runtime  # noqa: E402
+from runtime import result_store as result_store  # noqa: E402
 
 
 def runner_args(run_root, folder, *, client="测试客户", parent_run_id=""):
@@ -92,10 +93,12 @@ class StageOneResultsAndQCTest(unittest.TestCase):
 
             runner.handle_stage_failure(
                 "stage_1_standardize",
-                runner.manifest["stage_1_standardize"],
+                runner.stages["stage_1_standardize"],
                 RuntimeError("阶段一存在失败文件"),
             )
-            run_result = json.loads(Path(runner.run_result_path).read_text(encoding="utf-8"))
+            run_result = result_store.run_result_from_pipeline(json.loads(
+                Path(runner.pipeline_result_path).read_text(encoding="utf-8")
+            ))
             self.assertEqual(run_result["next_action"], "NEED_REPAIR")
             public = runner_runtime.public_result(run_result, runner.run_dir)
             self.assertEqual(
@@ -135,7 +138,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(record["status"], "DONE")
             self.assertEqual(record["recognized_type"], "测试银行")
             self.assertEqual(record["record_count"], 1)
-            self.assertNotIn("route_artifact", child.manifest["stage_1_standardize"])
+            self.assertNotIn("route_artifact", child.stages["stage_1_standardize"])
 
     def test_child_run_does_not_reuse_legacy_unmatched_raw_result(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -201,7 +204,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 side_effect=parent_standardize,
             ):
                 with self.assertRaisesRegex(RuntimeError, "存在失败文件"):
-                    parent.run_manifest_stages()
+                    parent.run_pipeline_stages()
 
             parent_records = parent.load_stage_1_results()["files"]
             self.assertEqual(
@@ -209,7 +212,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 ["DONE", "DONE", "DONE", "ERROR", "ERROR"],
             )
             self.assertEqual(
-                parent.manifest["stage_1_standardize"]["status"],
+                parent.stages["stage_1_standardize"]["status"],
                 "ERROR",
             )
 
@@ -328,8 +331,11 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(standardize.call_count, 1)
             self.assertEqual(result["processed_files"], 1)
             self.assertEqual(len(runner.load_stage_1_results()["files"]), 1)
-            self.assertEqual(len(runner.manifest["skipped_inputs"]), 1)
-            self.assertIn("内容 MD5 相同", runner.manifest["skipped_inputs"][0]["reason"])
+            self.assertEqual(len(runner.pipeline_state["skipped_inputs"]), 1)
+            self.assertIn(
+                "内容 MD5 相同",
+                runner.pipeline_state["skipped_inputs"][0]["reason"],
+            )
 
     def test_qc_results_separate_file_contains_file_and_customer_sections(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -352,7 +358,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertIn("file.source_format_quality", file_rules)
             self.assertIn("customer.coverage_two_years", qc["customer"])
             self.assertEqual(qc["status"], "RUNNING")
-            self.assertNotIn("qc", runner.manifest)
+            self.assertNotIn("qc", runner.pipeline_state)
 
             self.assertEqual(
                 runner_runtime.Q.update_status(qc, final=True),

@@ -100,7 +100,9 @@ def main(argv=None):
         args.execution_plan_key,
         runner.run_id,
     )
-    result_run_dir = getattr(runner, "run_dir", os.path.dirname(runner.run_result_path))
+    result_run_dir = getattr(runner, "run_dir", None)
+    if not result_run_dir:
+        result_run_dir = os.path.dirname(runner.pipeline_result_path)
     public = _runner_runtime.public_result(result, result_run_dir)
     print(json.dumps(public, ensure_ascii=False, separators=(",", ":")))
     return _runner_runtime.protocol_exit_status(public, execution.exit_code)

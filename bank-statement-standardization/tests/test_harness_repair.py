@@ -25,9 +25,20 @@ class HarnessRepairTests(unittest.TestCase):
         source.parent.mkdir(parents=True)
         source.write_bytes(b"%PDF-1.4\n")
         file_id = "md5:" + hashlib.md5(source.read_bytes()).hexdigest()
-        (run / "manifest.json").write_text(json.dumps({
-            "ai_repair_attempt": attempt,
-            "stage_1_standardize": {"status": "ERROR"},
+        run_result = {
+            "contract_version": 1,
+            "run_id": run.name,
+            "status": "ERROR",
+            "next_action": "NEED_REPAIR",
+            "reason_code": "ROUTE_UNMATCHED",
+            "artifact_refs": ["stage_1_results.json"],
+            "context_ref": "stage_1_results.json",
+        }
+        (run / "pipeline_result.json").write_text(json.dumps({
+            "run_id": run.name,
+            "attempts": {"password": 0, "ai_repair": attempt},
+            "stages": {"stage_1_standardize": {"status": "ERROR"}},
+            "run_result": run_result,
         }), encoding="utf-8")
         (run / "stage_1_results.json").write_text(json.dumps({
             "files": {
@@ -39,15 +50,6 @@ class HarnessRepairTests(unittest.TestCase):
                     "message": "未唯一命中 YAML",
                 }
             }
-        }), encoding="utf-8")
-        (run / "run_result.json").write_text(json.dumps({
-            "contract_version": 1,
-            "run_id": run.name,
-            "status": "ERROR",
-            "next_action": "NEED_REPAIR",
-            "reason_code": "ROUTE_UNMATCHED",
-            "artifact_refs": ["stage_1_results.json"],
-            "context_ref": "stage_1_results.json",
         }), encoding="utf-8")
         return run
 

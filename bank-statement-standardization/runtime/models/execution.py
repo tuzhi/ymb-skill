@@ -8,7 +8,11 @@ from typing import Any, Mapping
 
 @dataclass(frozen=True)
 class PipelineExecutionResult:
-    """一次完整流水线执行的内存结果；落盘文件只是其持久化副本。"""
+    """一次完整流水线执行的内存聚合结果。
+
+    整体状态持久化到 pipeline_result.json；逐文件结果和 QC 分别保存在
+    stage_1_results.json、qc_results.json，Service 路径直接使用这里的内存值。
+    """
 
     exit_code: int
     run_id: str

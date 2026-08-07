@@ -13,6 +13,7 @@ import time
 import traceback
 import zipfile
 from datetime import datetime, timedelta, timezone
+from typing import Mapping
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
@@ -56,7 +57,9 @@ ERROR = "ERROR"
 BLOCKED = "BLOCKED"
 PENDING = "PENDING"
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
-MANIFEST_TEMPLATE_RELATIVE_PATH = os.path.join("assets", "manifest.template.json")
+PIPELINE_RESULT_TEMPLATE_RELATIVE_PATH = os.path.join(
+    "assets", "pipeline_result.template.json"
+)
 
 
 def configure_console():
@@ -249,8 +252,8 @@ def read_json_if_exists(path, default=None):
         return json.load(f)
 
 
-def manifest_template_path(skill_dir):
-    return os.path.join(skill_dir, MANIFEST_TEMPLATE_RELATIVE_PATH)
+def pipeline_result_template_path(skill_dir):
+    return os.path.join(skill_dir, PIPELINE_RESULT_TEMPLATE_RELATIVE_PATH)
 
 
 def resolve_run_root(explicit_run_root, cwd=None):
@@ -270,16 +273,15 @@ def load_parent_run_context(run_root, parent_run_id):
     if not os.path.isdir(parent_dir):
         raise RuntimeError(f"parent run 不存在：{parent_dir}")
 
-    stage_manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
-    # 兼容历史 run；新 run 的运行上下文已合并到 manifest.json。
-    legacy_run_manifest = read_json_if_exists(os.path.join(parent_dir, "run_manifest.json"), {})
+    pipeline_result = RS.load_pipeline_result(parent_dir)
+    attempts = pipeline_result.get("attempts") or {}
 
     return {
         "parent_run_id": parent_run_id,
         "parent_run_dir": parent_dir,
-        "parent_client": stage_manifest.get("client") or legacy_run_manifest.get("client", ""),
-        "password_attempt": int(stage_manifest.get("password_attempt") or 0),
-        "ai_repair_attempt": int(stage_manifest.get("ai_repair_attempt") or 0),
+        "parent_client": str(pipeline_result.get("client_name") or ""),
+        "password_attempt": int(attempts.get("password") or 0),
+        "ai_repair_attempt": int(attempts.get("ai_repair") or 0),
     }
 
 
@@ -287,7 +289,7 @@ class Runner:
     def __init__(self, args):
         self.args = args
         self.skill_dir = SKILL_DIR
-        self.template_manifest_path = manifest_template_path(self.skill_dir)
+        self.pipeline_result_template_path = pipeline_result_template_path(self.skill_dir)
         planned_run_id = str(getattr(args, "run_id", "") or "")
         if planned_run_id and not RUN_ID_PATTERN.fullmatch(planned_run_id):
             raise ValueError("预分配 run_id 无效")
@@ -297,10 +299,11 @@ class Runner:
         self.out_dir = os.path.join(self.run_dir, "artifacts")
         self.receipt_dir = os.path.join(self.run_dir, "receipts")
         self.event_path = os.path.join(self.run_dir, "events.jsonl")
-        self.manifest_path = os.path.join(self.run_dir, "manifest.json")
+        self.pipeline_result_path = os.path.join(
+            self.run_dir, RS.PIPELINE_RESULT_FILENAME
+        )
         self.stage_1_results_path = os.path.join(self.run_dir, "stage_1_results.json")
         self.qc_results_path = os.path.join(self.run_dir, "qc_results.json")
-        self.run_result_path = os.path.join(self.run_dir, "run_result.json")
         self.token_usage_path = os.path.join(self.run_dir, "token_usage.json")
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.receipt_dir, exist_ok=True)
@@ -328,16 +331,18 @@ class Runner:
             self.run_dir,
         )
         self.args.folder = self.input_dir
-        self.copy_stage_manifest()
-        self.manifest["client"] = args.client
-        self.manifest["parent_run_id"] = args.parent_run_id or ""
-        self.manifest["rerun_reason"] = args.rerun_reason or ""
-        self.manifest["password_attempt"] = int(
-            (parent_context or {}).get("password_attempt") or 0
-        ) + int(getattr(args, "password_attempt_increment", 0) or 0)
-        self.manifest["ai_repair_attempt"] = int(
-            (parent_context or {}).get("ai_repair_attempt") or 0
-        ) + int(getattr(args, "ai_repair_attempt_increment", 0) or 0)
+        self.initialize_pipeline_result()
+        self.pipeline_state["client_name"] = args.client
+        self.pipeline_state["parent_run_id"] = args.parent_run_id or ""
+        self.pipeline_state["rerun_reason"] = args.rerun_reason or ""
+        self.pipeline_state["attempts"] = {
+            "password": int(
+                (parent_context or {}).get("password_attempt") or 0
+            ) + int(getattr(args, "password_attempt_increment", 0) or 0),
+            "ai_repair": int(
+                (parent_context or {}).get("ai_repair_attempt") or 0
+            ) + int(getattr(args, "ai_repair_attempt_increment", 0) or 0),
+        }
         self.repair_outputs = {}
         snapshot_source = str(getattr(args, "repair_result_snapshot", "") or "").strip()
         if snapshot_source:
@@ -381,19 +386,19 @@ class Runner:
                 os.makedirs(os.path.dirname(output_target), exist_ok=True)
                 shutil.copy2(output_source, output_target)
                 self.repair_outputs[file_id] = {**item, "path": output_target}
-            self.manifest["repair_snapshot"] = {
+            self.pipeline_state["repair_snapshot"] = {
                 "path": self.run_relative_ref(snapshot_path),
                 "sha256": expected_sha256,
                 "scope": "run_only",
             }
         self.routing_rules_snapshot = getattr(args, "routing_rules_snapshot", None)
-        self.manifest["routing_rules_version"] = (
+        self.pipeline_state["rules_version"] = (
             self.routing_rules_snapshot.version
             if self.routing_rules_snapshot is not None
             else S.routing_rules_version()
         )
-        self.manifest["skipped_inputs"] = []
-        self.write_manifest()
+        self.pipeline_state["skipped_inputs"] = []
+        self.write_pipeline_result()
         self.file_results = {"files": {}}
         self.qc_results = Q.empty_results()
         self.write_stage_1_results(self.file_results)
@@ -409,21 +414,43 @@ class Runner:
             "cached_input_tokens": 0,
             "sessions": [],
         })
-        self.run_result = None
 
-    def copy_stage_manifest(self):
-        if not os.path.isfile(self.template_manifest_path):
-            raise RuntimeError(f"缺少 skill 资源模板 {MANIFEST_TEMPLATE_RELATIVE_PATH}：{self.template_manifest_path}")
-        with open(self.template_manifest_path, "r", encoding="utf-8") as f:
+    def initialize_pipeline_result(self):
+        if not os.path.isfile(self.pipeline_result_template_path):
+            raise RuntimeError(
+                "缺少 skill 资源模板 "
+                f"{PIPELINE_RESULT_TEMPLATE_RELATIVE_PATH}："
+                f"{self.pipeline_result_template_path}"
+            )
+        with open(self.pipeline_result_template_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        self.manifest = self.sanitize_stage_manifest_template(data)
-        self.write_manifest()
+        self.pipeline_state = self.sanitize_pipeline_result_template(data)
+        self.stages = self.pipeline_state["stages"]
+        self.run_result = R.RunResult(
+            run_id=self.run_id,
+            status="RUNNING",
+            next_action=R.EXECUTE_PIPELINE,
+            message="流水线执行中",
+        )
+        self.pipeline_state.update({
+            "run_id": self.run_id,
+            "client_name": "",
+            "parent_run_id": "",
+            "status": "RUNNING",
+            "rules_version": "",
+            "rerun_reason": "",
+            "attempts": {"password": 0, "ai_repair": 0},
+            "skipped_inputs": [],
+            "error": None,
+        })
+        self.write_pipeline_result()
 
-    def sanitize_stage_manifest_template(self, data):
-        """Reset runtime-only fields before creating a new runtime manifest."""
-        for stage_id, spec in data.items():
-            if not str(stage_id).startswith("stage_"):
-                continue
+    def sanitize_pipeline_result_template(self, data):
+        """创建新 Run 前清理模板中的运行时字段。"""
+        stages = data.get("stages") or {}
+        if not isinstance(stages, dict):
+            raise RuntimeError("pipeline result 模板缺少 stages")
+        for stage_id, spec in stages.items():
             spec.pop("script", None)
             spec.pop("validator", None)
             spec["status"] = ""
@@ -440,12 +467,12 @@ class Runner:
         return data
 
     def update_stage_status(self, stage_id, status, duration_seconds=None):
-        if stage_id not in self.manifest:
-            raise RuntimeError(f"runtime manifest 缺少阶段：{stage_id}")
-        self.manifest[stage_id]["status"] = status
+        if stage_id not in self.stages:
+            raise RuntimeError(f"pipeline result 缺少阶段：{stage_id}")
+        self.stages[stage_id]["status"] = status
         if duration_seconds is not None:
-            self.manifest[stage_id]["duration_seconds"] = duration_seconds
-        self.write_manifest()
+            self.stages[stage_id]["duration_seconds"] = duration_seconds
+        self.write_pipeline_result()
 
     def write_run_result(
         self,
@@ -471,9 +498,9 @@ class Runner:
             action=dict(action or {}),
             summary=dict(summary or {}),
         )
-        result_path = getattr(self, "run_result_path", os.path.join(self.run_dir, "run_result.json"))
-        self.run_result_path = result_path
-        self.run_result = RS.write_run_result(result_path, result)
+        self.run_result = result
+        self.pipeline_state["status"] = result.status
+        self.write_pipeline_result()
         return self.run_result
 
     def coordinator_action(self, operation, **extra):
@@ -501,9 +528,7 @@ class Runner:
         )
 
     def first_pending_stage(self):
-        for stage_id, spec in self.manifest.items():
-            if not str(stage_id).startswith("stage_"):
-                continue
+        for stage_id, spec in self.stages.items():
             status = spec.get("status", "")
             if status == ERROR:
                 raise RuntimeError(f"阶段已处于 ERROR，必须先处理失败原因：{stage_id}")
@@ -511,9 +536,88 @@ class Runner:
                 return stage_id, spec
         return None, None
 
-    def write_manifest(self):
-        with open(self.manifest_path, "w", encoding="utf-8") as f:
-            json.dump(self.manifest, f, ensure_ascii=False, indent=2)
+    def write_pipeline_result(self):
+        run_result = self.run_result.to_dict()
+        stages = {}
+        for stage_id, spec in self.stages.items():
+            stage = {
+                "status": str(spec.get("status") or ""),
+                "duration_seconds": spec.get("duration_seconds"),
+            }
+            if spec.get("reason_code"):
+                stage["reason_code"] = str(spec["reason_code"])
+            summary = self._compact_stage_summary(
+                stage_id,
+                self.stage_summaries.get(stage_id),
+            )
+            if summary:
+                stage["summary"] = summary
+            stages[stage_id] = stage
+
+        next_action = str(run_result.get("next_action") or "")
+        artifact_refs = list(run_result.get("artifact_refs") or [])
+        result = {
+            "schema_version": int(self.pipeline_state.get("schema_version") or 1),
+            "run_id": self.run_id,
+            "client_name": str(self.pipeline_state.get("client_name") or ""),
+            "parent_run_id": str(self.pipeline_state.get("parent_run_id") or ""),
+            "skill_version": self.current_skill_version(),
+            "rules_version": str(self.pipeline_state.get("rules_version") or ""),
+            "rerun_reason": str(self.pipeline_state.get("rerun_reason") or ""),
+            "status": str(run_result.get("status") or "RUNNING"),
+            "next_action": next_action,
+            "reason_code": str(run_result.get("reason_code") or ""),
+            "message": str(run_result.get("message") or ""),
+            "attempts": dict(self.pipeline_state.get("attempts") or {}),
+            "stages": stages,
+            "summary": dict(run_result.get("summary") or {}),
+            "deliverables": artifact_refs if next_action == R.DELIVER else [],
+            "refs": {
+                "stage_1": "stage_1_results.json",
+                "qc": "qc_results.json",
+            },
+            "skipped_inputs": list(self.pipeline_state.get("skipped_inputs") or []),
+            "error": self.pipeline_state.get("error"),
+        }
+        context_ref = str(run_result.get("context_ref") or "")
+        if context_ref and not (
+            next_action == R.DELIVER
+            and context_ref == RS.PIPELINE_RESULT_FILENAME
+        ):
+            result["context_ref"] = context_ref
+        if run_result.get("action"):
+            result["action"] = dict(run_result["action"])
+        if next_action != R.DELIVER and artifact_refs:
+            result["artifact_refs"] = artifact_refs
+        if self.pipeline_state.get("repair_snapshot"):
+            result["repair_snapshot"] = dict(self.pipeline_state["repair_snapshot"])
+        RS.atomic_write_json(self.pipeline_result_path, result)
+
+    @staticmethod
+    def _compact_stage_summary(stage_id, summary):
+        """只持久化 Stage 业务计数；完整结果留在内存 DTO 和 receipts。"""
+        if not isinstance(summary, Mapping):
+            return {}
+        keys = {
+            "stage_1_standardize": (
+                "processed_files", "added", "reused", "repaired", "rerun", "removed",
+            ),
+            "stage_2_integrate": ("integrated_rows", "accounts"),
+            "stage_2b_portfolio_balance": ("accounts", "warning_accounts"),
+            "stage_3_tag": ("tagged_rows", "rule_hit_rate"),
+            "stage_4_package": ("deliverable_rows",),
+        }.get(stage_id, ())
+        compact = {}
+        for key in keys:
+            if key not in summary:
+                continue
+            value = summary[key]
+            compact[key] = (
+                len(value)
+                if isinstance(value, (list, tuple, set, dict))
+                else value
+            )
+        return compact
 
     def emit(self, level, code, message, **extra):
         event = {"at": now(), "level": level, "code": code, "message": message}
@@ -579,7 +683,7 @@ class Runner:
             for record in stage_files.values()
             if isinstance(record, dict) and record.get("status") == DONE
         )
-        skipped_file_count = len(self.manifest.get("skipped_inputs") or [])
+        skipped_file_count = len(self.pipeline_state.get("skipped_inputs") or [])
         qc_results = self.load_qc_results()
 
         warnings = []
@@ -645,15 +749,23 @@ class Runner:
         )
 
     def current_skill_version(self):
-        return str((self.manifest.get("skill") or {}).get("version") or "")
+        return str(
+            self.pipeline_state.get("skill_version")
+            or (self.pipeline_state.get("skill") or {}).get("version")
+            or ""
+        )
 
     def parent_skill_version(self):
         parent = getattr(self, "parent_context", None) or {}
         parent_dir = parent.get("parent_run_dir")
         if not parent_dir:
             return ""
-        manifest = read_json_if_exists(os.path.join(parent_dir, "manifest.json"), {})
-        return str((manifest.get("skill") or {}).get("version") or "")
+        pipeline_result = RS.load_pipeline_result(parent_dir)
+        return str(
+            pipeline_result.get("skill_version")
+            or (pipeline_result.get("skill") or {}).get("version")
+            or ""
+        )
 
     def resolve_result_output(self, run_dir, output):
         relpath = str(output or "").strip()
@@ -702,7 +814,6 @@ class Runner:
         """登记已落盘文件的轻量引用，不读取文件内容。"""
         reference = self.run_relative_ref(path)
         contract_files = {
-            "run_result.json",
             "stage_1_results.json",
             "qc_results.json",
             "token_usage.json",
@@ -831,7 +942,7 @@ class Runner:
             return routes
 
         # 兼容读取历史 run；新 run 不再写 route_artifact。
-        relpath = str(self.manifest["stage_1_standardize"].get("route_artifact") or "").strip()
+        relpath = str(self.stages["stage_1_standardize"].get("route_artifact") or "").strip()
         if not relpath:
             return {}
         run_dir = os.path.abspath(self.run_dir)
@@ -951,9 +1062,9 @@ class Runner:
                 }
             self.write_stage_1_results(stage_results)
 
-        self.manifest["skipped_inputs"] = []
+        self.pipeline_state["skipped_inputs"] = []
         self.write_stage_1_results(stage_results)
-        self.manifest["upstream_manifest"] = {
+        self.pipeline_state["upstream_manifest"] = {
             "path": manifest_path,
             "schema_version": upstream_manifest.get("schema_version", ""),
             "producer": upstream_manifest.get("producer", ""),
@@ -961,10 +1072,10 @@ class Runner:
             "archive_name_present": bool(str(upstream_manifest.get("archive_name") or "").strip()),
             "stage_1_status": self.declared_stage_1(upstream_manifest).get("status", ""),
         }
-        self.write_manifest()
+        self.write_pipeline_result()
         return StageResult("stage_1_standardize", {
             "mode": "manifest_declared_standardized_input",
-            "upstream_manifest": self.manifest["upstream_manifest"],
+            "upstream_manifest": self.pipeline_state["upstream_manifest"],
             "processed_files": len(processed),
             "standardized": processed,
             "stage_1_results": self.stage_1_results_file(),
@@ -996,8 +1107,8 @@ class Runner:
             return declared_result
 
         raw_files, skipped = S.screen_files(collect_input_files(self.args.folder))
-        self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
-        self.write_manifest()
+        self.pipeline_state["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
+        self.write_pipeline_result()
         if not raw_files:
             detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "目录内无候选文件"
             raise RuntimeError(f"客户「{self.args.client}」无可处理的银行流水文件。已跳过：{detail}")
@@ -1304,7 +1415,7 @@ class Runner:
                 self.remove_file_qc(file_id)
             except Exception as exc:
                 password_attempt = max(
-                    int(self.manifest.get("password_attempt") or 0),
+                    int((self.pipeline_state.get("attempts") or {}).get("password") or 0),
                     1 if has_open_password_hint(path) else 0,
                 )
                 failure = F.classify_failure(
@@ -1333,8 +1444,8 @@ class Runner:
             if file_sleep_seconds and index < len(descriptors):
                 time.sleep(file_sleep_seconds)
 
-        self.manifest["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
-        self.write_manifest()
+        self.pipeline_state["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
+        self.write_pipeline_result()
         done_paths = self.standardized_paths_from_results()
         customer_hard_failed = self.run_customer_qc(
             Q.AFTER_STAGE_1,
@@ -1452,7 +1563,10 @@ class Runner:
             pbrep = json.load(f)
         tagged = pd.read_csv(tag_csv, dtype=str)
         daily = pd.read_csv(daily_hits[-1]) if daily_hits else pd.DataFrame()
-        skipped = [(row.get("name", ""), row.get("reason", "")) for row in self.manifest.get("skipped_inputs", [])]
+        skipped = [
+            (row.get("name", ""), row.get("reason", ""))
+            for row in self.pipeline_state.get("skipped_inputs", [])
+        ]
         qc_summary = self.load_qc_results()
         Q.update_status(qc_summary, final=True)
         P.finalize_deliverable(
@@ -1494,7 +1608,7 @@ class Runner:
         if stage_id == "stage_1_standardize":
             return V.validate_standardize(
                 work,
-                skipped_inputs=self.manifest.get("skipped_inputs", []),
+                skipped_inputs=self.pipeline_state.get("skipped_inputs", []),
                 file_routes=self.load_stage_1_routes(),
                 stage_1_results=self.load_stage_1_results(),
                 run_dir=self.run_dir,
@@ -1551,7 +1665,7 @@ class Runner:
                 status=ERROR,
                 next_action=R.REPORT_ERROR,
                 reason_code=F.DOWNSTREAM_STAGE_FAILURE,
-                context_ref="manifest.json",
+                context_ref=RS.PIPELINE_RESULT_FILENAME,
                 message=f"{stage_id} 失败，确定性流水线已停止",
             )
             return
@@ -1576,19 +1690,23 @@ class Runner:
             stage_id,
             exc,
             failed_files,
-            password_attempt=int(self.manifest.get("password_attempt") or 0),
-            skipped_inputs=self.manifest.get("skipped_inputs") or [],
+            password_attempt=int(
+                (self.pipeline_state.get("attempts") or {}).get("password") or 0
+            ),
+            skipped_inputs=self.pipeline_state.get("skipped_inputs") or [],
         )
         if (
             failure.next_action == R.NEED_REPAIR
-            and int(self.manifest.get("ai_repair_attempt") or 0) >= F.MAX_AI_REPAIR_ATTEMPTS
+            and int(
+                (self.pipeline_state.get("attempts") or {}).get("ai_repair") or 0
+            ) >= F.MAX_AI_REPAIR_ATTEMPTS
         ):
             failure = R.FailureRoute(
                 failure.reason_code,
                 R.MAINTAINER_REQUIRED,
                 "AI 修复次数已达上限",
             )
-        self.manifest[stage_id]["reason_code"] = failure.reason_code
+        self.stages[stage_id]["reason_code"] = failure.reason_code
         self.update_stage_status(
             stage_id,
             ERROR,
@@ -1660,7 +1778,7 @@ class Runner:
             message=failure.message,
         )
 
-    def run_manifest_stages(self):
+    def run_pipeline_stages(self):
         while True:
             stage_id, spec = self.first_pending_stage()
             if not stage_id:
@@ -1734,23 +1852,16 @@ class Runner:
                 raise
 
     def _pipeline_execution_result(self, exit_code, error=None):
-        """用当前 Runner 状态构造内存交接结果，不改变落盘协议。"""
-        run_result = (
-            self.run_result.to_dict()
-            if isinstance(self.run_result, R.RunResult)
-            else dict(self.run_result or {})
-        )
-        manifest = dict(getattr(self, "manifest", {}) or {})
+        """用三份内存结果构造 Service 聚合 DTO，并持久化整体结果。"""
+        run_result = self.run_result.to_dict()
         stages = {
             stage_id: dict(spec)
-            for stage_id, spec in manifest.items()
-            if str(stage_id).startswith("stage_") and isinstance(spec, dict)
+            for stage_id, spec in self.stages.items()
         }
         file_results = self.load_stage_1_results()
         qc = self.load_qc_results()
         for reference in (
             *run_result.get("artifact_refs", []),
-            "run_result.json",
             "stage_1_results.json",
             "qc_results.json",
             "token_usage.json",
@@ -1764,11 +1875,16 @@ class Runner:
                 (getattr(self, "artifacts", {}) or {}).items()
             )
         )
+        self.pipeline_state["status"] = str(
+            run_result.get("status") or (DONE if exit_code == 0 else ERROR)
+        )
+        self.pipeline_state["error"] = str(error) if error is not None else None
+        self.write_pipeline_result()
         return PipelineExecutionResult(
             exit_code=int(exit_code),
             run_id=str(run_result.get("run_id") or getattr(self, "run_id", "")),
-            client_name=str(manifest.get("client") or ""),
-            parent_run_id=str(manifest.get("parent_run_id") or ""),
+            client_name=str(self.pipeline_state.get("client_name") or ""),
+            parent_run_id=str(self.pipeline_state.get("parent_run_id") or ""),
             status=str(run_result.get("status") or (DONE if exit_code == 0 else ERROR)),
             file_results=file_results,
             stages=stages,
@@ -1781,7 +1897,7 @@ class Runner:
 
     def execute(self):
         try:
-            self.run_manifest_stages()
+            self.run_pipeline_stages()
             final = self.final_validation_result
             if final is None:
                 raise RuntimeError("最终交付物未执行验收")
@@ -1796,10 +1912,12 @@ class Runner:
                 status=DONE,
                 next_action=R.DELIVER,
                 artifact_refs=(deliverable_ref,),
-                context_ref="manifest.json",
+                context_ref=RS.PIPELINE_RESULT_FILENAME,
                 message="全部 Pipeline、QC 和 Validator 已通过",
                 summary=self.delivery_summary(),
             )
+            self.pipeline_state["error"] = None
+            self.write_pipeline_result()
             if self.warning_events:
                 bundle = self.bundle_path("WARNING")
                 self.emit("INFO", "WARNING_BUNDLE_READY", f"告警任务已完成归档：{bundle}")
@@ -1808,10 +1926,7 @@ class Runner:
         except Exception as exc:
             with open(os.path.join(self.run_dir, "traceback.txt"), "w", encoding="utf-8") as f:
                 f.write(traceback.format_exc())
-            bundle = self.bundle_path("ERROR")
-            self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}；错误包：{bundle}")
-            self.bundle("ERROR")
-            if self.run_result is None:
+            if self.run_result.next_action == R.EXECUTE_PIPELINE:
                 self.write_run_result(
                     status=ERROR,
                     next_action=R.REPORT_ERROR,
@@ -1819,6 +1934,11 @@ class Runner:
                     context_ref="traceback.txt",
                     message="流水线在生成结构化失败路由前中止",
                 )
+            self.pipeline_state["error"] = str(exc)
+            self.write_pipeline_result()
+            bundle = self.bundle_path("ERROR")
+            self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}；错误包：{bundle}")
+            self.bundle("ERROR")
             return self._pipeline_execution_result(1, exc)
 
 

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "run_id": "20260807T153436+0800-51f3315a",
+  "client_name": "刘明才",
+  "parent_run_id": "",
+  "skill_version": "1.4.11",
+  "rules_version": "sha256-89db0c894c693a9fbf8caa3df3a187ea7bbd4b35428af362b4d0bdcd327d4963",
+  "rerun_reason": "",
+  "status": "ERROR",
+  "next_action": "NEED_REPAIR",
+  "reason_code": "ROUTE_UNMATCHED",
+  "message": "Stage 1 异常需要隔离 Repair Agent 处理",
+  "attempts": {
+    "password": 0,
+    "ai_repair": 0
+  },
+  "stages": {
+    "stage_1_standardize": {
+      "status": "ERROR",
+      "duration_seconds": 102.287,
+      "reason_code": "ROUTE_UNMATCHED"
+    },
+    "stage_2_integrate": {
+      "status": "",
+      "duration_seconds": null
+    },
+    "stage_2b_portfolio_balance": {
+      "status": "",
+      "duration_seconds": null
+    },
+    "stage_3_tag": {
+      "status": "",
+      "duration_seconds": null
+    },
+    "stage_4_package": {
+      "status": "",
+      "duration_seconds": null
+    }
+  },
+  "summary": {},
+  "deliverables": [],
+  "refs": {
+    "stage_1": "stage_1_results.json",
+    "qc": "qc_results.json"
+  },
+  "skipped_inputs": [],
+  "error": "阶段一处理完成但存在失败文件：兴业银行_账号尾号4416_20250720至20260720_交易明细_20260721122139.xls：原始Excel未唯一命中已发布 YAML 指纹，禁止使用通用 Reader 生成正式标准化产物；请创建或维护 YAML 草稿并测试发布后重跑",
+  "context_ref": "stage_1_results.json",
+  "artifact_refs": [
+    "stage_1_results.json",
+    "qc_results.json"
+  ]
+}
