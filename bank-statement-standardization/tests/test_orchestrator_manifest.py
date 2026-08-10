@@ -91,6 +91,39 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertEqual(skipped["name"], "转换流水.xlsx")
             self.assertIn("Kingsoft PDF to WPS 120", skipped["reason"])
 
+    def test_stage_one_records_zero_transaction_statement_with_stable_reason_code(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            statement = source / "零交易对账单.pdf"
+            statement.write_bytes(b"%PDF-1.4\n")
+
+            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
+            runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
+            runner.out_dir = str(root / "output")
+            runner.run_dir = str(root)
+            self._configure_pipeline_state(runner)
+
+            with patch.object(
+                runner_runtime.S,
+                "standardize_file",
+                side_effect=runner_runtime.S.ZeroTransactionStatement(
+                    "已唯一命中中国银行流水模板，且借贷合计均为 0",
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "阶段一没有生成标准化产物"):
+                    runner.stage_1_standardize()
+
+            self.assertEqual(
+                runner.pipeline_state["skipped_inputs"],
+                [{
+                    "name": statement.name,
+                    "reason": "已唯一命中中国银行流水模板，且借贷合计均为 0",
+                    "reason_code": "ZERO_TRANSACTION_STATEMENT",
+                }],
+            )
+
     def test_stage_one_blocks_when_identified_export_lacks_required_optional_column(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

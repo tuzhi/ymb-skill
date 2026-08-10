@@ -1107,6 +1107,7 @@ class Runner:
             return declared_result
 
         raw_files, skipped = S.screen_files(collect_input_files(self.args.folder))
+        skipped_reason_codes = {}
         self.pipeline_state["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
         self.write_pipeline_result()
         if not raw_files:
@@ -1409,6 +1410,11 @@ class Runner:
                     "message": exc.reason,
                     "reason_code": F.INPUT_SOURCE_INVALID,
                 }
+            except S.ZeroTransactionStatement as exc:
+                skipped.append((name, exc.reason))
+                skipped_reason_codes[name] = exc.code
+                stage_results["files"].pop(file_id, None)
+                self.remove_file_qc(file_id)
             except S.NotABankStatement as exc:
                 skipped.append((name, exc.reason))
                 stage_results["files"].pop(file_id, None)
@@ -1444,7 +1450,18 @@ class Runner:
             if file_sleep_seconds and index < len(descriptors):
                 time.sleep(file_sleep_seconds)
 
-        self.pipeline_state["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
+        self.pipeline_state["skipped_inputs"] = [
+            {
+                "name": n,
+                "reason": w,
+                **(
+                    {"reason_code": skipped_reason_codes[n]}
+                    if n in skipped_reason_codes
+                    else {}
+                ),
+            }
+            for n, w in skipped
+        ]
         self.write_pipeline_result()
         done_paths = self.standardized_paths_from_results()
         customer_hard_failed = self.run_customer_qc(

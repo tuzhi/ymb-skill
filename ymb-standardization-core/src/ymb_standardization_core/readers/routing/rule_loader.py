@@ -24,7 +24,7 @@ class RouteRule:
     optional_columns: dict = field(default_factory=dict)
     required_reader_headers: dict = field(default_factory=dict)
     series_family: str = ""
-    text_table_layout: str = ""
+    text_table: dict = field(default_factory=dict)
     source_order: str = ""
     date_order: str = ""
     multi_sheet_same_layout: bool = False
@@ -610,11 +610,67 @@ def _require_monetary_value(item):
     return bool(_reader_options(item).get("require_monetary_value", False))
 
 
-def _text_table_layout(item):
-    layout = str(_reader_options(item).get("text_table_layout") or "").strip()
-    if layout not in {"", "currency", "cmbc_personal"}:
-        raise ValueError(f"unsupported reader_options.text_table_layout: {layout}")
-    return layout
+def _text_table(item):
+    config = _reader_options(item).get("text_table") or {}
+    if not config:
+        return {}
+    if not isinstance(config, dict):
+        raise ValueError("reader_options.text_table must be a dict")
+
+    fields = config.get("field_groups") or {}
+    record_patterns = config.get("record_patterns") or []
+    continuations = config.get("continuation_patterns") or []
+    zero_transaction_patterns = config.get("zero_transaction_patterns") or []
+    if not isinstance(fields, dict) or not fields:
+        raise ValueError("reader_options.text_table.field_groups must be a non-empty dict")
+    if not isinstance(record_patterns, list) or not record_patterns:
+        raise ValueError("reader_options.text_table.record_patterns must be a non-empty list")
+    if not isinstance(zero_transaction_patterns, list):
+        raise ValueError("reader_options.text_table.zero_transaction_patterns must be a list")
+    named_groups = set()
+    normalized_patterns = []
+    for pattern in record_patterns:
+        pattern = str(pattern or "").strip()
+        try:
+            named_groups.update(re.compile(pattern).groupindex)
+        except re.error as exc:
+            raise ValueError(f"invalid text_table record pattern: {pattern}") from exc
+        normalized_patterns.append(pattern)
+    if not set(fields.values()).issubset(named_groups):
+        raise ValueError("reader_options.text_table.field_groups reference unknown regex groups")
+
+    normalized_continuations = []
+    for continuation in continuations:
+        if not isinstance(continuation, dict) or not continuation.get("pattern") or not isinstance(continuation.get("append"), dict):
+            raise ValueError("text_table.continuation_patterns require pattern and append")
+        pattern = str(continuation["pattern"]).strip()
+        try:
+            groups = set(re.compile(pattern).groupindex)
+        except re.error as exc:
+            raise ValueError(f"invalid text_table continuation pattern: {pattern}") from exc
+        if not set(continuation["append"]).issubset(fields) or not set(continuation["append"].values()).issubset(groups):
+            raise ValueError("text_table continuation append references unknown headers or groups")
+        normalized_continuations.append({
+            "pattern": pattern,
+            "append": dict(continuation["append"]),
+            "joiner": str(continuation.get("joiner", " ")),
+        })
+    normalized_zero_patterns = []
+    for pattern in zero_transaction_patterns:
+        pattern = str(pattern or "").strip()
+        if not pattern:
+            raise ValueError("text_table.zero_transaction_patterns must not contain empty patterns")
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"invalid text_table zero transaction pattern: {pattern}") from exc
+        normalized_zero_patterns.append(pattern)
+    return {
+        "field_groups": {str(header).strip(): str(group).strip() for header, group in fields.items()},
+        "record_patterns": normalized_patterns,
+        "continuation_patterns": normalized_continuations,
+        "zero_transaction_patterns": normalized_zero_patterns,
+    }
 
 
 def _source_order(item):
@@ -817,7 +873,7 @@ def build_pdf_route_rules(items):
             bank=item["bank"],
             account_type=item.get("account_type", "未知"),
             series_family=str(item.get("series_family") or "").strip(),
-            text_table_layout=_text_table_layout(item),
+            text_table=_text_table(item),
             source_order=_source_order(item),
             date_order=_date_order(item),
             multi_sheet_same_layout=_multi_sheet_same_layout(item),

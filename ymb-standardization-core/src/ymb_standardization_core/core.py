@@ -58,6 +58,16 @@ class NotABankStatement(Exception):
         self.reason = reason
 
 
+class ZeroTransactionStatement(NotABankStatement):
+    """已唯一命中模板，且由规则证据确认本期没有交易。"""
+
+    code = "ZERO_TRANSACTION_STATEMENT"
+
+    def __init__(self, reason, route_info=None):
+        super().__init__(reason)
+        self.route_info = dict(route_info or {})
+
+
 class SourceFormatQualityError(Exception):
     """已识别银行流水模板，但原始导出缺少交付必需选项。"""
 
@@ -503,10 +513,15 @@ def parse_datetime(date_part, time_part, date_order=""):
             return f"{y:04d}-{mo:02d}-{day:02d} {hh:02d}:{mm:02d}:{ss:02d}"
 
     # 日期 token：YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD；两位年份仅在 YAML 明确声明顺序时解析。
-    md = re.search(r"(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})", raw)
-    short_md = None
     date_order = str(date_order or "").strip().lower()
-    if not md and date_order in {"dmy", "mdy", "ymd"}:
+    compact_short = (
+        re.fullmatch(r"(\d{2})(\d{2})(\d{2})", d)
+        if date_order in {"dmy", "mdy", "ymd"}
+        else None
+    )
+    md = None if compact_short else re.search(r"(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})", raw)
+    short_md = compact_short
+    if not md and not short_md and date_order in {"dmy", "mdy", "ymd"}:
         short_md = re.search(r"(?<!\d)(\d{2})[-/](\d{2})[-/](\d{2})(?!\d)", raw)
     # 时间 token：HH:MM:SS / HH:MM / 紧跟在日期后的 6 位 HHMMSS
     mt = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", raw)
@@ -1382,6 +1397,15 @@ def standardize(path, out_dir=None, bank=None,
         raise SourceFormatQualityError(
             f"已识别为{identity}流水（fingerprint={fingerprint_id}），"
             f"但原始导出缺少必需可选列：{detail}。{hint}",
+            route_info=route_info,
+        )
+
+    if route_info.get("zero_transaction"):
+        bank_name = str(route_info.get("bank") or "已识别银行").strip()
+        fingerprint_id = str(route_info.get("fingerprint_id") or "").strip()
+        raise ZeroTransactionStatement(
+            f"已唯一命中{bank_name}流水模板（fingerprint={fingerprint_id}），"
+            "且对账单借贷合计均为 0，本期无交易，按零交易文件跳过",
             route_info=route_info,
         )
 

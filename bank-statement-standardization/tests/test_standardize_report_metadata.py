@@ -273,6 +273,18 @@ class StandardizeReportMetadataTest(unittest.TestCase):
             standardize.parse_datetime("01-12-25", "08:23", "dmy"),
             "2025-12-01 08:23",
         )
+        self.assertEqual(
+            standardize.parse_datetime("251029", "", "ymd"),
+            "2025-10-29",
+        )
+        self.assertEqual(
+            standardize.parse_datetime("2025032100:10:53", ""),
+            "2025-03-21 00:10:53",
+        )
+        self.assertEqual(
+            standardize.parse_datetime("2026-03-1009:54:35", ""),
+            "2026-03-10 09:54:35",
+        )
         rows = [
             ["2026-05-05", ""],
             ["2026-05-06", "09:30:12"],
@@ -1257,31 +1269,48 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(report["文件画像"]["本方账户"], "791912215110008")
         self.assertEqual(report["文件画像"]["本方名称"], "斑马（南昌）商业有限公司")
 
-    def test_cmbc_personal_pdf_extracts_customer_name_and_account_from_preamble(self):
-        pdf = (
-            REPO_ROOT
-            / "bank-statement-standardization"
-            / "testdata"
-            / "范新春"
-            / "20260527134259699999991324503110064813999998417140.pdf"
-        )
-        if not pdf.exists():
+    def test_minsheng_personal_pdf_matches_support_matrix_samples(self):
+        samples = {
+            "20260527134259699999991324503110064813999998417140.pdf": (
+                976, "范新春", "6216917800007827",
+            ),
+            "20260601115100111999994929003110099660999998943531.pdf": (
+                812, "杨小燕", "6216917800015879",
+            ),
+            "20260601142547199999998897503110023857999998221072.pdf": (
+                592, "范怡伽", "6226157800007216",
+            ),
+        }
+        if not all((TESTDATA_ROOT / "范新春" / name).exists() for name in samples):
             self.skipTest("本地未提供民生银行个人账户对账单 PDF 样本")
 
-        with tempfile.TemporaryDirectory() as tmp:
-            csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
-            with open(csv_path, encoding="utf-8-sig", newline="") as f:
-                rows = list(csv.DictReader(f))
+        for name, (expected_rows, owner, account) in samples.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                pdf = TESTDATA_ROOT / "范新春" / name
+                csv_path, _json_path, report = standardize.standardize(str(pdf), out_dir=tmp)
+                with open(csv_path, encoding="utf-8-sig", newline="") as f:
+                    rows = list(csv.DictReader(f))
+                self.assertEqual(len(rows), expected_rows)
+                self.assertEqual({row["本方名称"] for row in rows}, {owner})
+                self.assertEqual({row["本方账户"] for row in rows}, {account})
+                self.assertEqual(
+                    report["文件画像"]["fingerprint_id"],
+                    "md5:907beda6d95ea54b2f6e380193726787",
+                )
 
-        self.assertEqual(len(rows), 976)
-        self.assertEqual({row["本方名称"] for row in rows}, {"范新春"})
-        self.assertEqual({row["本方账户"] for row in rows}, {"6216917800007827"})
-        alipay_rows = [row for row in rows if row["对手账户"] == "20884029356388680156"]
-        self.assertEqual(len(alipay_rows), 53)
-        self.assertTrue(any(row["对手名称"] == "范新春" for row in alipay_rows))
-        self.assertFalse(any("20884029356388680156" in row["对手名称"] for row in rows))
-        self.assertEqual(report["文件画像"]["本方名称"], "范新春")
-        self.assertEqual(report["文件画像"]["本方账户"], "6216917800007827")
+                if owner == "范新春":
+                    alipay_rows = [row for row in rows if row["对手账户"] == "20884029356388680156"]
+                    self.assertEqual(len(alipay_rows), 53)
+                    self.assertTrue(any(row["对手名称"] == owner for row in alipay_rows))
+                    loan = next(
+                        row for row in rows
+                        if row["交易时间"] == "2026-05-10 02:30:07"
+                    )
+                    self.assertEqual(
+                        loan["对手名称"],
+                        "中国民生银行贷款户 /LN7801202589053920",
+                    )
+                    self.assertFalse(any("打印渠道" in row["对手名称"] for row in rows))
 
     def test_enterprise_counterparty_ratio_marks_probable_corporate(self):
         with tempfile.TemporaryDirectory() as tmp:

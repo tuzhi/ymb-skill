@@ -908,7 +908,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(result.route_info["decision"], "matched")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "个人")
-        self.assertEqual(result.route_info["text_table_layout"], "")
+        self.assertEqual(result.route_info["text_table"], {})
         self.assertEqual(
             result.route_info["row_anchor"],
             {"column": "记账日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
@@ -1044,6 +1044,26 @@ class InputRouterTests(unittest.TestCase):
         self.assertIn("客户姓名", result.preamble)
         self.assertIn("郭金伟", result.preamble)
         self.assertGreater(len(result.rows), 10)
+
+    def test_boc_corporate_zero_transaction_statement_has_positive_route_evidence(self):
+        module = load_input_router()
+        pdf = DATA_ROOT / "testdata2" / "叶强" / "2026.5.pdf"
+        if not pdf.exists():
+            self.skipTest("本地未提供中国银行对公零交易对账单 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
+        self.assertEqual(route["fingerprint_id"], "md5:bda38aa38c23f9da394c8fc8d0159d61")
+        self.assertTrue(route["zero_transaction"])
+        self.assertEqual(result.rows, [])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(core.ZeroTransactionStatement) as caught:
+                core.standardize(str(pdf), out_dir=tmp)
+        self.assertEqual(caught.exception.code, "ZERO_TRANSACTION_STATEMENT")
 
     def test_boc_personal_statement_joins_multiline_counterparty_fields(self):
         module = load_input_router()
@@ -1314,7 +1334,7 @@ class InputRouterTests(unittest.TestCase):
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["fingerprint_id"], "md5:0c2a869c611aec5fd6b0255d2e6ba305")
         self.assertEqual(route["bank"], "兴业银行")
-        self.assertEqual(route["account_type"], "未知")
+        self.assertEqual(route["account_type"], "对公")
         self.assertEqual(route["source_order"], "descending")
         self.assertEqual(route["column_mapping"]["借方金额(支出)"], "支出金额")
         self.assertEqual(route["column_mapping"]["贷方金额(收入)"], "收入金额")

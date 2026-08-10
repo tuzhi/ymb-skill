@@ -1232,7 +1232,24 @@
         账户余额: 账户余额
         对方户名/账号: 对手名称
   reader_options:
-    text_table_layout: cmbc_personal
+    text_table:
+      field_groups:
+        交易时间: trade_time
+        摘要: summary
+        交易金额: amount
+        账户余额: balance
+        交易渠道: channel
+        对方户名/账号: counterparty
+      record_patterns:
+      - '^(?P<voucher_type>\S+)\s+(?P<voucher_no>\d[\d*]{5,})\s+(?P<trade_time>20\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(?P<summary>.*?)\s+(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+(?P<current_flag>\S+)(?:\s+(?P<channel>\S+))?(?:\s+(?P<institution>\S+))?(?:\s+(?P<counterparty>.*))?$'
+      - '^(?P<trade_time>20\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(?P<summary>.*?)\s+(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+(?P<current_flag>\S+)(?:\s+(?P<channel>\S+))?(?:\s+(?P<institution>\S+))?(?:\s+(?P<counterparty>.*))?$'
+      continuation_patterns:
+      - pattern: '^(?P<voucher_suffix>\d{4,})(?:\s+(?P<counterparty_suffix>.*))?$'
+        append:
+          对方户名/账号: counterparty_suffix
+      - pattern: '^(?P<counterparty_suffix>/\S.*)$'
+        append:
+          对方户名/账号: counterparty_suffix
     extract_mapping:
     - source: 对方户名/账号
       field: 对手账户
@@ -1240,6 +1257,67 @@
     - source: 对方户名/账号
       field: 对手名称
       pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
+      replacement: '\1'
+  reader_id: pdfplumber_text_lines
+- id: md5:bda38aa38c23f9da394c8fc8d0159d61
+  file_type: pdf
+  bank: 中国银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
+    identity:
+      any:
+      - 开户行 中国银行
+      - 单位人民币活期基本账户存款
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '账户名称\s+(.+?)\s+开户行'
+    - field: 本方账户
+      pattern: '账号\s+(\d{8,})'
+    columns:
+      all:
+        序号: null
+        记账日: 交易日期
+        起息日: null
+        交易类型: 银行备注
+        凭证: null
+        凭证号码/业务编号/用途/摘要: 账户方附言
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        余额: 账户余额
+        机构/柜员/流水: null
+        备注: 对手名称
+  reader_options:
+    date_order: ymd
+    text_table:
+      field_groups:
+        记账日: book_date
+        交易类型: trade_type
+        凭证号码/业务编号/用途/摘要: details
+        借方发生额: debit
+        贷方发生额: credit
+        余额: balance
+        备注: notes
+      record_patterns:
+      - '^\|\s*(?P<sequence>\d+)\s*\|\s*(?P<book_date>[^|]*)\|\s*(?P<value_date>[^|]*)\|\s*(?P<trade_type>[^|]*)\|\s*(?P<voucher>[^|]*)\|\s*(?P<details>[^|]*)\|\s*(?P<debit>[^|]*)\|\s*(?P<credit>[^|]*)\|\s*(?P<balance>[^|]*)\|\s*(?P<reference>[^|]*)\|\s*(?P<notes>[^|]*)\|$'
+      continuation_patterns:
+      - pattern: '^\|\s*\|\s*\|\s*\|\s*\|\s*\|\s*(?P<details>[^|]*)\|\s*\|\s*\|\s*\|\s*\|\s*(?P<notes>[^|]*)\|$'
+        append:
+          凭证号码/业务编号/用途/摘要: details
+          备注: notes
+        joiner: ''
+      zero_transaction_patterns:
+      - '借方合计\s+0\.00\s+贷方合计\s+0\.00'
+    extract_mapping:
+    - source: 备注
+      field: 对手名称
+      pattern: '^([^/]+)(?:/.*)?$'
+      replacement: '\1'
+    - source: 备注
+      field: __对手开户行
+      pattern: '^[^/]*/(.*)$'
       replacement: '\1'
   reader_id: pdfplumber_text_lines
 - id: md5:350f23537180795535cad737d2e0c06b

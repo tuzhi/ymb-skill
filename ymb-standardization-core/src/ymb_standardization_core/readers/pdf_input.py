@@ -11,7 +11,6 @@ from ymb_standardization_core.readers.pdf.common import (
 from ymb_standardization_core.readers.pdf.coordinate_table import _coordinate_metadata_preamble
 from ymb_standardization_core.readers.pdf.line_table import _extract_pdf_tables_from_horizontal_lines
 from ymb_standardization_core.readers.pdf.table import _extract_pdf_tables_default
-from ymb_standardization_core.readers.pdf.text_lines import _extract_pdf_text_table_rows
 from ymb_standardization_core.readers.routing.rule_loader import (
     apply_required_reader_header_gate,
 )
@@ -24,6 +23,14 @@ from ymb_standardization_core.transforms import annotate_payment_order_state
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
     reader = pdf_reader_registry().get(reader_id)
     return reader.read(pdf, route_info or {}) if reader is not None else []
+
+
+def _matches_zero_transaction(text, route_info):
+    patterns = (
+        ((route_info or {}).get("text_table") or {}).get("zero_transaction_patterns")
+        or []
+    )
+    return bool(patterns) and all(re.search(pattern, text or "") for pattern in patterns)
 
 
 def _prepare_pdf_reader_view(pdf, route_info):
@@ -173,6 +180,13 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             route_info.get("reader_id", ""),
             reader_options,
         )
+        if (
+            not table_rows
+            and route_info.get("decision") == "matched"
+            and route_info.get("reader_id") == "pdfplumber_text_lines"
+            and _matches_zero_transaction(text, route_info)
+        ):
+            route_info = {**route_info, "zero_transaction": True}
         route_info = apply_required_reader_header_gate(route_info, table_rows)
         if route_info.get("decision") == "matched_incomplete":
             return preamble or "", [], route_info
@@ -189,12 +203,6 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             # 通用 PDF reader 的首屏文本可能包含整页交易数据。只保留表头之前的固定抬头，
             # 避免标准化层把交易行里的对手开户行误判成本方银行。
             preamble = _preamble_before_reader_header(preamble, table_rows[0])
-        text_table_layout = route_info.get("text_table_layout", "")
-        if text_table_layout and not table_rows:
-            rows = _extract_pdf_text_table_rows(text, text_table_layout)
-            if rows:
-                preamble = _preamble_before_reader_header(preamble, rows[0])
-            return preamble or "", rows, route_info
         if route_info.get("decision") == "unmatched":
             table_rows = _extract_pdf_tables_default(reader_pdf)
             if table_rows:

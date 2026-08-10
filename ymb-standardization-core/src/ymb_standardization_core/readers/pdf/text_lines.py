@@ -1,177 +1,75 @@
-"""pdfplumber_text_lines Reader。"""
+"""将稳定 PDF 文本行按 YAML 正则契约转换为原始表格行。"""
 
 import re
 
 from ymb_standardization_core.readers.registry import FunctionPdfReader
 
 
-def _is_noise_text_table_line(line):
-    text = str(line or "").strip()
-    if not text:
-        return True
-    if re.match(r"^\d+/\d+$", text):
-        return True
-    noise_markers = (
-        "Transaction Statement",
-        "Account No",
-        "Account Type",
-        "Sub Branch",
-        "Verification Code",
-        "Transaction Type Counter Party",
-        "Transaction Type C o unter Party",
-        "Date Currency",
-        "Amount",
-        "Balance",
-        "Name Account",
-        "合同ID号",
-        "版本:",
-        "发布时间:",
-        "温馨提示",
-        "记账日期 货币 交易金额 联机余额 交易摘要 对手信息",
-    )
-    return text == "Transaction" or any(marker in text for marker in noise_markers)
+def _compiled_patterns(config, key):
+    return [re.compile(item) for item in config.get(key, [])]
 
 
-def _parse_currency_text_row(line):
-    import re
-
-    text = str(line or "").strip()
-    match = re.match(
-        r"^(?P<date>20\d{2}[-/]?\d{2}[-/]?\d{2})\s+"
-        r"(?P<currency>[A-Z]{3})\s+"
-        r"(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+"
-        r"(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+"
-        r"(?P<tail>.+)$",
-        text,
-    )
-    if not match:
-        return None
-    tail = match.group("tail").strip()
-    parts = tail.split(maxsplit=1)
-    summary = parts[0] if parts else ""
-    counterparty = parts[1] if len(parts) > 1 else ""
-    return [
-        match.group("date"),
-        match.group("currency"),
-        match.group("amount"),
-        match.group("balance"),
-        summary,
-        counterparty,
-    ]
+def _first_match(patterns, line):
+    for pattern in patterns:
+        match = pattern.match(line)
+        if match:
+            return match
+    return None
 
 
-def _parse_cmbc_personal_text_row(line):
-    import re
+def _row_from_match(match, headers, fields):
+    groups = match.groupdict()
+    return [str(groups.get(fields.get(header, "")) or "").strip() for header in headers]
 
-    text = str(line or "").strip()
-    match = re.match(
-        r"^(?P<voucher_type>\S+)\s+"
-        r"(?P<voucher_no>\d[\d*]{5,})\s+"
-        r"(?P<date>20\d{2}/\d{2}/\d{2})\s+"
-        r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
-        r"(?P<tail>.+)$",
-        text,
-    )
-    if not match:
-        match = re.match(
-            r"^(?P<date>20\d{2}/\d{2}/\d{2})\s+"
-            r"(?P<time>\d{2}:\d{2}:\d{2})\s+"
-            r"(?P<tail>.+)$",
-            text,
+
+def _append_continuation(row, match, headers, append_fields, joiner):
+    groups = match.groupdict()
+    for header, group in append_fields.items():
+        value = str(groups.get(group) or "").strip()
+        if not value or header not in headers:
+            continue
+        index = headers.index(header)
+        row[index] = joiner.join(part for part in (row[index], value) if part).strip()
+
+
+def _extract_pdf_text_table_rows(text, config):
+    """按通用文本行契约提取记录，首行返回配置声明的表头。"""
+    fields = dict(config.get("field_groups") or {})
+    headers = list(fields)
+    record_patterns = _compiled_patterns(config, "record_patterns")
+    continuations = [
+        (
+            re.compile(item["pattern"]),
+            dict(item.get("append") or {}),
+            str(item.get("joiner", " ")),
         )
-    if not match:
-        return None
-
-    tokens = match.group("tail").split()
-    amount_indexes = [
-        idx for idx, token in enumerate(tokens)
-        if re.match(r"^[+-]?\d[\d,]*\.\d{2}$", token)
+        for item in config.get("continuation_patterns", [])
     ]
-    if len(amount_indexes) < 2:
-        return None
-    amount_idx, balance_idx = amount_indexes[:2]
-    summary = " ".join(tokens[:amount_idx])
-    after = tokens[balance_idx + 1:]
-    current_flag = after[0] if len(after) > 0 else ""
-    channel = after[1] if len(after) > 1 else ""
-    institution = after[2] if len(after) > 2 else ""
-    counterparty = " ".join(after[3:]) if len(after) > 3 else ""
-    return [
-        match.groupdict().get("voucher_type") or "",
-        match.groupdict().get("voucher_no") or "",
-        f"{match.group('date')} {match.group('time')}",
-        summary,
-        tokens[amount_idx],
-        tokens[balance_idx],
-        current_flag,
-        channel,
-        institution,
-        counterparty,
-        "",
-    ]
+    if not headers or not fields or not record_patterns:
+        return []
 
-
-def _extract_pdf_text_table_rows(text, text_table_kind):
-    """Fallback for text-layer statement PDFs where extract_tables() returns no rows."""
-    if text_table_kind == "currency":
-        header = ["记账日期", "货币", "交易金额", "联机余额", "交易摘要", "对手信息"]
-        rows = [header]
-        pending = []
-        for raw_line in str(text or "").splitlines():
-            line = raw_line.strip()
-            if "温馨提示" in line:
-                pending = []
+    rows = [headers]
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        record = _first_match(record_patterns, line)
+        if record:
+            rows.append(_row_from_match(record, headers, fields))
+            continue
+        if len(rows) == 1:
+            continue
+        for pattern, append_fields, joiner in continuations:
+            continuation = pattern.match(line)
+            if continuation:
+                _append_continuation(rows[-1], continuation, headers, append_fields, joiner)
                 break
-            parsed = _parse_currency_text_row(line)
-            if parsed:
-                if pending:
-                    continuation = " ".join(pending).strip()
-                    if not parsed[-1]:
-                        parsed[-1] = continuation
-                    elif len(rows) > 1:
-                        rows[-1][-1] = (rows[-1][-1] + " " + continuation).strip()
-                    pending = []
-                rows.append(parsed)
-            elif _is_noise_text_table_line(line):
-                if pending and len(rows) > 1:
-                    continuation = " ".join(pending).strip()
-                    if not re.fullmatch(r"[—_-]{5,}", continuation):
-                        rows[-1][-1] = (rows[-1][-1] + " " + continuation).strip()
-                pending = []
-            elif len(rows) > 1 and line and not re.fullmatch(r"[—_-]{5,}", line):
-                pending.append(line)
-        if pending and len(rows) > 1:
-            rows[-1][-1] = (rows[-1][-1] + " " + " ".join(pending)).strip()
-        return rows if len(rows) > 1 else []
-
-    if text_table_kind == "cmbc_personal":
-        header = [
-            "凭证类型", "凭证号码", "交易时间", "摘要", "交易金额", "账户余额",
-            "现转标志", "交易渠道", "交易机构", "对方户名/账号", "对方行名",
-        ]
-        rows = [header]
-        for raw_line in str(text or "").splitlines():
-            line = raw_line.strip()
-            parsed = _parse_cmbc_personal_text_row(line)
-            if parsed:
-                rows.append(parsed)
-            elif len(rows) > 1 and line and not _is_noise_text_table_line(line):
-                voucher_continuation = re.match(r"^(\d{4,})(?:\s+(.*))?$", line)
-                if voucher_continuation and rows[-1][1]:
-                    rows[-1][1] = (rows[-1][1] + voucher_continuation.group(1)).strip()
-                    rest = (voucher_continuation.group(2) or "").strip()
-                    if rest:
-                        rows[-1][9] = (rows[-1][9] + " " + rest).strip()
-                else:
-                    rows[-1][9] = (rows[-1][9] + " " + line).strip()
-        return rows if len(rows) > 1 else []
-
-    return []
+    return rows if len(rows) > 1 else []
 
 
 def read(pdf, options):
     text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-    return _extract_pdf_text_table_rows(text, options.get("text_table_layout") or "")
+    return _extract_pdf_text_table_rows(text, options.get("text_table") or {})
 
 
 READER = FunctionPdfReader("pdfplumber_text_lines", read)
