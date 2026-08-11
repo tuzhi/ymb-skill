@@ -4,6 +4,7 @@ from ymb_standardization_core.readers.registry import FunctionPdfReader
 from ymb_standardization_core.readers.pdf.common import (
     _append_pdf_table_rows,
     _clean_pdf_table_cells,
+    iter_pdf_pages,
 )
 
 
@@ -46,7 +47,7 @@ def _extract_pdf_tables_from_horizontal_lines(pdf):
     """Fallback for ruled PDFs with horizontal row lines but no vertical borders."""
     all_rows = []
     header_sig = None
-    for page in pdf.pages:
+    for page in iter_pdf_pages(pdf.pages):
         boundaries = _infer_vertical_boundaries_from_horizontal_edges(page)
         if not boundaries:
             continue

@@ -94,7 +94,7 @@ def main(argv=None):
 
     runner = _runner_runtime.Runner(args)
     execution = runner.execute()
-    result = dict(execution.run_result)
+    result = execution.to_summary_dict()
     _execution_plan.release_execution_plan(
         args.run_root,
         args.execution_plan_key,
@@ -103,7 +103,12 @@ def main(argv=None):
     result_run_dir = getattr(runner, "run_dir", None)
     if not result_run_dir:
         result_run_dir = os.path.dirname(runner.pipeline_result_path)
-    public = _runner_runtime.public_result(result, result_run_dir)
+    public = _runner_runtime.public_result(
+        result,
+        result_run_dir,
+        stage_results=execution.file_results,
+        attempts=(getattr(runner, "pipeline_state", {}) or {}).get("attempts") or {},
+    )
     print(json.dumps(public, ensure_ascii=False, separators=(",", ":")))
     return _runner_runtime.protocol_exit_status(public, execution.exit_code)
 

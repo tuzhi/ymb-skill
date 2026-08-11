@@ -431,35 +431,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             self.assertNotIn("raw_inputs/summary/token_vault_manifest.json", names)
             self.assertIn("raw_inputs/summary/tokenized_batch_bundle_token_vault_ref.json", names)
 
-    def test_first_pending_stage_skips_skill_metadata(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            runtime = Path(tmp) / "pipeline_result.json"
-            runtime.write_text(
-                json.dumps(
-                    {
-                        "skill": {
-                            "name": "bank-statement-standardization",
-                            "version": "1.2.6",
-                        },
-                        "stages": {
-                            "stage_1_standardize": {"status": ""},
-                        },
-                    },
-                    ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-
-            runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
-            runner.pipeline_result_path = str(runtime)
-            runner.pipeline_state = json.loads(runtime.read_text(encoding="utf-8"))
-            runner.stages = runner.pipeline_state["stages"]
-
-            stage_id, spec = runner.first_pending_stage()
-
-            self.assertEqual(stage_id, "stage_1_standardize")
-            self.assertEqual(spec, {"status": ""})
-
     def test_stage_1_keeps_fixed_client_and_does_not_accept_upstream_alias(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

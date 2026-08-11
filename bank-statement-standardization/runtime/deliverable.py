@@ -7,8 +7,19 @@ runtime/deliverable.py — 阶段四交付物组装。
 「<客户名>_已清洗_待分析.xlsx」；不在打包阶段重新执行上游阶段。
 """
 import os
+from datetime import date, datetime
 
 import pandas as pd
+
+
+class DeliverableWriteError(RuntimeError):
+    """业务数据集已构造，但旁路 Excel 写出失败。"""
+
+    def __init__(self, out_path, dataset, cause):
+        super().__init__(f"交付物写出失败：{out_path}：{cause}")
+        self.out_path = out_path
+        self.dataset = dataset
+        self.__cause__ = cause
 
 # 主表列序：金额→账户余额→虚拟账户余额→银行备注/账户方附言→收支方向/标签→渠道/来源。
 # 备注/附言紧跟在「虚拟账户余额」之后（不可信输入，置于余额信息之后、派生标签之前）。
@@ -20,30 +31,132 @@ STD_ORDER = ["交易唯一编号", "客户名称", "账户类型", "本方名称
              "标签来源", "标签置信度", "命中关键词", "交易渠道",
              "来源文件名", "来源行号"]
 
+MONEY_COLUMNS = {
+    "收入金额", "支出金额", "交易金额",
+    "分析收入金额", "分析支出金额", "分析交易金额",
+    "账户余额", "虚拟账户余额",
+}
+
+
+def _excel_scalar(value):
+    """把 pandas/numpy 标量转成 openpyxl 可直接写出的轻量值。"""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set, dict)):
+        return str(value)
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "to_pydatetime"):
+        return value.to_pydatetime()
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
+def _sheet_widths(frame, columns, sample_rows=199):
+    """按原有前 200 行口径计算列宽；不复制完整 DataFrame。"""
+    positions = [frame.columns.get_loc(column) for column in columns]
+    widths = [max(12, min(48, int(len(str(column)) * 1.6) + 2)) for column in columns]
+    for row_index, row in enumerate(frame.itertuples(index=False, name=None)):
+        if row_index >= sample_rows:
+            break
+        for output_index, source_index in enumerate(positions):
+            value = _excel_scalar(row[source_index])
+            if value is not None:
+                widths[output_index] = max(
+                    widths[output_index],
+                    min(48, int(len(str(value)) * 1.6) + 2),
+                )
+    return widths, positions
+
+
+def _write_dataframe_sheet(workbook, title, frame, columns=None):
+    """以 write-only 模式逐行写入一个 DataFrame，避免常驻 Cell 对象。"""
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    columns = list(columns or frame.columns)
+    widths, positions = _sheet_widths(frame, columns)
+    worksheet = workbook.create_sheet(title)
+    worksheet.freeze_panes = "A2"
+    worksheet.sheet_view.showGridLines = True
+    for index, width in enumerate(widths, 1):
+        worksheet.column_dimensions[get_column_letter(index)].width = width
+
+    head_fill = PatternFill("solid", fgColor="1F4E78")
+    head_font = Font(color="FFFFFF", bold=True)
+    header = []
+    for column in columns:
+        cell = WriteOnlyCell(worksheet, value=column)
+        cell.fill = head_fill
+        cell.font = head_font
+        cell.alignment = Alignment(vertical="center")
+        header.append(cell)
+    worksheet.append(header)
+
+    for row in frame.itertuples(index=False, name=None):
+        cells = []
+        for column, source_index in zip(columns, positions):
+            value = _excel_scalar(row[source_index])
+            cell = WriteOnlyCell(worksheet, value=value)
+            if title == "整合打标流水" and column in MONEY_COLUMNS:
+                cell.number_format = "#,##0.00"
+            elif isinstance(value, datetime):
+                cell.number_format = "YYYY-MM-DD HH:MM:SS"
+            elif isinstance(value, date):
+                cell.number_format = "YYYY-MM-DD"
+            cells.append(cell)
+        worksheet.append(cells)
+
+
+def _write_streaming_workbook(out_path, sheets):
+    """流式生成兼容交付物；只保留当前行，不在内存中构造完整单元格树。"""
+    from openpyxl import Workbook
+
+    workbook = Workbook(write_only=True)
+    for title, frame, columns in sheets:
+        _write_dataframe_sheet(workbook, title, frame, columns=columns)
+    workbook.save(out_path)
+
 
 def _analysis_amount(tagged, analysis_col, raw_col):
     source = analysis_col if analysis_col in tagged.columns else raw_col
-    return pd.to_numeric(tagged.get(source), errors="coerce").fillna(0)
+    values = tagged.get(source)
+    if values is None:
+        return pd.Series(0.0, index=tagged.index)
+    if not pd.api.types.is_numeric_dtype(values.dtype):
+        values = pd.to_numeric(values, errors="coerce")
+    return values.fillna(0)
 
 
 def add_virtual_balance(df):
     """逐笔时点虚拟账户余额 = 各账户最近一次已知余额之和（按全局时间顺序滚动）。
     账户首笔之前贡献按 0。返回带「虚拟账户余额」列的 df（保持原行序）。"""
-    d = df.copy()
-    d["__t"] = pd.to_datetime(d["交易时间"], errors="coerce", format="mixed")
-    d["__bal"] = pd.to_numeric(d.get("账户余额"), errors="coerce")
-    d["__order"] = range(len(d))   # 整合后的行序（账户内为正确时序）；同时刻多笔用它兜底，不用来源行号（倒序文件会反向）
-    order = d.sort_values(["__t", "__order"], kind="stable").index
+    times = df["交易时间"]
+    if not pd.api.types.is_datetime64_any_dtype(times.dtype):
+        times = pd.to_datetime(times, errors="coerce", format="mixed")
+    balances = df.get("账户余额")
+    if balances is None:
+        balances = pd.Series(index=df.index, dtype=float)
+    elif not pd.api.types.is_numeric_dtype(balances.dtype):
+        balances = pd.to_numeric(balances, errors="coerce")
+    order = pd.DataFrame(
+        {"__t": times, "__order": range(len(df))}, index=df.index
+    ).sort_values(["__t", "__order"], kind="stable").index
     last = {}
     vbal = {}
     for idx in order:
-        acct = d.at[idx, "本方账户"]
-        b = d.at[idx, "__bal"]
+        acct = df.at[idx, "本方账户"]
+        b = balances.at[idx]
         if pd.notna(b):
             last[acct] = b
         vbal[idx] = round(sum(v for v in last.values() if pd.notna(v)), 2)
-    d["虚拟账户余额"] = d.index.map(vbal)
-    return d.drop(columns=["__t", "__bal", "__order"])
+    df["虚拟账户余额"] = df.index.map(vbal)
+    return df
 
 
 def build_workbook(
@@ -68,9 +181,6 @@ def build_workbook(
     for rule_id, result in (qc_results.get("customer") or {}).items():
         if not result.get("passed"):
             qc_failures.append(("客户目录", rule_id, result))
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
-
     period = irep["客户整合概览"]["交易期间"]
     inc = _analysis_amount(tagged, "分析收入金额", "收入金额")
     exp = _analysis_amount(tagged, "分析支出金额", "支出金额")
@@ -117,7 +227,10 @@ def build_workbook(
     # ---- 账户清单：按本方账户统计 ----
     acct_rows = []
     for acct, g in tagged.groupby(tagged["本方账户"].fillna("")):
-        t = pd.to_datetime(g["交易时间"], errors="coerce", format="mixed").dropna()
+        t = g["交易时间"]
+        if not pd.api.types.is_datetime64_any_dtype(t.dtype):
+            t = pd.to_datetime(t, errors="coerce", format="mixed")
+        t = t.dropna()
         gi = _analysis_amount(g, "分析收入金额", "收入金额")
         ge = _analysis_amount(g, "分析支出金额", "支出金额")
         def _first(col):
@@ -142,8 +255,8 @@ def build_workbook(
             "开户行": _first("开户行"),
             "本方账户": acct,
             "交易笔数": len(g),
-            "流入合计(分析口径)": round(float(gi.sum()), 2),
-            "流出合计(分析口径)": round(float(ge.sum()), 2),
+            "流入合计": round(float(gi.sum()), 2),
+            "流出合计": round(float(ge.sum()), 2),
             "期初日期": t.min().strftime("%Y-%m-%d") if len(t) else "",
             "期末日期": t.max().strftime("%Y-%m-%d") if len(t) else "",
             "来源文件": "；".join(sorted(g["来源文件名"].dropna().unique().tolist())),
@@ -154,12 +267,15 @@ def build_workbook(
     balchk = pd.DataFrame(pbrep["账户余额校验"]["账户明细"])
 
     # ---- 标签汇总（资金用途） ----
-    tg = tagged.copy()
-    tg["__in"] = _analysis_amount(tg, "分析收入金额", "收入金额")
-    tg["__out"] = _analysis_amount(tg, "分析支出金额", "支出金额")
-    tagsum = (tg.groupby(["收支方向", "一级标签", "二级标签", "三级标签"])
-                .agg(笔数=("交易唯一编号", "size"), 收入合计=("__in", "sum"), 支出合计=("__out", "sum"))
-                .reset_index().sort_values(["收支方向", "笔数"], ascending=[True, False]))
+    income_column = "分析收入金额" if "分析收入金额" in tagged.columns else "收入金额"
+    expense_column = "分析支出金额" if "分析支出金额" in tagged.columns else "支出金额"
+    group_columns = ["收支方向", "一级标签", "二级标签", "三级标签"]
+    groupers = [tagged[column] for column in group_columns]
+    grouped = tagged.groupby(group_columns, dropna=False)
+    tagsum = grouped["交易唯一编号"].size().rename("笔数").to_frame()
+    tagsum["收入合计"] = _analysis_amount(tagged, income_column, income_column).groupby(groupers).sum()
+    tagsum["支出合计"] = _analysis_amount(tagged, expense_column, expense_column).groupby(groupers).sum()
+    tagsum = tagsum.reset_index().sort_values(["收支方向", "笔数"], ascending=[True, False])
     tagsum["收入合计"] = tagsum["收入合计"].round(2)
     tagsum["支出合计"] = tagsum["支出合计"].round(2)
 
@@ -180,66 +296,49 @@ def build_workbook(
         review_rows.append({"事项类型": r.get("事项类型", ""), "复核原因": r.get("复核原因", ""),
                             "证据交易编号": "；".join(r.get("证据交易唯一编号列表", [])[:5]),
                             "建议动作": r.get("建议动作", "")})
-    for s in srep.get("人工复核事项", [])[:30]:
+    for s in srep.get("人工复核事项", []):
         review_rows.append({"事项类型": "标签待复核", "复核原因": s.get("复核原因", ""),
                             "证据交易编号": s.get("交易唯一编号", ""), "建议动作": s.get("建议动作", "")})
     review_df = pd.DataFrame(review_rows) if review_rows else pd.DataFrame(
         columns=["事项类型", "复核原因", "证据交易编号", "建议动作"])
 
+    # 封面、DTO 与人工复核 Sheet 使用同一批内存数据，避免三个口径不一致。
+    cover_df.loc[cover_df["项目"] == "人工复核事项数", "内容"] = len(review_df)
+
     # ---- 主流水（列排序） ----
-    flow = tagged.copy()
+    flow = tagged
     for c in STD_ORDER:
         if c not in flow.columns:
             flow[c] = ""
-    flow = flow[[c for c in STD_ORDER if c in flow.columns]]
+    excel_columns = [c for c in STD_ORDER if c in flow.columns]
 
-    def _apply_workbook_styles(wb):
-        """在 ExcelWriter 持有的 workbook 上直接设置样式，避免保存后再二次加载。"""
-        head_fill = PatternFill("solid", fgColor="1F4E78")
-        head_font = Font(color="FFFFFF", bold=True)
-        for ws in wb.worksheets:
-            ws.freeze_panes = "A2"
-            for cell in ws[1]:
-                cell.fill = head_fill
-                cell.font = head_font
-                cell.alignment = Alignment(vertical="center")
-            # 列宽自适应（粗略）
-            for col in ws.columns:
-                width = 12
-                letter = get_column_letter(col[0].column)
-                for cell in col[:200]:
-                    v = cell.value
-                    if v is not None:
-                        width = max(width, min(48, int(len(str(v)) * 1.6) + 2))
-                ws.column_dimensions[letter].width = width
-            ws.sheet_view.showGridLines = True
+    dataset = {
+        "transactions": flow,
+        "daily_balances": daily,
+        "accounts": acct_df,
+        "balance_checks": balchk,
+        "tag_summaries": tagsum,
+        "review_items": review_df,
+    }
 
-        # 主流水：金额列数字格式
-        ws = wb["整合打标流水"]
-        money_cols = {
-            "收入金额", "支出金额", "交易金额",
-            "分析收入金额", "分析支出金额", "分析交易金额",
-            "账户余额", "虚拟账户余额",
-        }
-        header = {c.value: c.column for c in ws[1]}
-        for name, col in header.items():
-            if name in money_cols:
-                letter = get_column_letter(col)
-                for cell in ws[letter][1:]:
-                    cell.number_format = "#,##0.00"
-
-    # ---- 写出 ----
-    # 样式必须在 writer 关闭前直接应用到 xw.book；否则需要重新打开 xlsx 再保存一遍，stage_4 会明显变慢。
-    with pd.ExcelWriter(out_path, engine="openpyxl") as xw:
-        cover_df.to_excel(xw, sheet_name="封面与说明", index=False)
-        flow.to_excel(xw, sheet_name="整合打标流水", index=False)
-        if not daily.empty:
-            daily.to_excel(xw, sheet_name="组合日余额(虚拟账户)", index=False)
-        acct_df.to_excel(xw, sheet_name="账户清单", index=False)
-        balchk.to_excel(xw, sheet_name="余额校验", index=False)
-        tagsum.to_excel(xw, sheet_name="标签汇总", index=False)
-        review_df.to_excel(xw, sheet_name="人工复核事项", index=False)
-        _apply_workbook_styles(xw.book)
+    # ---- 旁路写出 ----
+    sheets = [
+        ("封面与说明", cover_df, None),
+        ("整合打标流水", flow, excel_columns),
+    ]
+    if not daily.empty:
+        sheets.append(("组合日余额(虚拟账户)", daily, None))
+    sheets.extend([
+        ("账户清单", acct_df, None),
+        ("余额校验", balchk, None),
+        ("标签汇总", tagsum, None),
+        ("人工复核事项", review_df, None),
+    ])
+    try:
+        _write_streaming_workbook(out_path, sheets)
+    except Exception as exc:
+        raise DeliverableWriteError(out_path, dataset, exc) from exc
+    return dataset
 
 
 def finalize_deliverable(
@@ -254,19 +353,18 @@ def finalize_deliverable(
     qc_results=None,
 ):
     """使用已完成的上游产物组装最终单文件交付物。"""
-    tagged = tagged.copy()
     # 客户名称只用于客户归档维度；本方名称保持文件证据，不派生主体名称。
     if "客户名称" not in tagged.columns:
         tagged.insert(1, "客户名称", client)
     if "主体名称" in tagged.columns:
-        tagged = tagged.drop(columns=["主体名称"])
+        tagged.drop(columns=["主体名称"], inplace=True)
 
     # 逐笔虚拟账户余额（缺失才补）
     if "虚拟账户余额" not in tagged.columns:
         tagged = add_virtual_balance(tagged)
 
     out_path = os.path.join(out_dir, f"{client}_已清洗_待分析.xlsx")
-    build_workbook(
+    dataset = build_workbook(
         client,
         tagged,
         daily,
@@ -281,5 +379,4 @@ def finalize_deliverable(
     print(f"  规则命中率 {srep['标签梳理概览']['规则命中率']:.0%} | "
           f"虚拟账户期末余额 {pbrep['组合虚拟账户']['期末合计余额']} | "
           f"余额预警账户 {pbrep['账户余额校验']['预警账户数']}")
-    return out_path
-
+    return out_path, dataset

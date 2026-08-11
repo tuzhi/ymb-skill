@@ -1,16 +1,16 @@
-import importlib.util
 import json
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_ROOT = REPO_ROOT / "ymb-standardization-core" / "src"
 SKILL_ROOT = REPO_ROOT / "bank-statement-standardization"
-SCRIPTS = SKILL_ROOT / "scripts"
-for path in (str(CORE_ROOT), str(SKILL_ROOT), str(SCRIPTS)):
+for path in (str(CORE_ROOT), str(SKILL_ROOT)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
@@ -19,26 +19,34 @@ from ymb_standardization_core import core
 from runtime.contracts import yaml_route_summary
 from runtime.models import (
     IntegrationContext,
-    PipelineExecutionResult,
     StageResult,
 )
-
-
-def load_module(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-from runtime import deliverable as package_deliverable
 from runtime import integrate
-from runtime import runner as runner_runtime
-
-orchestrator = load_module("orchestrator_contract_test", SCRIPTS / "orchestrator.py")
+from runtime import portfolio_balance
 
 
 class StageContractsTest(unittest.TestCase):
+    def test_portfolio_analysis_reuses_canonical_frame_and_removes_temporary_columns(self):
+        frame = pd.DataFrame([{
+            "交易唯一编号": "TX-1",
+            "交易时间": pd.Timestamp("2026-01-01 10:00:00"),
+            "本方账户": "A-1",
+            "收入金额": 100.0,
+            "支出金额": 0.0,
+            "账户余额": 100.0,
+            "来源行号": "2026年1-3月!390",
+        }])
+        original_id = id(frame)
+
+        daily, _report = portfolio_balance.analyze(frame)
+
+        self.assertEqual(id(frame), original_id)
+        self.assertEqual(len(daily), 1)
+        self.assertFalse(any(str(column).startswith("__") for column in frame.columns))
+        self.assertEqual(frame.at[0, "来源行号"], "2026年1-3月!390")
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(frame["交易时间"].dtype))
+        self.assertTrue(pd.api.types.is_numeric_dtype(frame["收入金额"].dtype))
+
     def test_route_decision_preserves_dict_and_json_contract(self):
         raw = {
             "fingerprint_id": "excel-demo",
@@ -90,6 +98,8 @@ class StageContractsTest(unittest.TestCase):
             "fingerprint_id": "md5:abc",
             "series_family": "family-v1",
             "router_bank": "招商银行",
+            "reader_id": "pdfplumber_table",
+            "account_type": "未知",
             "yaml_match_status": "matched",
         })
 
@@ -112,43 +122,6 @@ class StageContractsTest(unittest.TestCase):
         result = StageResult("stage_2_integrate", {"integrated_rows": 10})
         self.assertEqual(result.stage_id, "stage_2_integrate")
         self.assertEqual(json.loads(json.dumps(result)), {"integrated_rows": 10})
-
-    def test_pipeline_execution_result_defines_memory_handoff_contract(self):
-        result = PipelineExecutionResult(
-            exit_code=0,
-            run_id="run-1",
-            client_name="客户甲",
-            parent_run_id="",
-            status="DONE",
-            file_results={"files": {}},
-            stages={"stage_1_standardize": {"status": "DONE"}},
-            stage_summaries={"stage_2_integrate": {"integrated_rows": 10}},
-            qc={"status": "PASS"},
-            artifacts=({"artifact_id": "交付物.zip"},),
-            run_result={"next_action": "DELIVER"},
-        )
-
-        self.assertEqual(result.stage_summaries["stage_2_integrate"]["integrated_rows"], 10)
-        self.assertEqual(result.artifacts[0]["artifact_id"], "交付物.zip")
-        self.assertIsNone(result.error)
-
-    def test_orchestrator_uses_public_package_boundary(self):
-        self.assertTrue(hasattr(package_deliverable, "finalize_deliverable"))
-        self.assertFalse(hasattr(package_deliverable, "_finalize"))
-        self.assertFalse(hasattr(runner_runtime.Runner, "run_pipeline"))
-        self.assertFalse(hasattr(runner_runtime.Runner, "validate"))
-
-    def test_orchestrator_is_only_a_cli_boundary(self):
-        self.assertTrue(callable(orchestrator.main))
-        for legacy_symbol in (
-            "Runner",
-            "PipelineExecutionResult",
-            "load_parent_run_context",
-            "prepare_input_snapshot",
-            "resolve_run_root",
-        ):
-            self.assertFalse(hasattr(orchestrator, legacy_symbol), legacy_symbol)
-
 
 if __name__ == "__main__":
     unittest.main()

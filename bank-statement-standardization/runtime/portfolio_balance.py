@@ -32,14 +32,27 @@ from ymb_standardization_core import core as S  # 统一复用 shared core 的�
 
 
 def _prep(df):
-    df = df.copy()
+    """在主明细上增加本阶段临时列；调用方负责计算后删除。"""
     # 整合流水/底表的行序即正确时序（整合阶段已按文件时序+文件内原始行序排好、倒序文件已翻正）。
     # 余额校验据此 __seq 排序，不再按交易时间重排，避免同秒多笔被打乱产生伪断点。
     df["__seq"] = range(len(df))
-    df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
-    df["__row"] = pd.to_numeric(df.get("来源行号"), errors="coerce")
+    times = df["交易时间"]
+    if not pd.api.types.is_datetime64_any_dtype(times.dtype):
+        raise TypeError("Stage 2 输出的交易时间必须是 datetime64")
+    df["__t"] = times
+    source_rows = df.get("来源行号")
+    # 来源行号是追溯标识，允许 ``Sheet名!行号``；余额计算只保留可转换的
+    # 临时数值，不改变公开字段。
+    df["__row"] = (
+        pd.to_numeric(source_rows, errors="coerce")
+        if source_rows is not None
+        else pd.Series(index=df.index, dtype=float)
+    )
     for c in ["收入金额", "支出金额", "账户余额"]:
-        df["__" + c] = pd.to_numeric(df.get(c), errors="coerce")
+        values = df.get(c)
+        if values is None or not pd.api.types.is_numeric_dtype(values.dtype):
+            raise TypeError(f"Stage 2 输出的{c}必须是数值类型")
+        df["__" + c] = values
     return df
 
 
@@ -111,60 +124,74 @@ def portfolio_continuity(df, daily):
     return breaks
 
 
-def run(csv_path, out_dir=None):
-    raw = pd.read_csv(csv_path, dtype=str)
+def analyze(raw):
+    """从内存流水计算组合日余额与余额校验报告。"""
     df = _prep(raw)
-    has_cust = "客户编号" in df.columns
+    try:
+        has_cust = "客户编号" in df.columns
 
-    acct_checks = balance_check_per_account(df)
-    daily, accounts = daily_portfolio(df)
-    pbreaks = portfolio_continuity(df, daily)
+        acct_checks = balance_check_per_account(df)
+        daily, accounts = daily_portfolio(df)
+        pbreaks = portfolio_continuity(df, daily)
 
-    per_customer = []
-    if has_cust:
-        for cid, g in df.groupby("客户编号"):
-            cd, accs = daily_portfolio(g)
-            if cd.empty:
-                continue
-            per_customer.append({
-                "客户编号": cid,
-                "客户名称": (g["客户名称"].dropna().iloc[0]
-                          if "客户名称" in g and g["客户名称"].notna().any() else ""),
-                "账户数": len(accs),
-                "期末组合余额": round(float(cd["合计余额"].iloc[-1]), 2),
-                "峰值组合余额": round(float(cd["合计余额"].max()), 2),
-                "谷值组合余额": round(float(cd["合计余额"].min()), 2),
-            })
+        per_customer = []
+        if has_cust:
+            for cid, g in df.groupby("客户编号"):
+                cd, accs = daily_portfolio(g)
+                if cd.empty:
+                    continue
+                per_customer.append({
+                    "客户编号": cid,
+                    "客户名称": (g["客户名称"].dropna().iloc[0]
+                              if "客户名称" in g and g["客户名称"].notna().any() else ""),
+                    "账户数": len(accs),
+                    "期末组合余额": round(float(cd["合计余额"].iloc[-1]), 2),
+                    "峰值组合余额": round(float(cd["合计余额"].max()), 2),
+                    "谷值组合余额": round(float(cd["合计余额"].min()), 2),
+                })
 
-    warn = [b for b in acct_checks if b["校验状态"] == "预警"]
-    summary = {
-        "数据范围": {"开始日期": df["__t"].min().strftime("%Y-%m-%d"),
-                   "结束日期": df["__t"].max().strftime("%Y-%m-%d"),
-                   "账户数": len(accounts), "客户数": int(df["客户编号"].nunique()) if has_cust else 1},
-        "组合虚拟账户": {
-            "口径": "各账户日末余额前向填充后逐日求和；账户首笔前贡献按0。可用于时点资金占用等下游分析。",
-            "期初合计余额": round(float(daily["合计余额"].iloc[0]), 2) if not daily.empty else None,
-            "期末合计余额": round(float(daily["合计余额"].iloc[-1]), 2) if not daily.empty else None,
-            "峰值合计余额": round(float(daily["合计余额"].max()), 2) if not daily.empty else None,
-            "谷值合计余额": round(float(daily["合计余额"].min()), 2) if not daily.empty else None,
-        },
-        "账户余额校验": {
-            "校验口径": "按账户分别校验：账户余额 == 上一笔余额 + 收入 − 支出",
-            "账户总数": len(acct_checks),
-            "通过账户数": sum(1 for b in acct_checks if b["校验状态"] == "通过"),
-            "预警账户数": len(warn),
-            "余额断点合计": sum(b["余额断点"] for b in acct_checks),
-            "账户明细": acct_checks,
-        },
-        "组合连续性校验": {
-            "校验口径": "相邻日总余额变动 == 当日净流入(收入-支出)",
-            "异常日数": pbreaks,
-            "结论": "通过" if pbreaks == 0 else "预警：存在账户间余额缺口/解析断点，需人工复核",
-        },
-        "各客户组合余额": per_customer,
-        "人工复核提示": warn,
-    }
+        warn = [b for b in acct_checks if b["校验状态"] == "预警"]
+        summary = {
+            "数据范围": {"开始日期": df["__t"].min().strftime("%Y-%m-%d"),
+                       "结束日期": df["__t"].max().strftime("%Y-%m-%d"),
+                       "账户数": len(accounts), "客户数": int(df["客户编号"].nunique()) if has_cust else 1},
+            "组合虚拟账户": {
+                "口径": "各账户日末余额前向填充后逐日求和；账户首笔前贡献按0。可用于时点资金占用等下游分析。",
+                "期初合计余额": round(float(daily["合计余额"].iloc[0]), 2) if not daily.empty else None,
+                "期末合计余额": round(float(daily["合计余额"].iloc[-1]), 2) if not daily.empty else None,
+                "峰值合计余额": round(float(daily["合计余额"].max()), 2) if not daily.empty else None,
+                "谷值合计余额": round(float(daily["合计余额"].min()), 2) if not daily.empty else None,
+            },
+            "账户余额校验": {
+                "校验口径": "按账户分别校验：账户余额 == 上一笔余额 + 收入 − 支出",
+                "账户总数": len(acct_checks),
+                "通过账户数": sum(1 for b in acct_checks if b["校验状态"] == "通过"),
+                "预警账户数": len(warn),
+                "余额断点合计": sum(b["余额断点"] for b in acct_checks),
+                "账户明细": acct_checks,
+            },
+            "组合连续性校验": {
+                "校验口径": "相邻日总余额变动 == 当日净流入(收入-支出)",
+                "异常日数": pbreaks,
+                "结论": "通过" if pbreaks == 0 else "预警：存在账户间余额缺口/解析断点，需人工复核",
+            },
+            "各客户组合余额": per_customer,
+            "人工复核提示": warn,
+        }
 
+        return daily, summary
+    finally:
+        raw.drop(
+            columns=["__seq", "__t", "__row", "__收入金额", "__支出金额", "__账户余额"],
+            errors="ignore",
+            inplace=True,
+        )
+
+
+def run(csv_path, out_dir=None):
+    """兼容命令行/历史调用方的文件输入输出包装。"""
+    raw = pd.read_csv(csv_path, dtype=str)
+    daily, summary = analyze(raw)
     if out_dir is None:
         out_dir = os.path.dirname(csv_path)
     os.makedirs(out_dir, exist_ok=True)

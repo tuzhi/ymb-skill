@@ -244,6 +244,30 @@ class InputRouterTests(unittest.TestCase):
             ],
         )
 
+    def test_ceb_corporate_statement_excel_route(self):
+        module = load_input_router()
+        excel = DATA_ROOT / "testdata2" / "冷龙平" / "如语25.7.30-26.07.29.xlsx"
+        if not excel.exists():
+            self.skipTest("本地未提供中国光大银行对公账户对账单 Excel 样本")
+
+        result = module.read_rows(str(excel))
+        route = result.route_info
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["fingerprint_id"], "md5:5d5c5dcda1f71e15d5270931f34876f9")
+        self.assertEqual(route["reader_id"], "openpyxl_grid")
+        self.assertEqual(route["bank"], "中国光大银行")
+        self.assertEqual(route["account_type"], "对公")
+        self.assertEqual(route["source_order"], "descending")
+        self.assertEqual(len(result.rows), 222)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _csv_path, _json_path, report = core.standardize(str(excel), out_dir=tmp)
+
+        self.assertEqual(report["文件画像"]["本方名称"], "江西如语广告装饰有限公司")
+        self.assertEqual(report["文件画像"]["本方账户"], "50060188000054623")
+        self.assertEqual(report["标准化统计"]["交易笔数"], 215)
+
     def test_legacy_abc_xls_uses_specialized_excel_route(self):
         module = load_input_router()
         excel = TESTDATA_ROOT / "丰城市利华金属制品有限公司" / "2025.1.1-2025.1.31农行.xls"

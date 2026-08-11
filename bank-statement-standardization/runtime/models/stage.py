@@ -13,6 +13,8 @@ class IntegrationContext:
     out_dir: str | None = None
     self_accounts: tuple[str, ...] = field(default_factory=tuple)
     file_routes: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # Stage 2 会消费并清空此列表：这是 DataFrame 所有权转移，不是只读参数。
+    memory_inputs: list[Mapping[str, Any]] = field(default_factory=list)
 
     @classmethod
     def create(
@@ -22,6 +24,7 @@ class IntegrationContext:
         out_dir=None,
         self_accounts=(),
         file_routes=None,
+        memory_inputs=(),
     ):
         return cls(
             customer=customer,
@@ -29,6 +32,10 @@ class IntegrationContext:
             out_dir=out_dir,
             self_accounts=tuple(self_accounts or ()),
             file_routes=dict(file_routes or {}),
+            memory_inputs=(
+                memory_inputs if isinstance(memory_inputs, list)
+                else list(memory_inputs or ())
+            ),
         )
 
 

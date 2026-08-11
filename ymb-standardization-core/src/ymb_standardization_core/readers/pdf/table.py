@@ -7,6 +7,7 @@ from ymb_standardization_core.readers.pdf.common import (
     _append_pdf_table_rows,
     _clean_pdf_cell,
     drop_word_filter_char,
+    iter_pdf_pages,
 )
 from ymb_standardization_core.transforms import apply_reader_options
 
@@ -50,7 +51,7 @@ def _extract_pdf_tables_default(pdf, word_filters=None, row_anchor=None):
         str((row_anchor or {}).get("continuation") or "").strip()
         == "until_next_anchor_across_pages"
     )
-    for page in pdf.pages:
+    for page in iter_pdf_pages(pdf.pages):
         page_start = len(all_rows)
         if word_filters:
             page = page.filter(lambda char: not drop_word_filter_char(char, word_filters))

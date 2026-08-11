@@ -30,6 +30,26 @@ class RepairRequest:
     stage_id: str = STAGE_ID
     contract_version: int = CONTRACT_VERSION
 
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "RepairRequest":
+        """从已持久化的跨会话请求恢复，不回读 Stage 结果文件。"""
+        return cls(
+            request_id=str(value["request_id"]),
+            run_id=str(value["run_id"]),
+            run_dir=str(value["run_dir"]),
+            attempt=int(value["attempt"]),
+            role_prompt_ref=str(value["role_prompt_ref"]),
+            input_refs=tuple(str(item) for item in value.get("input_refs") or ()),
+            failed_files=tuple(dict(item) for item in value.get("failed_files") or ()),
+            repair_dir=str(value["repair_dir"]),
+            output_contract_ref=str(value["output_contract_ref"]),
+            fresh_session_required=bool(value.get("fresh_session_required", True)),
+            inherit_chat_history=bool(value.get("inherit_chat_history", False)),
+            role=str(value.get("role") or REPAIR),
+            stage_id=str(value.get("stage_id") or STAGE_ID),
+            contract_version=int(value.get("contract_version") or CONTRACT_VERSION),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return render_protocol("repair-request", {
             "request_id": self.request_id,

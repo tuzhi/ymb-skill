@@ -16,3 +16,4 @@ class StandardizationContext:
     overrides: Mapping[str, str] = field(default_factory=dict)
     write_mapping: bool = True
     route_rules: Any = None
+    return_dataframe: bool = False

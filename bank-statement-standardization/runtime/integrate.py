@@ -1161,32 +1161,80 @@ def regenerate_transaction_ids(df):
 
 
 def order_accounts_for_continuity(df):
-    """对每个本方账户，把（多文件合并、跨文件去重后的）行重排为「余额连续性最优」的顺序。
+    """原地把各账户流水重排为余额连续性最优顺序。
 
     余额是对账真值。各文件导出排序各异（整体倒序、日内倒序、同秒多笔、内部记账序≠时间戳），
     去重后还可能出现跨文件混排——统一交给 best_continuity_order 按余额断点择优（原序/翻转/按日期升序/
-    余额链重建）。这样既保留每个文件的原始对账口径、又能跨文件正确归并，不靠交易时间硬排。"""
-    parts = []
-    for _acct, g in df.groupby(df["本方账户"].fillna(""), sort=True):
-        g = g.reset_index(drop=True)
+    余额链重建）。这里只累计最终行序，最后调用一次 DataFrame.sort_values，避免为每个账户保留
+    完整分组副本再 concat。"""
+    if df.empty:
+        return df
+
+    continuity_columns = [
+        "账户余额", "收入金额", "支出金额", "交易时间",
+        "银行备注", "账户方附言", "来源文件名", "账户类型",
+    ]
+    ordering = df.loc[:, ["本方账户", "来源文件名", "__fileseq"]].copy()
+    ordering["__account_order"] = ordering["本方账户"].fillna("")
+    ordering.sort_values(
+        ["__account_order", "来源文件名", "__fileseq"],
+        kind="mergesort",
+        inplace=True,
+    )
+    df["__final_order"] = -1
+    next_order = 0
+    for _acct, group in ordering.groupby("__account_order", sort=True):
+        group_indices = group.index
         # 批量代发的识别与余额口径统一放在 shared core，本阶段不复制业务判断。
-        rows = S.continuity_rows(g.to_dict("records"))
+        rows = S.continuity_rows(
+            df.loc[group_indices, continuity_columns].to_dict("records")
+        )
         order, _strategy = S.best_continuity_order(rows)
-        parts.append(g.iloc[order])
-    return pd.concat(parts, ignore_index=True) if parts else df
+        ordered_indices = group_indices.take(order)
+        df.loc[ordered_indices, "__final_order"] = range(
+            next_order, next_order + len(ordered_indices)
+        )
+        next_order += len(ordered_indices)
+
+    df.sort_values("__final_order", kind="mergesort", inplace=True)
+    df.drop(columns=["__final_order"], inplace=True)
+    df.reset_index(drop=True, inplace=True)
+    return df
 
 
-def load_inputs(paths, file_routes=None):
-    """加载标准化流水，并从阶段一 manifest 路由索引补充内部文件画像。"""
+def load_inputs(paths, file_routes=None, memory_inputs=None):
+    """加载标准化流水，并消费 Stage 1 转交的 DataFrame 所有权。
+
+    单输入直接沿用原 DataFrame；多输入只 concat 一次。合并完成后立即清空
+    ``memory_inputs``，避免单文件 DataFrame 一直存活到 Stage 2 结束。
+    """
     file_routes = file_routes or {}
-    files = []
+    disk_files = []
     for p in paths:
         if os.path.isdir(p):
-            files += sorted(glob.glob(os.path.join(p, "*__standardized.csv")))
+            disk_files += sorted(glob.glob(os.path.join(p, "*__standardized.csv")))
         elif p.endswith(".csv"):
-            files.append(p)
+            disk_files.append(p)
+    source_files = list(disk_files)
     frames = []
-    for f in files:
+    for item in memory_inputs or ():
+        frame = item.get("frame") if isinstance(item, dict) else None
+        if frame is None:
+            continue
+        f = str(item.get("path") or item.get("name") or "memory__standardized.csv")
+        name = str(item.get("name") or os.path.basename(f))
+        source_files.append(f)
+        df = frame
+        df["__源标准化文件"] = name
+        df["__源标准化文件路径"] = os.path.abspath(f)
+        route = file_routes.get(name) or {}
+        df["__router_bank"] = route.get("router_bank") or "未识别"
+        df["__fingerprint_id"] = route.get("fingerprint_id") or ""
+        df["__series_family"] = route.get("series_family") or ""
+        df["__time_precision"] = df["交易时间"].map(S.normalized_transaction_time_precision)
+        df["__fileseq"] = range(len(df))
+        frames.append(df)
+    for f in disk_files:
         df = pd.read_csv(f, dtype=str)
         df["__源标准化文件"] = os.path.basename(f)
         df["__源标准化文件路径"] = os.path.abspath(f)
@@ -1203,13 +1251,19 @@ def load_inputs(paths, file_routes=None):
         frames.append(df)
     if not frames:
         sys.exit("未找到任何 *__standardized.csv 输入")
-    df = pd.concat(frames, ignore_index=True)
+    if len(frames) == 1:
+        df = frames[0]
+    else:
+        df = pd.concat(frames, ignore_index=True)
+    frames.clear()
+    if hasattr(memory_inputs, "clear"):
+        memory_inputs.clear()
     for c in NUMERIC:
         if c in df.columns:
             df[c + "_num"] = pd.to_numeric(df[c], errors="coerce")
     df["__t"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
     df["来源行号_num"] = pd.to_numeric(df["来源行号"], errors="coerce")
-    return df, files
+    return df, source_files
 
 
 def dedup_cross_file(df):
@@ -1224,24 +1278,50 @@ def dedup_cross_file(df):
     if "交易唯一编号" not in df.columns or df.empty:
         return df, info
     std_cols = [c for c in df.columns if not c.endswith("_num") and not c.startswith("__")]
-    d = df.copy()
-    d["__nonempty"] = d[std_cols].apply(
-        lambda r: sum(1 for v in r if str(v).strip() not in ("", "nan", "None")), axis=1)
-    d["__rank"] = d["来源文件名"].fillna("").map(
-        lambda fn: 1 if os.path.splitext(str(fn))[1].lower() == ".pdf" else 0)
+    d = df
+    nonempty = pd.Series(0, index=d.index, dtype="int16")
+    for column in std_cols:
+        normalized = d[column].astype(str).str.strip()
+        nonempty += (~normalized.isin(["", "nan", "None"])).astype("int16")
+    d["__nonempty"] = nonempty
+    d["__rank"] = (
+        d["来源文件名"].fillna("").astype(str).str.lower().str.endswith(".pdf").astype("int8")
+    )
 
-    def dedup_key(row):
-        uid = _clean_text(row.get("交易唯一编号"))
-        if not _is_alipay_record(row):
-            return uid
-        trade_order = _alipay_trade_order(row.get("账户方附言"))
-        if trade_order:
-            return f"{uid}#支付宝交易订单号={trade_order}"
-        # 支付宝缺交易订单号时证据不足，不允许跨来源自动折叠。
-        return "#".join((uid, "支付宝交易订单号缺失", _clean_text(row.get("__源标准化文件路径")),
-                         _clean_text(row.get("来源文件名")), _clean_text(row.get("来源行号"))))
+    def clean_series(column):
+        values = d.get(column)
+        if values is None:
+            return pd.Series("", index=d.index, dtype=object)
+        return values.fillna("").astype(str).str.strip()
 
-    d["__dedup_key"] = d.apply(dedup_key, axis=1)
+    uid = clean_series("交易唯一编号")
+    alipay_text = pd.Series("", index=d.index, dtype=object)
+    for column in ("开户行", "来源文件名", "交易渠道", "账户方附言"):
+        alipay_text = alipay_text.str.cat(clean_series(column))
+    is_alipay = alipay_text.str.contains("支付宝", regex=False, na=False)
+    trade_order = (
+        clean_series("账户方附言")
+        .str.extract(ALIPAY_TRADE_ORDER_RE, expand=False)
+        .fillna("")
+        .str.strip()
+    )
+
+    # 普通交易直接使用内容指纹；支付宝交易只有在订单号相同且完整时才允许跨来源折叠。
+    d["__dedup_key"] = uid
+    has_trade_order = is_alipay & trade_order.ne("")
+    d.loc[has_trade_order, "__dedup_key"] = (
+        uid.loc[has_trade_order] + "#支付宝交易订单号=" + trade_order.loc[has_trade_order]
+    )
+    missing_trade_order = is_alipay & ~has_trade_order
+    d.loc[missing_trade_order, "__dedup_key"] = (
+        uid.loc[missing_trade_order]
+        + "#支付宝交易订单号缺失#"
+        + clean_series("__源标准化文件路径").loc[missing_trade_order]
+        + "#"
+        + clean_series("来源文件名").loc[missing_trade_order]
+        + "#"
+        + clean_series("来源行号").loc[missing_trade_order]
+    )
 
     dup_mask = d.duplicated("__dedup_key", keep=False)
     if dup_mask.any():
@@ -1255,11 +1335,14 @@ def dedup_cross_file(df):
                     "出现次数": int(len(g)),
                     "涉及来源文件": sorted(g["来源文件名"].fillna("").unique().tolist()),
                 })
-    d = d.sort_values(["__dedup_key", "__rank", "__nonempty", "来源行号_num"],
-                      ascending=[True, True, False, True])
-    kept = d.drop_duplicates("__dedup_key", keep="first").drop(
-        columns=["__dedup_key", "__nonempty", "__rank"])
-    return kept.reset_index(drop=True), info
+    d.sort_values(
+        ["__dedup_key", "__rank", "__nonempty", "来源行号_num"],
+        ascending=[True, True, False, True],
+        inplace=True,
+    )
+    d.drop_duplicates("__dedup_key", keep="first", inplace=True)
+    d.drop(columns=["__dedup_key", "__nonempty", "__rank"], inplace=True)
+    return d, info
 
 
 def _exact_overlap_key(row):
@@ -1284,7 +1367,7 @@ def dedup_same_account_exact_overlap(df):
     if df.empty or not {"本方账户", "来源文件名"}.issubset(df.columns):
         return df, info
 
-    result = df.copy()
+    result = df
     groups = defaultdict(list)
     for index, row in result.iterrows():
         key = _exact_overlap_key(row)
@@ -1334,8 +1417,8 @@ def dedup_same_account_exact_overlap(df):
             })
 
     if remove_indices:
-        result = result.drop(index=sorted(remove_indices))
-    return result.reset_index(drop=True), info
+        result.drop(index=sorted(remove_indices), inplace=True)
+    return result, info
 
 
 def _source_format(source):
@@ -1409,7 +1492,7 @@ def align_same_source_cross_format(df, min_matches=20, min_coverage=0.98, max_se
     if df.empty or not {"来源文件名", "本方账户", "开户行"}.issubset(df.columns):
         return df, info
 
-    result = df.copy()
+    result = df
     sources = sorted({_clean_text(value) for value in result["来源文件名"] if _clean_text(value)})
     by_stem = defaultdict(list)
     for source in sources:
@@ -1575,8 +1658,8 @@ def align_same_source_cross_format(df, min_matches=20, min_coverage=0.98, max_se
         info["来源组"].append(group_report)
 
     if remove_indices:
-        result = result.drop(index=sorted(remove_indices))
-    return result.reset_index(drop=True), info
+        result.drop(index=sorted(remove_indices), inplace=True)
+    return result, info
 
 
 def balance_check(df):
@@ -1833,8 +1916,21 @@ def account_index(df):
     return idx
 
 
-def integrate(customer, paths, out_dir=None, self_accounts=None, file_routes=None):
-    df, files = load_inputs(paths, file_routes=file_routes)
+def integrate(
+    customer,
+    paths,
+    out_dir=None,
+    self_accounts=None,
+    file_routes=None,
+    memory_inputs=None,
+    *,
+    persist=True,
+):
+    df, files = load_inputs(
+        paths,
+        file_routes=file_routes,
+        memory_inputs=memory_inputs,
+    )
     self_accounts = self_accounts or []
     raw_count = int(len(df))
 
@@ -1867,11 +1963,8 @@ def integrate(customer, paths, out_dir=None, self_accounts=None, file_routes=Non
         "完全相同内容指纹折叠": exact_dedup_info,
     }
 
-    # 先恢复「每个文件标准化后的余额正序」（去重会按编号哈希打乱顺序），再做账户级连续性重排——
-    # 使「日内原序」候选的兜底序是文件内余额序、而非哈希乱序。
-    df = df.sort_values(["本方账户", "来源文件名", "__fileseq"], kind="mergesort").reset_index(drop=True)
-    # 账户级行序整理：按余额连续性把每个账户的跨文件交易排成可对账的正序（不靠交易时间硬排）。
-    df = order_accounts_for_continuity(df)
+    # 账户级行序整理：先计算每个账户的最终连续性序号，再原地执行一次物理排序。
+    order_accounts_for_continuity(df)
     df_sorted = df
 
     bal = balance_check(df)
@@ -1999,18 +2092,34 @@ def integrate(customer, paths, out_dir=None, self_accounts=None, file_routes=Non
         },
     }
 
-    if out_dir is None:
-        out_dir = os.path.dirname(files[0])
-    os.makedirs(out_dir, exist_ok=True)
-    out_csv = os.path.join(out_dir, f"{customer}__整合流水.csv")
-    out_json = os.path.join(out_dir, f"{customer}__整合报告.json")
     keep = ["交易唯一编号", "交易时间", "本方名称", "本方账户", "开户行", "账户类型",
             "对手名称", "对手账户", "收入金额", "支出金额", "交易金额", "账户余额",
             "银行备注", "账户方附言", "交易渠道", "来源文件名", "来源行号"]
     for c in keep:                       # 兼容旧版 standardized.csv（无开户行/账户类型列）
         if c not in df_sorted.columns:
             df_sorted[c] = ""
-    df_sorted[keep].to_csv(out_csv, index=False, encoding="utf-8-sig")
+    # 这是 Stage 2 唯一一次建立最终列集；旧的内部工作表会随函数返回释放。
+    integrated = df_sorted.loc[:, keep].copy()
+    # 从这里开始形成唯一的持久主明细。基础业务类型只在此收口一次；
+    # Stage 2b、Stage 3、Stage 4 和内存 BI 路径不得再次转换。
+    integrated["交易时间"] = df_sorted["__t"].to_numpy(copy=False)
+    # datetime64 只保存时间值，无法区分原始文本是日期级还是秒级。
+    # 该内部列继续传给 Stage 3，避免把日期级午夜误判成精确到秒的隐式冲正。
+    integrated["__time_precision"] = df_sorted["__time_precision"].to_numpy(copy=False)
+    for column in ("收入金额", "支出金额", "交易金额", "账户余额"):
+        integrated[column] = df_sorted[column + "_num"].to_numpy(copy=False)
+    # 来源行号是公开追溯字段，可能是普通行号，也可能是 ``Sheet名!行号``。
+    # ``来源行号_num`` 只用于阶段二内部排序，不能覆盖原始证据。
+    if not persist:
+        return integrated, report
+
+    if out_dir is None:
+        out_dir = os.path.dirname(files[0])
+    os.makedirs(out_dir, exist_ok=True)
+    out_csv = os.path.join(out_dir, f"{customer}__整合流水.csv")
+    out_json = os.path.join(out_dir, f"{customer}__整合报告.json")
+    # __time_precision 只属于内存阶段契约；旁路 CSV 保持既有公开列结构。
+    integrated.loc[:, keep].to_csv(out_csv, index=False, encoding="utf-8-sig")
     with open(out_json, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     return out_csv, out_json, report
@@ -2026,6 +2135,21 @@ def integrate_context(context: IntegrationContext):
         out_dir=context.out_dir,
         self_accounts=list(context.self_accounts),
         file_routes=context.file_routes,
+    )
+
+
+def integrate_context_memory(context: IntegrationContext):
+    """执行阶段二并直接返回内存 DataFrame 与整合报告。"""
+    if not isinstance(context, IntegrationContext):
+        raise TypeError("context must be IntegrationContext")
+    return integrate(
+        context.customer,
+        list(context.inputs),
+        out_dir=context.out_dir,
+        self_accounts=list(context.self_accounts),
+        file_routes=context.file_routes,
+        memory_inputs=context.memory_inputs,
+        persist=False,
     )
 
 

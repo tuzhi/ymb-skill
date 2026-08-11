@@ -28,6 +28,7 @@ from .models import (
     StandardizationRequest,
     StandardizationResult,
 )
+from .result_mapper import build_standardization_result
 from ymb_standardization_core.readers.routing.rule_loader import RoutingRulesSnapshot
 
 
@@ -183,20 +184,7 @@ class StatementService:
         execution = active.result()
         if not isinstance(execution, PipelineExecutionResult):
             raise TypeError("Runner 必须返回 PipelineExecutionResult")
-        return StandardizationResult(
-            run_id=execution.run_id,
-            parent_run_id=execution.parent_run_id,
-            client_name=execution.client_name,
-            status=execution.status,
-            rules_version=rules.version,
-            file_results=self._execution_file_results(execution.file_results),
-            stages=dict(execution.stages),
-            qc=dict(execution.qc),
-            stage_summaries=dict(execution.stage_summaries),
-            artifacts=[dict(item) for item in execution.artifacts],
-            run_result=dict(execution.run_result),
-            error=self._execution_error(execution),
-        )
+        return build_standardization_result(execution, rules.version)
 
     def _get_run(self, run_id: str) -> RunDetail:
         run_dir = self._run_dir(run_id)
@@ -384,40 +372,6 @@ class StatementService:
                 expected = expected if expected.startswith("md5:") else f"md5:{expected}"
                 if _md5(path) != expected:
                     raise ValueError(f"输入文件 MD5 不一致：{item.file_name}")
-
-    @staticmethod
-    def _execution_file_results(
-        stage_1_results: Mapping[str, Any],
-    ) -> list[dict[str, Any]]:
-        files = stage_1_results.get("files") or {}
-        if not isinstance(files, Mapping):
-            return []
-        return [
-            {
-                "file_id": str(file_id),
-                "name": str(record.get("name") or ""),
-                "relative_path": str(record.get("relative_path") or ""),
-                "stage_1": dict(record),
-            }
-            for file_id, record in sorted(files.items())
-            if isinstance(record, Mapping)
-        ]
-
-    @staticmethod
-    def _execution_error(
-        execution: PipelineExecutionResult,
-    ) -> ServiceError | None:
-        if execution.status == "DONE" and not execution.error:
-            return None
-        run_result = execution.run_result or {}
-        return ServiceError(
-            code=str(run_result.get("reason_code") or "STANDARDIZATION_FAILED"),
-            message=str(
-                execution.error
-                or run_result.get("message")
-                or "流水标准化执行失败"
-            ),
-        )
 
     @staticmethod
     def _artifact_entries(run_dir: Path) -> list[dict[str, Any]]:

@@ -44,6 +44,67 @@ def transaction(source, account, time, balance, opponent="测试对手", opponen
 
 
 class BatchAccountResolutionTests(unittest.TestCase):
+    def test_memory_integration_preserves_composite_source_row(self):
+        row = transaction(
+            "江西赣驰2026年流水(2).xls",
+            "62170001",
+            "2026-01-02 16:31:37",
+            "100.00",
+        )
+        row["来源行号"] = "2026年1-3月!390"
+        frame = pd.DataFrame([row])
+        memory_inputs = [{
+            "name": "江西赣驰2026年流水(2)__xls__standardized.csv",
+            "path": "/not-created/江西赣驰2026年流水(2)__xls__standardized.csv",
+            "frame": frame,
+        }]
+
+        integrated, _report = integrate.integrate(
+            "江西赣驰",
+            [],
+            memory_inputs=memory_inputs,
+            persist=False,
+        )
+
+        self.assertEqual(integrated.at[0, "来源行号"], "2026年1-3月!390")
+
+    def test_load_inputs_consumes_memory_frame_without_reading_sidecar_csv(self):
+        frame = pd.DataFrame([
+            transaction("交易明细A.pdf", "62170001", "2026-01-01 10:00:00", "100.00")
+        ])
+        sidecar = "/not-created/交易明细A__pdf__standardized.csv"
+
+        memory_inputs = [{
+                "name": Path(sidecar).name,
+                "path": sidecar,
+                "frame": frame,
+            }]
+        loaded, files = integrate.load_inputs([], memory_inputs=memory_inputs)
+
+        self.assertEqual(len(loaded), 1)
+        self.assertEqual(files, [sidecar])
+        self.assertIs(loaded, frame)
+        self.assertEqual(memory_inputs, [])
+
+    def test_load_inputs_concats_once_and_releases_source_frame_references(self):
+        first = pd.DataFrame([
+            transaction("交易明细A.pdf", "62170001", "2026-01-01 10:00:00", "100.00")
+        ])
+        second = pd.DataFrame([
+            transaction("交易明细B.pdf", "62170001", "2026-01-02 10:00:00", "200.00")
+        ])
+        memory_inputs = [
+            {"name": "A__standardized.csv", "path": "/tmp/A__standardized.csv", "frame": first},
+            {"name": "B__standardized.csv", "path": "/tmp/B__standardized.csv", "frame": second},
+        ]
+
+        loaded, _files = integrate.load_inputs([], memory_inputs=memory_inputs)
+
+        self.assertEqual(len(loaded), 2)
+        self.assertIsNot(loaded, first)
+        self.assertIsNot(loaded, second)
+        self.assertEqual(memory_inputs, [])
+
     def test_load_inputs_uses_manifest_route_index_without_mapping_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
@@ -311,8 +372,10 @@ class BatchAccountResolutionTests(unittest.TestCase):
         unique_pdf["账户余额"] = ""
         rows.append(unique_pdf)
 
-        aligned, report = integrate.align_same_source_cross_format(pd.DataFrame(rows))
+        frame = pd.DataFrame(rows)
+        aligned, report = integrate.align_same_source_cross_format(frame)
 
+        self.assertIs(aligned, frame)
         self.assertEqual(len(aligned), 21)
         self.assertEqual(report["移除笔数"], 20)
         self.assertEqual(report["来源组"][0]["较小来源覆盖率"], 1.0)
@@ -356,8 +419,10 @@ class BatchAccountResolutionTests(unittest.TestCase):
         complete["支出金额"] = "50.00"
         complete["收入金额"] = ""
 
-        deduped, report = integrate.dedup_same_account_exact_overlap(pd.DataFrame([sparse, complete]))
+        frame = pd.DataFrame([sparse, complete])
+        deduped, report = integrate.dedup_same_account_exact_overlap(frame)
 
+        self.assertIs(deduped, frame)
         self.assertEqual(len(deduped), 1)
         self.assertEqual(deduped.iloc[0]["来源文件名"], "分段详版.pdf")
         self.assertEqual(report["移除笔数"], 1)
@@ -374,6 +439,38 @@ class BatchAccountResolutionTests(unittest.TestCase):
 
         self.assertEqual(len(deduped), 3)
         self.assertEqual(report["移除笔数"], 0)
+
+    def test_continuity_order_matches_previous_sort_and_concat_semantics_inplace(self):
+        rows = []
+        for account, source, fileseq, time, balance in (
+            ("B", "B.pdf", 0, "2026-01-03 10:00:00", "300.00"),
+            ("A", "A.pdf", 2, "2026-01-03 10:00:00", "300.00"),
+            ("A", "A.pdf", 0, "2026-01-01 10:00:00", "100.00"),
+            ("B", "B.pdf", 1, "2026-01-04 10:00:00", "400.00"),
+            ("A", "A.pdf", 1, "2026-01-02 10:00:00", "200.00"),
+        ):
+            row = transaction(source, account, time, balance)
+            row["交易唯一编号"] = f"{account}-{fileseq}"
+            row["__fileseq"] = fileseq
+            rows.append(row)
+        frame = pd.DataFrame(rows)
+
+        reference = frame.sort_values(
+            ["本方账户", "来源文件名", "__fileseq"], kind="mergesort"
+        ).reset_index(drop=True)
+        parts = []
+        for _account, group in reference.groupby(reference["本方账户"].fillna(""), sort=True):
+            group = group.reset_index(drop=True)
+            continuity_rows = integrate.S.continuity_rows(group.to_dict("records"))
+            local_order, _strategy = integrate.S.best_continuity_order(continuity_rows)
+            parts.append(group.iloc[local_order])
+        expected_ids = pd.concat(parts, ignore_index=True)["交易唯一编号"].tolist()
+
+        ordered = integrate.order_accounts_for_continuity(frame)
+
+        self.assertIs(ordered, frame)
+        self.assertEqual(ordered["交易唯一编号"].tolist(), expected_ids)
+        self.assertEqual(ordered.index.tolist(), list(range(len(ordered))))
 
     def test_reciprocal_transfer_restores_unknown_account_and_monthly_suffix_group(self):
         known = transaction(

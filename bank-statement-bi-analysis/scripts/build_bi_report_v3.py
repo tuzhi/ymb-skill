@@ -90,16 +90,25 @@ def norm_cp(s):
     s = re.sub(r"[（(].*?[)）]", lambda m: m.group(0) if len(m.group(0)) > 8 else "", s)
     return s
 
-def prep(df):
+def prep(df, *, normalize_types=True):
+    """补充 BI 派生列；内存 DTO 路径要求上游已经提供规范基础类型。"""
     for c in ["收入金额", "支出金额", "交易金额", "账户余额"]:
-        if c in df.columns: df[c] = pd.to_numeric(df[c], errors="coerce")
+        if c not in df.columns:
+            continue
+        if normalize_types:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        elif not pd.api.types.is_numeric_dtype(df[c].dtype):
+            raise TypeError(f"StandardizationResult.dataset.transactions.{c} 必须是数值类型")
     df["收入金额"] = df.get("收入金额", pd.Series(0, index=df.index)).fillna(0.0)
     df["支出金额"] = df.get("支出金额", pd.Series(0, index=df.index)).fillna(0.0)
     if (df["收入金额"] == 0).all() and (df["支出金额"] == 0).all() and "交易金额" in df.columns:
         df["收入金额"] = df["交易金额"].clip(lower=0); df["支出金额"] = (-df["交易金额"]).clip(lower=0)
     # pandas 2.x 默认按首个值推断单一格式；同列混有 YYYY-MM-DD 与含时分秒文本时，
     # 后续合法日期会被批量解析为 NaT。银行流水常见这种混排，必须逐值混合解析。
-    df["交易时间"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
+    if normalize_types:
+        df["交易时间"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
+    elif not pd.api.types.is_datetime64_any_dtype(df["交易时间"].dtype):
+        raise TypeError("StandardizationResult.dataset.transactions.交易时间 必须是 datetime64")
     df["月份"] = df["交易时间"].dt.strftime("%Y-%m").fillna("")
     df["日期"] = df["交易时间"].dt.date
     df["对手名称"] = df.get("对手名称", "").fillna("").astype(str).str.strip()
@@ -118,7 +127,7 @@ def prep(df):
 def spec_augment(df):
     """补齐 compute_spec_metrics 所需、而 v3 prep 未产出的派生列：
     距截止月数（近N月窗口）、对手性质（企业/个人判定）、对手账户（AF05，缺则空串降级）。"""
-    d = df.copy()
+    d = df
     md = d["交易时间"].max()
     d["距截止月数"] = (md.year - d["交易时间"].dt.year) * 12 + md.month - d["交易时间"].dt.month + 1
     d["对手性质"] = d["对手名称"].apply(spec_nature)

@@ -8,7 +8,7 @@ import os
 import sys
 
 import pandas as pd
-from .contracts import YAML_ROUTE_FIELDS
+from .contracts import YAML_ROUTE_FIELDS, YAML_ROUTE_REQUIRED_FIELDS
 
 
 STD_REQUIRED = {
@@ -109,8 +109,12 @@ def validate_standardize(
         csvs = []
         for file_id, record in files.items():
             route = record.get("route")
-            expected_fields = set(YAML_ROUTE_FIELDS)
-            if not isinstance(route, dict) or set(route) != expected_fields:
+            route_fields = set(route) if isinstance(route, dict) else set()
+            if (
+                not isinstance(route, dict)
+                or not set(YAML_ROUTE_REQUIRED_FIELDS).issubset(route_fields)
+                or not route_fields.issubset(YAML_ROUTE_FIELDS)
+            ):
                 raise ValidationError(f"阶段一文件路由字段不合法：{file_id}")
             status = route.get("yaml_match_status")
             source_name = str(record.get("name") or "")
@@ -163,9 +167,13 @@ def validate_standardize(
             raise ValidationError(
                 f"阶段一 manifest 文件路由与标准化 CSV 不一致：{sorted(expected - actual)} / {sorted(actual - expected)}"
             )
-        expected_fields = set(YAML_ROUTE_FIELDS)
         for source, route in file_routes.items():
-            if not isinstance(route, dict) or set(route) != expected_fields:
+            route_fields = set(route) if isinstance(route, dict) else set()
+            if (
+                not isinstance(route, dict)
+                or not set(YAML_ROUTE_REQUIRED_FIELDS).issubset(route_fields)
+                or not route_fields.issubset(YAML_ROUTE_FIELDS)
+            ):
                 raise ValidationError(f"阶段一文件路由字段不合法：{source}")
             status = route.get("yaml_match_status")
             if status not in {"matched", "unmatched", "ambiguous", "failed"}:

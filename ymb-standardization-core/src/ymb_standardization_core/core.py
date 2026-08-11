@@ -1308,7 +1308,13 @@ def _standardized_output_stem(path):
     return stem[:-len("__standardized")] if stem.endswith("__standardized") else stem
 
 
-def adopt_standardized_input(path, out_dir=None, write_mapping=True):
+def adopt_standardized_input(
+    path,
+    out_dir=None,
+    write_mapping=True,
+    *,
+    return_dataframe=False,
+):
     """接收已完成阶段一标准化的 CSV；mapping 仅在调用方需要审计报告时生成。"""
     fname = os.path.basename(path)
     if not is_standardized_input_name(path):
@@ -1359,17 +1365,23 @@ def adopt_standardized_input(path, out_dir=None, write_mapping=True):
             json.dump(report, f, ensure_ascii=False, indent=2)
     else:
         json_path = ""
-    return csv_path, json_path, report
+    result = (csv_path, json_path, report)
+    return (*result, df) if return_dataframe else result
 
 
 def standardize(path, out_dir=None, bank=None,
                 account_type=None, header_row=None, overrides=None, write_mapping=True,
-                strict_yaml_route=True, route_rules=None):
+                strict_yaml_route=True, route_rules=None, return_dataframe=False):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
     if is_standardized_input_name(path):
-        return adopt_standardized_input(path, out_dir=out_dir, write_mapping=write_mapping)
+        return adopt_standardized_input(
+            path,
+            out_dir=out_dir,
+            write_mapping=write_mapping,
+            return_dataframe=return_dataframe,
+        )
 
     if route_rules is None:
         file_kind, preamble, rows, route_info = read_rows(path)
@@ -2041,14 +2053,16 @@ def standardize(path, out_dir=None, bank=None,
     csv_path = os.path.join(out_dir, f"{artifact_stem}__standardized.csv")
     json_path = os.path.join(out_dir, f"{artifact_stem}__mapping.json")
 
-    pd.DataFrame(std_records, columns=OUTPUT_FIELDS).to_csv(csv_path, index=False, encoding="utf-8-sig")
+    standardized = pd.DataFrame(std_records, columns=OUTPUT_FIELDS)
+    standardized.to_csv(csv_path, index=False, encoding="utf-8-sig")
     if write_mapping:
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
     else:
         json_path = ""
 
-    return csv_path, json_path, report
+    result = (csv_path, json_path, report)
+    return (*result, standardized) if return_dataframe else result
 
 
 def standardize_file(context: StandardizationContext):
@@ -2063,6 +2077,8 @@ def standardize_file(context: StandardizationContext):
         "overrides": dict(context.overrides),
         "write_mapping": context.write_mapping,
     }
+    if context.return_dataframe:
+        kwargs["return_dataframe"] = True
     if context.route_rules is not None:
         kwargs["route_rules"] = context.route_rules
     return standardize(context.path, **kwargs)

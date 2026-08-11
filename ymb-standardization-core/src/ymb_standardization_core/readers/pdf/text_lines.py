@@ -3,6 +3,7 @@
 import re
 
 from ymb_standardization_core.readers.registry import FunctionPdfReader
+from ymb_standardization_core.readers.pdf.common import extract_pdf_text
 
 
 def _compiled_patterns(config, key):
@@ -68,7 +69,7 @@ def _extract_pdf_text_table_rows(text, config):
 
 
 def read(pdf, options):
-    text = "\n".join(page.extract_text() or "" for page in pdf.pages)
+    text = extract_pdf_text(pdf)
     return _extract_pdf_text_table_rows(text, options.get("text_table") or {})
 
 

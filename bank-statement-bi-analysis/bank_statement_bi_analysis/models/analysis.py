@@ -25,6 +25,7 @@ class BiAnalysisRequest:
     whitelist_path: str = ""
     loans_path: str = ""
     new_loan: tuple[float, float, int] | None = None
+    dataset: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

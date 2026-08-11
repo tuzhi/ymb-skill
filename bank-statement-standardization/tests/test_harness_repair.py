@@ -108,7 +108,7 @@ class HarnessRepairTests(unittest.TestCase):
             request = result["request"]
 
             self.assertEqual(result["status"], NEED_REPAIR)
-            self.assertEqual(request["input_refs"], ["stage_1_results.json", "input/流水.pdf"])
+            self.assertEqual(request["input_refs"], ["input/流水.pdf"])
             self.assertTrue(request["role_prompt_ref"].endswith("/roles/repair.md"))
             self.assertEqual(request["output_contract_ref"], protocol_path("repair-result").as_posix())
             self.assertEqual(request["repair_dir"], (run / "repair" / "attempt-01").resolve().as_posix())
@@ -156,6 +156,20 @@ class HarnessRepairTests(unittest.TestCase):
             self.assertEqual(usage["input_tokens"], 100)
             self.assertEqual(usage["output_tokens"], 20)
             self.assertEqual(usage["cached_input_tokens"], 80)
+
+    def test_submit_recovers_request_without_stage_result_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self._run(Path(tmp))
+            request = RepairCoordinator(run).decision()["request"]
+            (run / "stage_1_results.json").unlink()
+
+            outcome = RepairCoordinator(run).submit(
+                request_id=request["request_id"],
+                session_id="repair-session-restored-request",
+                payload=self._payload(request),
+            )
+
+            self.assertEqual(outcome["status"], CHILD_RUN_READY)
 
     def test_partial_usage_is_not_treated_as_complete(self):
         with tempfile.TemporaryDirectory() as tmp:

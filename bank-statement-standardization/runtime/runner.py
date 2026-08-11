@@ -30,7 +30,7 @@ from runtime import result_store as RS
 from runtime import standardize as S
 from runtime import tag as T
 from runtime import validators as V
-from runtime.contracts import YAML_ROUTE_FIELDS, yaml_route_summary
+from runtime.contracts import YAML_ROUTE_FIELDS, YAML_ROUTE_REQUIRED_FIELDS, yaml_route_summary
 from runtime.execution_plan import (
     RUN_ID_PATTERN,
     claim_planned_run,
@@ -132,12 +132,17 @@ def protocol_exit_status(result, fallback_status=1):
     return fallback_status
 
 
-def public_result(result, run_dir):
+def public_result(result, run_dir, *, stage_results=None, attempts=None):
     """把 NEED_REPAIR 原子推进为专家可直接消费的 Repair 请求。"""
     if isinstance(result, dict) and result.get("next_action") == R.NEED_REPAIR:
         from harness.coordinator import RepairCoordinator
 
-        decision = RepairCoordinator(run_dir).decision()
+        decision = RepairCoordinator(
+            run_dir,
+            run_result=result,
+            stage_results=stage_results,
+            attempts=attempts,
+        ).decision()
         print(
             f"[COORDINATOR][NEED_REPAIR] run_id={decision['run_id']} attempt={decision['attempt']}",
             file=sys.stderr,
@@ -159,7 +164,11 @@ def md5(path):
 
 
 def valid_yaml_route(route):
-    if not isinstance(route, dict) or set(route) != set(YAML_ROUTE_FIELDS):
+    if (
+        not isinstance(route, dict)
+        or not set(YAML_ROUTE_REQUIRED_FIELDS).issubset(route)
+        or not set(route).issubset(YAML_ROUTE_FIELDS)
+    ):
         return False
     status = route.get("yaml_match_status")
     if status not in {"matched", "unmatched", "ambiguous", "failed"}:
@@ -314,6 +323,17 @@ class Runner:
         self.artifacts = {}
         # 阶段一校验结果仅用于本次执行内的回执和兜底判断。
         self.stage_validation_results = {}
+        # Stage 1 把 DataFrame 所有权直接转交 Stage 2；CSV 只作为旁路产物。
+        self.standardized_frames = {}
+        # Stage 2～4 的业务主链使用同一批内存对象；落盘只保留 Stage 1 CSV 和最终 Excel。
+        self.integrated_transactions = None
+        self.integration_report = {}
+        self.daily_balances = None
+        self.balance_report = {}
+        self.tagged_transactions = None
+        self.tag_report = {}
+        self.delivery_dataset = {}
+        self.deliverable = {}
         # 最终交付验收在 stage_4_package 内完成，execute 复用结果，避免重复打开 XLSX。
         self.final_validation_result = None
         self.original_input_folder = os.path.abspath(args.folder)
@@ -704,13 +724,18 @@ class Runner:
                     seen.add(message)
                     warnings.append(message)
 
-        return {
+        summary = {
             "input_file_count": processed_file_count + skipped_file_count,
             "processed_file_count": processed_file_count,
             "qc_status": str(qc_results.get("status") or ""),
             "warning_count": len(warnings),
             "warning_summary": warnings[:5],
         }
+        if self.deliverable:
+            summary["deliverable_status"] = str(self.deliverable.get("status") or "")
+            if self.deliverable.get("message"):
+                summary["deliverable_message"] = str(self.deliverable["message"])
+        return summary
 
     def write_qc_results(self, data):
         self.qc_results = data
@@ -967,6 +992,22 @@ class Runner:
             paths.append(path)
         return sorted(paths)
 
+    def remember_standardized_frame(self, file_id, csv_path, frame=None):
+        """登记 Stage 2 将直接消费的同一 DataFrame 引用。"""
+        if frame is None:
+            import pandas as pd
+
+            # 仅 Repair、父 Run 复用和外部已标准化输入需要跨进程文件恢复。
+            frame = pd.read_csv(csv_path, dtype=str)
+        if not hasattr(self, "standardized_frames"):
+            self.standardized_frames = {}
+        self.standardized_frames[file_id] = {
+            "name": os.path.basename(csv_path),
+            "path": csv_path,
+            "frame": frame,
+        }
+        return frame
+
     def declared_stage_1_file_routes(self, manifest, manifest_path):
         stage_1 = self.declared_stage_1(manifest)
         legacy_routes = stage_1.get("file_routes") if isinstance(stage_1, dict) else None
@@ -1022,6 +1063,8 @@ class Runner:
                     "fingerprint_id": str(route.get("fingerprint_id") or ""),
                     "series_family": str(route.get("series_family") or ""),
                     "router_bank": str(route.get("router_bank") or "未识别"),
+                    "reader_id": str(route.get("reader_id") or ""),
+                    "account_type": str(route.get("account_type") or "未知"),
                     "yaml_match_status": str(route.get("yaml_match_status") or "unmatched"),
                 }
                 if not valid_yaml_route(route_summary):
@@ -1046,6 +1089,7 @@ class Runner:
                         "output": normalize_relpath(os.path.relpath(target_csv, self.run_dir)),
                         "route": route_summary,
                     }
+                    self.remember_standardized_frame(file_id, target_csv)
                     processed.append({
                         "input": source_path,
                         "csv": target_csv,
@@ -1196,6 +1240,8 @@ class Runner:
                         "fingerprint_id": str((route_source or {}).get("fingerprint_id") or ""),
                         "series_family": str((route_source or {}).get("series_family") or ""),
                         "router_bank": str((route_source or {}).get("router_bank") or "未识别"),
+                        "reader_id": str((route_source or {}).get("reader_id") or "ai_repair"),
+                        "account_type": str((route_source or {}).get("account_type") or "未知"),
                         "yaml_match_status": str((route_source or {}).get("yaml_match_status") or "unmatched"),
                     }
                     repaired.append(file_id)
@@ -1223,6 +1269,7 @@ class Runner:
                                 "sha256": str(repair_record.get("sha256") or ""),
                             },
                         }
+                        self.remember_standardized_frame(file_id, target_csv)
                         processed.append({
                             "input": path,
                             "csv": target_csv,
@@ -1319,6 +1366,7 @@ class Runner:
                             done_record["standardization_source"] = "ai_repair"
                             done_record["repair_artifact"] = dict(parent_record.get("repair_artifact") or {})
                         stage_results["files"][file_id] = done_record
+                        self.remember_standardized_frame(file_id, target_csv)
                         processed.append({"input": path, "csv": target_csv, "rows": row_count, "reused": True})
                         result_status = DONE
                     reuse_succeeded = True
@@ -1343,13 +1391,16 @@ class Runner:
 
             (added if decision == "ADDED" else rerun).append(file_id)
             try:
-                csv_path, _json_path, report = S.standardize_file(S.StandardizationContext(
+                standardization = S.standardize_file(S.StandardizationContext(
                     path=path,
                     out_dir=work,
                     account_type=self.args.account_type,
                     write_mapping=False,
                     route_rules=getattr(self, "routing_rules_snapshot", None),
+                    return_dataframe=True,
                 ))
+                csv_path, _json_path, report = standardization[:3]
+                standardized = standardization[3] if len(standardization) == 4 else None
                 row_count = int(report["标准化统计"]["交易笔数"])
                 V.validate_standardized_file(csv_path)
                 route_summary = yaml_route_summary(report)
@@ -1377,6 +1428,7 @@ class Runner:
                         "recognized_type": recognized_type(report),
                         "record_count": row_count,
                     }
+                    self.remember_standardized_frame(file_id, csv_path, standardized)
                     processed.append({
                         "input": path,
                         "csv": csv_path,
@@ -1510,99 +1562,139 @@ class Runner:
         )
 
     def stage_2_integrate(self):
-        import pandas as pd
         standardized_inputs = self.standardized_paths_from_results()
+        memory_inputs = list(getattr(self, "standardized_frames", {}).values())
+        # 所有权先从 Runner 移出；Stage 2 的 load_inputs 会在 concat 后继续清空列表。
+        if hasattr(self, "standardized_frames"):
+            self.standardized_frames.clear()
+        memory_paths = {os.path.abspath(str(item["path"])) for item in memory_inputs}
+        standardized_inputs = [
+            path for path in standardized_inputs
+            if os.path.abspath(path) not in memory_paths
+        ]
         if not standardized_inputs:
-            # 兼容历史 run；新 run 必须由 stage_1_results.json 提供 DONE 文件。
-            standardized_inputs = [self.work_dir()]
-        int_csv, int_json, report = I.integrate_context(IntegrationContext.create(
+            # 没有内存输入时才兼容历史 run；正常新 Run 不再回读 Stage 1 CSV。
+            standardized_inputs = [] if memory_inputs else [self.work_dir()]
+        integrated, report = I.integrate_context_memory(IntegrationContext.create(
             self.args.client,
             standardized_inputs,
             out_dir=self.work_dir(),
             file_routes=self.load_stage_1_routes(),
+            memory_inputs=memory_inputs,
         ))
         overview = report["客户整合概览"]
-        integrated_rows = len(pd.read_csv(int_csv, dtype=str))
+        integrated_rows = len(integrated)
         if integrated_rows != int(overview["整合交易数"]):
             raise RuntimeError(
-                f"阶段二整合交易数不一致：报告 {overview['整合交易数']}，CSV {integrated_rows}"
+                f"阶段二整合交易数不一致：报告 {overview['整合交易数']}，内存结果 {integrated_rows}"
             )
+        self.integrated_transactions = integrated
+        self.integration_report = report
         return StageResult("stage_2_integrate", {
-            "integrated_csv": int_csv,
-            "integrated_report": int_json,
             "integrated_rows": integrated_rows,
             "accounts": overview["整合账户数"],
         })
 
     def stage_2b_portfolio_balance(self):
-        int_csv = self.latest_artifact("*__整合流水.csv")
-        daily_csv, report_json, report = PB.run(int_csv, out_dir=self.work_dir())
+        if self.integrated_transactions is None:
+            raise RuntimeError("阶段二内存结果不存在")
+        daily, report = PB.analyze(self.integrated_transactions)
+        self.daily_balances = daily
+        self.balance_report = report
         return StageResult("stage_2b_portfolio_balance", {
-            "portfolio_csv": daily_csv if os.path.isfile(daily_csv) else "",
-            "portfolio_report": report_json,
+            "daily_rows": len(daily),
             "accounts": report["数据范围"]["账户数"],
             "warning_accounts": report["账户余额校验"]["预警账户数"],
         })
 
     def stage_3_tag(self):
-        import pandas as pd
-        int_csv = self.latest_artifact("*__整合流水.csv")
+        if self.integrated_transactions is None:
+            raise RuntimeError("阶段二内存结果不存在")
         rules = os.path.join(self.skill_dir, "assets", "tag_rules.csv")
-        tag_csv, tag_json, report = T.tag(int_csv, rules, out_dir=self.work_dir())
+        tagged, report = T.tag_dataframe(self.integrated_transactions, rules)
         summary = report["标签梳理概览"]
-        integrated_rows = len(pd.read_csv(int_csv, dtype=str))
-        tagged = pd.read_csv(tag_csv, dtype=str)
+        integrated_rows = len(self.integrated_transactions)
         if len(tagged) != integrated_rows:
             raise RuntimeError(f"阶段三打标前后交易数不一致：{integrated_rows} != {len(tagged)}")
         required_tags = {"收支方向", "一级标签", "二级标签", "三级标签", "标签来源"}
         missing = sorted(required_tags - set(tagged.columns))
         if missing:
             raise RuntimeError(f"阶段三打标产物缺少必需字段：{', '.join(missing)}")
+        self.tagged_transactions = tagged
+        self.tag_report = report
         return StageResult("stage_3_tag", {
-            "tagged_csv": tag_csv,
-            "tag_report": tag_json,
             "tagged_rows": len(tagged),
             "rule_hit_rate": summary["规则命中率"],
         })
 
     def stage_4_package(self):
-        import pandas as pd
-        int_json = self.latest_artifact("*__整合报告.json")
-        tag_csv = self.latest_artifact("*__打标流水.csv")
-        tag_json = self.latest_artifact("*__标签报告.json")
-        balance_json = self.latest_artifact("*__余额校验.json")
-        daily_hits = sorted(glob.glob(os.path.join(self.work_dir(), "*__组合日余额.csv")))
-        with open(int_json, encoding="utf-8") as f:
-            irep = json.load(f)
-        with open(tag_json, encoding="utf-8") as f:
-            srep = json.load(f)
-        with open(balance_json, encoding="utf-8") as f:
-            pbrep = json.load(f)
-        tagged = pd.read_csv(tag_csv, dtype=str)
-        daily = pd.read_csv(daily_hits[-1]) if daily_hits else pd.DataFrame()
+        if self.tagged_transactions is None or self.daily_balances is None:
+            raise RuntimeError("阶段三内存结果不存在")
+        tagged = self.tagged_transactions
+        daily = self.daily_balances
         skipped = [
             (row.get("name", ""), row.get("reason", ""))
             for row in self.pipeline_state.get("skipped_inputs", [])
         ]
         qc_summary = self.load_qc_results()
         Q.update_status(qc_summary, final=True)
-        P.finalize_deliverable(
-            self.args.client,
-            tagged,
-            daily,
-            irep,
-            srep,
-            pbrep,
-            self.out_dir,
-            skipped,
-            qc_results=qc_summary,
-        )
-        self.final_validation_result = V.validate_final(
-            self.out_dir,
-            self.args.client,
-            tagged_rows=len(tagged),
-            require_daily_balance=bool(daily_hits),
-        )
+        try:
+            out_path, dataset = P.finalize_deliverable(
+                self.args.client,
+                tagged,
+                daily,
+                self.integration_report,
+                self.tag_report,
+                self.balance_report,
+                self.out_dir,
+                skipped,
+                qc_results=qc_summary,
+            )
+        except P.DeliverableWriteError as exc:
+            self.delivery_dataset = exc.dataset
+            self.deliverable = {
+                "status": ERROR,
+                "path": "",
+                "sha256": "",
+                "message": str(exc),
+            }
+            self.final_validation_result = {
+                "status": ERROR,
+                "message": str(exc),
+            }
+            return StageResult("stage_4_package", self.final_validation_result)
+
+        self.delivery_dataset = dataset
+        relative_path = self.run_relative_ref(out_path)
+        digest = sha256(out_path)
+        try:
+            validation = V.validate_final(
+                self.out_dir,
+                self.args.client,
+                tagged_rows=len(tagged),
+                require_daily_balance=not daily.empty,
+            )
+        except Exception as exc:
+            self.deliverable = {
+                "status": ERROR,
+                "path": relative_path,
+                "sha256": digest,
+                "message": f"交付物验收失败：{exc}",
+            }
+            self.final_validation_result = {
+                "status": ERROR,
+                "deliverable": out_path,
+                "message": str(exc),
+            }
+            return StageResult("stage_4_package", self.final_validation_result)
+
+        self.deliverable = {
+            "status": DONE,
+            "path": relative_path,
+            "sha256": digest,
+            "message": "",
+        }
+        self.final_validation_result = {"status": DONE, **validation}
         return StageResult("stage_4_package", self.final_validation_result)
 
     def execute_stage_script(self, stage_id):
@@ -1910,6 +2002,11 @@ class Runner:
             artifacts=artifacts,
             run_result=run_result,
             error=str(error) if error is not None else None,
+            integration_report=dict(self.integration_report),
+            balance_report=dict(self.balance_report),
+            tag_report=dict(self.tag_report),
+            dataset=dict(self.delivery_dataset),
+            deliverable=dict(self.deliverable),
         )
 
     def execute(self):
@@ -1918,19 +2015,28 @@ class Runner:
             final = self.final_validation_result
             if final is None:
                 raise RuntimeError("最终交付物未执行验收")
-            self.receipt(
-                "validate_final",
-                "ok",
-                final,
-            )
-            self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{final['deliverable']}")
-            deliverable_ref = self.run_relative_ref(final["deliverable"])
+            delivery_done = self.deliverable.get("status") == DONE
+            receipt_status = "ok" if delivery_done else "error"
+            self.receipt("validate_final", receipt_status, final)
+            artifact_refs = ()
+            if delivery_done:
+                deliverable_ref = str(self.deliverable.get("path") or "")
+                artifact_refs = (deliverable_ref,) if deliverable_ref else ()
+                self.emit("INFO", "PIPELINE_SUCCESS", f"正式交付物已通过核验：{deliverable_ref}")
+                message = "全部 Pipeline、QC 和 Validator 已通过"
+            else:
+                self.emit(
+                    "WARNING",
+                    "DELIVERABLE_SIDE_EFFECT_FAILED",
+                    str(self.deliverable.get("message") or "旁路交付物生成失败"),
+                )
+                message = "Pipeline 计算完成，旁路交付物生成或验收失败"
             self.write_run_result(
                 status=DONE,
                 next_action=R.DELIVER,
-                artifact_refs=(deliverable_ref,),
+                artifact_refs=artifact_refs,
                 context_ref=RS.PIPELINE_RESULT_FILENAME,
-                message="全部 Pipeline、QC 和 Validator 已通过",
+                message=message,
                 summary=self.delivery_summary(),
             )
             self.pipeline_state["error"] = None

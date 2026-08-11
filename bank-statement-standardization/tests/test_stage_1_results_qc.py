@@ -103,7 +103,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             public = runner_runtime.public_result(run_result, runner.run_dir)
             self.assertEqual(
                 public["request"]["input_refs"],
-                ["stage_1_results.json", "input/失败.pdf"],
+                ["input/失败.pdf"],
             )
 
     def test_child_run_reuses_same_md5_same_name_done_file(self):

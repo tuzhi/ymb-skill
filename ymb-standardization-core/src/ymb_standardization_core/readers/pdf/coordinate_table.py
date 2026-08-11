@@ -5,7 +5,9 @@ import re
 from ymb_standardization_core.readers.registry import FunctionPdfReader
 from ymb_standardization_core.readers.pdf.common import (
     _clean_pdf_cell,
+    close_pdf_page,
     drop_word_filter_char,
+    iter_pdf_pages,
 )
 from ymb_standardization_core.transforms import apply_reader_options, repeated_header_bottom
 
@@ -177,39 +179,42 @@ def _coordinate_metadata_preamble(pdf, route_info):
     if not pdf.pages:
         return ""
     page = pdf.pages[0]
-    words = _coordinate_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
-    header_top, _headers, _starts, _spans = _coordinate_header(
-        words,
-        (route_info or {}).get("reader_header_candidates") or [],
-    )
-    if header_top is None:
-        return ""
-    groups = {
-        top: sorted(group, key=lambda item: float(item.get("x0", 0)))
-        for top, group in sorted(_group_words_by_top(words).items())
-        if top < header_top
-    }
-    tops = sorted(groups)
-    output = []
-    for index, top in enumerate(tops[:-1]):
-        labels = _coordinate_label_tokens(groups[top])
-        if not labels:
-            continue
-        next_group = groups[tops[index + 1]]
-        if tops[index + 1] - top > 18:
-            continue
-        label_bounds = [x0 for _label, x0 in labels] + [page.width + 10]
-        for label_index, (label, _x0) in enumerate(labels):
-            left = label_bounds[label_index] - 5
-            right = label_bounds[label_index + 1] - 5
-            value = " ".join(
-                str(word.get("text") or "").strip()
-                for word in next_group
-                if left <= float(word.get("x0", 0)) < right
-            ).strip()
-            if value:
-                output.append(f"{label}: {value}")
-    return "\n".join(output)
+    try:
+        words = _coordinate_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
+        header_top, _headers, _starts, _spans = _coordinate_header(
+            words,
+            (route_info or {}).get("reader_header_candidates") or [],
+        )
+        if header_top is None:
+            return ""
+        groups = {
+            top: sorted(group, key=lambda item: float(item.get("x0", 0)))
+            for top, group in sorted(_group_words_by_top(words).items())
+            if top < header_top
+        }
+        tops = sorted(groups)
+        output = []
+        for index, top in enumerate(tops[:-1]):
+            labels = _coordinate_label_tokens(groups[top])
+            if not labels:
+                continue
+            next_group = groups[tops[index + 1]]
+            if tops[index + 1] - top > 18:
+                continue
+            label_bounds = [x0 for _label, x0 in labels] + [page.width + 10]
+            for label_index, (label, _x0) in enumerate(labels):
+                left = label_bounds[label_index] - 5
+                right = label_bounds[label_index + 1] - 5
+                value = " ".join(
+                    str(word.get("text") or "").strip()
+                    for word in next_group
+                    if left <= float(word.get("x0", 0)) < right
+                ).strip()
+                if value:
+                    output.append(f"{label}: {value}")
+        return "\n".join(output)
+    finally:
+        close_pdf_page(page)
 
 
 def _coordinate_stop_top(words, word_filters=None):
@@ -329,7 +334,7 @@ def _extract_pdf_vertical_boundary_table_rows(pdf, candidate_headers, row_anchor
     all_rows = []
     output_headers = None
     row_anchor = row_anchor or {}
-    for page in pdf.pages:
+    for page in iter_pdf_pages(pdf.pages):
         words = _coordinate_page_words(page, word_filters=word_filters)
         first_anchor_top = min(
             (
@@ -419,7 +424,7 @@ def _extract_pdf_coordinate_table_rows(
     output_starts = None
     output_spans = None
     row_anchor = row_anchor or {}
-    for page in pdf.pages:
+    for page in iter_pdf_pages(pdf.pages):
         words = _coordinate_page_words(page, word_filters=word_filters)
         header_top, page_headers, page_starts, page_spans = _coordinate_header(
             words,
@@ -703,13 +708,22 @@ def _is_text_separator_line(line):
     return len(text) >= 8 and len(set(text)) == 1 and text[0] in {"—", "-", "_", "─"}
 
 
+def _starts_with_text_separator_table(pdf, probe_pages=3):
+    """只探测开头少量页面，避免已成功的 coordinate 结果触发全文重复扫描。"""
+    for page in iter_pdf_pages(pdf.pages[:probe_pages]):
+        text = page.extract_text() or ""
+        if any(_is_text_separator_line(line) for line in text.splitlines()):
+            return True
+    return False
+
+
 def _extract_pdf_text_separator_table_rows(pdf):
     """Read text-layer tables whose separators are text glyphs, not PDF line objects."""
     rows = [TEXT_SEPARATOR_TABLE_HEADER]
     import re
 
     all_lines = []
-    for page in pdf.pages:
+    for page in iter_pdf_pages(pdf.pages):
         text = page.extract_text() or ""
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not any(_is_text_separator_line(line) for line in lines):
@@ -752,7 +766,9 @@ def read(pdf, options):
             word_filters=options.get("word_filters") or {},
             repeated_header=options.get("repeated_header") or {},
         )
-    separator_rows = _extract_pdf_text_separator_table_rows(pdf)
+    separator_rows = []
+    if not rows or _starts_with_text_separator_table(pdf):
+        separator_rows = _extract_pdf_text_separator_table_rows(pdf)
     if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):
         rows = separator_rows
     return apply_reader_options(rows, options)

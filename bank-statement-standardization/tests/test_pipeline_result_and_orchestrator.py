@@ -8,10 +8,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import pandas as pd
+
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 ORCHESTRATOR_PATH = SKILL_ROOT / "scripts" / "orchestrator.py"
-spec = importlib.util.spec_from_file_location("orchestrator_single_manifest", ORCHESTRATOR_PATH)
+spec = importlib.util.spec_from_file_location("orchestrator_pipeline_result", ORCHESTRATOR_PATH)
 orchestrator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orchestrator)
 
@@ -41,7 +43,7 @@ def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_r
     )
 
 
-class OrchestratorSingleManifestTest(unittest.TestCase):
+class PipelineResultAndOrchestratorTest(unittest.TestCase):
     def test_cli_uses_runner_memory_result_without_reading_run_result_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -167,7 +169,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     self.assertNotIn("ai_fallback_used", stage)
                     self.assertNotIn("ai_fallback_artifacts", stage)
 
-    def test_parent_context_reads_client_from_single_manifest(self):
+    def test_parent_context_reads_client_from_pipeline_result(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_root = Path(tmp) / "runs"
             parent = run_root / "parent-run"
@@ -249,45 +251,58 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                     )
                 )
 
-    def test_stage_1_failure_returns_need_repair_from_stage_results(self):
+    def test_stage_1_failure_execution_summary_drives_repair_without_stage_file_readback(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
-
             runner = runner_runtime.Runner(
-                runner_args(root / "runs-stage-1", source, client="斑马商业")
+                runner_args(root / "runs-stage-1-summary", source, client="斑马商业")
             )
             stage_id = "stage_1_standardize"
             snapshot = Path(runner.input_dir) / "流水.csv"
             file_id = "md5:" + runner_runtime.md5(str(snapshot))
-            runner.write_stage_1_results({"files": {file_id: {
+            file_results = {"files": {file_id: {
                 "name": "流水.csv",
                 "relative_path": "流水.csv",
                 "status": "ERROR",
                 "reason_code": "MAPPING_FAILED",
                 "message": "阶段一测试失败",
-            }}})
-            runner.handle_stage_failure(
-                stage_id,
-                runner.stages[stage_id],
-                RuntimeError("阶段一测试失败"),
-            )
+            }}}
 
-            pipeline_result = stored_pipeline(runner)
-            self.assertEqual(pipeline_result["stages"][stage_id]["status"], "ERROR")
-            self.assertNotIn("ai_fallback_used", pipeline_result["stages"][stage_id])
+            def fail_stage_1():
+                runner.write_stage_1_results(file_results)
+                error = RuntimeError("阶段一测试失败")
+                runner.handle_stage_failure(stage_id, runner.stages[stage_id], error)
+                raise error
+
+            runner.run_pipeline_stages = fail_stage_1
+            execution = runner.execute()
+            summary = execution.to_summary_dict()
+
+            self.assertEqual(execution.exit_code, 1)
+            self.assertEqual(summary["next_action"], "NEED_REPAIR")
+            self.assertEqual(summary["stages"][stage_id]["status"], "ERROR")
+            self.assertNotIn("ai_fallback_used", summary["stages"][stage_id])
+            self.assertEqual(summary["file_results"], file_results)
+            self.assertNotIn("action", summary)
+            self.assertEqual(summary["context_ref"], "stage_1_results.json")
+            self.assertNotIn("dataset", summary)
             self.assertFalse((Path(runner.run_dir) / "fallback").exists())
-            run_result = result_store.run_result_from_pipeline(pipeline_result)
-            self.assertNotIn("action", run_result)
-            self.assertEqual(run_result["next_action"], "NEED_REPAIR")
-            self.assertEqual(run_result["context_ref"], "stage_1_results.json")
-            public = runner_runtime.public_result(run_result, runner.run_dir)
+            json.dumps(summary, ensure_ascii=False)
+
+            Path(runner.stage_1_results_path).unlink()
+            public = runner_runtime.public_result(
+                summary,
+                runner.run_dir,
+                stage_results=execution.file_results,
+                attempts=runner.pipeline_state.get("attempts") or {},
+            )
             self.assertEqual(public["status"], "NEED_REPAIR")
             self.assertEqual(public["role"], "repair")
-            self.assertIn("request", public)
             self.assertEqual(public["action"]["operation"], "submit")
+            self.assertEqual(public["request"]["failed_files"][0]["file_id"], file_id)
 
     def test_password_failure_requests_user_without_ai_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -426,6 +441,8 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                         "fingerprint_id": "",
                         "series_family": "",
                         "router_bank": "未识别",
+                        "reader_id": "ai_repair",
+                        "account_type": "未知",
                         "yaml_match_status": "unmatched",
                     }
                 })
@@ -600,7 +617,7 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
                 1.235,
             )
 
-    def test_execute_returns_structured_result_on_unrouted_failure(self):
+    def test_execute_failure_result_can_be_summarized_and_serialized(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
@@ -609,11 +626,14 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             runner = runner_runtime.Runner(
                 runner_args(root / "runs", source, client="斑马商业")
             )
-            runner.run_pipeline_stages = Mock(
-                side_effect=RuntimeError("未路由测试失败")
+            runner.stages["stage_1_standardize"]["status"] = "DONE"
+            runner.write_pipeline_result()
+            runner.execute_stage_script = Mock(
+                side_effect=RuntimeError("阶段二测试失败")
             )
 
             execution = runner.execute()
+            summary = execution.to_summary_dict()
 
             self.assertIsInstance(
                 execution,
@@ -621,8 +641,15 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             )
             self.assertEqual(execution.exit_code, 1)
             self.assertEqual(execution.status, "ERROR")
-            self.assertEqual(execution.error, "未路由测试失败")
+            self.assertEqual(execution.error, "阶段二测试失败")
             self.assertEqual(execution.run_result["next_action"], "REPORT_ERROR")
+            self.assertEqual(summary["next_action"], "REPORT_ERROR")
+            self.assertEqual(summary["stages"]["stage_1_standardize"]["status"], "DONE")
+            self.assertEqual(summary["stages"]["stage_2_integrate"]["status"], "ERROR")
+            self.assertEqual(summary["error"], "阶段二测试失败")
+            self.assertNotIn("dataset", summary)
+            self.assertNotIn("integration_report", summary)
+            json.dumps(summary, ensure_ascii=False)
 
     def test_execution_result_uses_runner_memory_for_stage_and_qc_results(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -680,97 +707,23 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             self.assertNotIn("pipeline_result.json", artifact_ids)
             self.assertNotIn("input/流水.csv", artifact_ids)
 
-    def test_execute_reuses_final_delivery_validation_result(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "input"
-            source.mkdir()
-            (source / "流水.csv").write_text("raw", encoding="utf-8")
-            runner = runner_runtime.Runner(
-                runner_args(root / "runs", source, client="客户")
-            )
-            runner.final_validation_result = {
-                "deliverable": str(Path(runner.out_dir) / "客户_已清洗_待分析.xlsx"),
-                "deliverable_rows": 1,
-                "sheets": ["整合打标流水"],
-            }
-            Path(runner.final_validation_result["deliverable"]).write_bytes(b"xlsx")
-            runner.warning_events = []
-            runner.write_stage_1_results({
-                "files": {
-                    "md5:a": {"status": "DONE"},
-                    "md5:b": {"status": "DONE"},
-                }
-            })
-            runner.write_qc_results({
-                "status": "PASS_WITH_WARNINGS",
-                "files": {},
-                "customer": {
-                    "customer.coverage_two_years": {
-                        "level": "SOFT",
-                        "passed": False,
-                        "message": "覆盖不足两年",
-                    }
-                },
-            })
-            runner.run_pipeline_stages = Mock()
-            runner.receipt = Mock()
-            runner.emit = Mock()
-
-            with patch.object(runner_runtime.V, "validate_final") as validate_final:
-                execution = runner.execute()
-
-            self.assertIsInstance(
-                execution,
-                PipelineExecutionResult,
-            )
-            self.assertEqual(execution.exit_code, 0)
-            self.assertEqual(execution.status, "DONE")
-            self.assertEqual(execution.run_result["next_action"], "DELIVER")
-            validate_final.assert_not_called()
-            details = runner.receipt.call_args.args[2]
-            self.assertEqual(details, runner.final_validation_result)
-            run_result = stored_run_result(runner)
-            self.assertEqual(run_result["next_action"], "DELIVER")
-            self.assertEqual(run_result["summary"], {
-                "input_file_count": 2,
-                "processed_file_count": 2,
-                "qc_status": "PASS_WITH_WARNINGS",
-                "warning_count": 1,
-                "warning_summary": ["覆盖不足两年"],
-            })
-            pipeline_result = stored_pipeline(runner)
-            self.assertEqual(
-                pipeline_result["deliverables"],
-                ["artifacts/客户_已清洗_待分析.xlsx"],
-            )
-            self.assertNotIn("artifacts", pipeline_result)
-            self.assertNotIn("run_result", pipeline_result)
-            self.assertFalse((Path(tmp) / "fallback").exists())
-
     def test_stage_4_runs_final_delivery_validation_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            work = root / "work"
             out = root / "artifacts"
-            work.mkdir()
             out.mkdir()
-            (work / "客户__整合流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
-            (work / "客户__整合报告.json").write_text("{}", encoding="utf-8")
-            (work / "客户__打标流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
-            (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
-            (work / "客户__组合日余额.csv").write_text(
-                "日期,账户,日终余额\n2026-01-01,A-1,1.00\n",
-                encoding="utf-8",
-            )
-            (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
             runner.pipeline_state = {"skipped_inputs": []}
             runner.final_validation_result = None
-            runner.work_dir = lambda: str(work)
+            runner.run_dir = str(root)
+            runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
+            runner.daily_balances = pd.DataFrame({"日期": ["2026-01-01"]})
+            runner.integration_report = {}
+            runner.tag_report = {}
+            runner.balance_report = {}
             final = {
                 "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
                 "deliverable_rows": 1,
@@ -778,34 +731,39 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             }
 
             with (
-                patch.object(runner_runtime.P, "finalize_deliverable", return_value=final["deliverable"]),
+                patch.object(
+                    runner_runtime.P,
+                    "finalize_deliverable",
+                    return_value=(final["deliverable"], {}),
+                ),
+                patch.object(runner, "run_relative_ref", return_value="artifacts/客户_已清洗_待分析.xlsx"),
+                patch.object(runner_runtime, "sha256", return_value="sha256"),
                 patch.object(runner_runtime.V, "validate_final", return_value=final) as validate_final,
             ):
                 result = runner.stage_4_package()
 
             validate_final.assert_called_once_with(
                 str(out), "客户", tagged_rows=1, require_daily_balance=True)
-            self.assertEqual(result, final)
-            self.assertEqual(runner.final_validation_result, final)
+            self.assertEqual(result, {"status": "DONE", **final})
+            self.assertEqual(runner.final_validation_result, {"status": "DONE", **final})
 
-    def test_stage_4_allows_missing_optional_daily_balance_csv(self):
+    def test_stage_4_allows_empty_daily_balance_dataframe(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            work = root / "work"
             out = root / "artifacts"
-            work.mkdir()
             out.mkdir()
-            (work / "客户__整合报告.json").write_text("{}", encoding="utf-8")
-            (work / "客户__打标流水.csv").write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
-            (work / "客户__标签报告.json").write_text("{}", encoding="utf-8")
-            (work / "客户__余额校验.json").write_text("{}", encoding="utf-8")
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
             runner.pipeline_state = {"skipped_inputs": []}
             runner.final_validation_result = None
-            runner.work_dir = lambda: str(work)
+            runner.run_dir = str(root)
+            runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
+            runner.daily_balances = pd.DataFrame()
+            runner.integration_report = {}
+            runner.tag_report = {}
+            runner.balance_report = {}
             final = {
                 "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
                 "deliverable_rows": 1,
@@ -813,7 +771,13 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             }
 
             with (
-                patch.object(runner_runtime.P, "finalize_deliverable") as finalize,
+                patch.object(
+                    runner_runtime.P,
+                    "finalize_deliverable",
+                    return_value=(str(out / "客户_已清洗_待分析.xlsx"), {}),
+                ) as finalize,
+                patch.object(runner, "run_relative_ref", return_value="artifacts/客户_已清洗_待分析.xlsx"),
+                patch.object(runner_runtime, "sha256", return_value="sha256"),
                 patch.object(runner_runtime.V, "validate_final", return_value=final) as validate_final,
             ):
                 runner.stage_4_package()
@@ -823,24 +787,46 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
             validate_final.assert_called_once_with(
                 str(out), "客户", tagged_rows=1, require_daily_balance=False)
 
-    def test_stage_2_checks_report_and_csv_row_count_inside_program(self):
+    def test_stage_4_keeps_dataset_when_excel_side_effect_fails(self):
+        runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
+        runner.args = SimpleNamespace(client="客户")
+        runner.out_dir = "/tmp/artifacts"
+        runner.pipeline_state = {"skipped_inputs": []}
+        runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
+        runner.daily_balances = pd.DataFrame()
+        runner.integration_report = {}
+        runner.tag_report = {}
+        runner.balance_report = {}
+        runner.load_qc_results = lambda: {"status": "PASS", "files": {}, "customer": {}}
+        dataset = {"transactions": runner.tagged_transactions}
+        failure = runner_runtime.P.DeliverableWriteError(
+            "/tmp/artifacts/客户_已清洗_待分析.xlsx",
+            dataset,
+            OSError("disk full"),
+        )
+
+        with patch.object(runner_runtime.P, "finalize_deliverable", side_effect=failure):
+            result = runner.stage_4_package()
+
+        self.assertIs(runner.delivery_dataset, dataset)
+        self.assertEqual(runner.deliverable["status"], "ERROR")
+        self.assertEqual(result["status"], "ERROR")
+
+    def test_stage_2_checks_report_and_memory_row_count_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
-            integrated = work / "客户__整合流水.csv"
-            integrated.write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
-            report_path = work / "客户__整合报告.json"
-            report_path.write_text("{}", encoding="utf-8")
             report = {"客户整合概览": {"整合交易数": 2, "整合账户数": 1}}
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.work_dir = lambda: str(work)
             runner.load_stage_1_routes = lambda: {}
+            runner.standardized_paths_from_results = lambda: [str(work / "input__standardized.csv")]
 
             with patch.object(
                 runner_runtime.I,
-                "integrate_context",
-                return_value=(str(integrated), str(report_path), report),
+                "integrate_context_memory",
+                return_value=(pd.DataFrame({"交易唯一编号": ["TX-1"]}), report),
             ):
                 with self.assertRaisesRegex(RuntimeError, "阶段二整合交易数不一致"):
                     runner.stage_2_integrate()
@@ -848,22 +834,17 @@ class OrchestratorSingleManifestTest(unittest.TestCase):
     def test_stage_3_checks_input_output_row_count_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
-            integrated = work / "客户__整合流水.csv"
-            integrated.write_text("交易唯一编号\nTX-1\nTX-2\n", encoding="utf-8")
-            tagged = work / "客户__打标流水.csv"
-            tagged.write_text("交易唯一编号\nTX-1\n", encoding="utf-8")
-            report_path = work / "客户__标签报告.json"
-            report_path.write_text("{}", encoding="utf-8")
             report = {"标签梳理概览": {"交易总数": 2, "规则命中率": 1.0}}
 
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.skill_dir = str(SKILL_ROOT)
             runner.work_dir = lambda: str(work)
+            runner.integrated_transactions = pd.DataFrame({"交易唯一编号": ["TX-1", "TX-2"]})
 
             with patch.object(
                 runner_runtime.T,
-                "tag",
-                return_value=(str(tagged), str(report_path), report),
+                "tag_dataframe",
+                return_value=(pd.DataFrame({"交易唯一编号": ["TX-1"]}), report),
             ):
                 with self.assertRaisesRegex(RuntimeError, "阶段三打标前后交易数不一致"):
                     runner.stage_3_tag()

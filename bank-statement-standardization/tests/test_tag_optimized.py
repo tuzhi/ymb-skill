@@ -19,7 +19,41 @@ from runtime.tag import (
     match,
 )
 
+
+def stage3_frame(rows):
+    """按 Stage 2→3 契约构造测试 DataFrame。"""
+    frame = pd.DataFrame(rows)
+    for column in ("收入金额", "支出金额", "交易金额", "账户余额", "来源行号"):
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame
+
+
 class TagOptimizedTest(unittest.TestCase):
+    def test_tag_dataframe_adds_tags_to_the_same_canonical_frame(self):
+        frame = pd.DataFrame([{
+            "交易唯一编号": "TX-1",
+            "交易时间": pd.Timestamp("2026-01-01 10:00:00"),
+            "本方账户": "A-1",
+            "对手名称": "客户回款",
+            "对手账户": "B-1",
+            "收入金额": 100.0,
+            "支出金额": 0.0,
+            "交易金额": 100.0,
+            "账户余额": 100.0,
+            "银行备注": "销售回款",
+            "账户方附言": "",
+            "来源文件名": "流水.xlsx",
+            "来源行号": 1,
+        }])
+
+        tagged, _report = tag_module.tag_dataframe(frame, ROOT / "assets" / "tag_rules.csv")
+
+        self.assertIs(tagged, frame)
+        self.assertIn("一级标签", frame.columns)
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(frame["交易时间"].dtype))
+        self.assertTrue(pd.api.types.is_numeric_dtype(frame["收入金额"].dtype))
+
     def test_direction_series_matches_row_direction_logic(self):
         df = pd.DataFrame(
             [
@@ -173,7 +207,7 @@ class TagOptimizedTest(unittest.TestCase):
             self.assertEqual(hit_field, "银行备注")
 
     def test_alipay_cancel_pair_zeroes_analysis_amounts_and_tags_refund(self):
-        df = pd.DataFrame([
+        df = stage3_frame([
             {
                 "交易唯一编号": "TX-original",
                 "本方账户": "alipay-account",
@@ -215,7 +249,7 @@ class TagOptimizedTest(unittest.TestCase):
         summary = _apply_alipay_order_reversals(df)
 
         self.assertEqual(summary, {"配对组数": 1, "冲正原始交易数": 1, "冲正记录数": 1})
-        self.assertEqual(df.loc[0, "支出金额"], "8200.00")
+        self.assertEqual(df.loc[0, "支出金额"], 8200.0)
         self.assertEqual(df.loc[0, "分析支出金额"], 0)
         self.assertEqual(df.loc[1, "分析支出金额"], 0)
         self.assertEqual(df.loc[0, "交易状态"], "被取消")
@@ -227,7 +261,7 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "标签来源"], "支付宝订单配对")
 
     def test_alipay_cancel_pair_allows_multiple_cancel_rows_for_one_order(self):
-        df = pd.DataFrame([
+        df = stage3_frame([
             {
                 "交易唯一编号": "TX-original",
                 "本方账户": "alipay-account",
@@ -296,7 +330,7 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[2, "三级标签"], "退款支出")
 
     def test_alipay_cancel_pair_only_cancels_transaction_order_related_rows(self):
-        df = pd.DataFrame([
+        df = stage3_frame([
             {
                 "交易唯一编号": "TX-original-1",
                 "本方账户": "alipay-account",
@@ -365,7 +399,7 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[2, "三级标签"], "退款支出")
 
     def test_alipay_cancel_pair_rejects_unrelated_interest_pseudo_order(self):
-        df = pd.DataFrame([
+        df = stage3_frame([
             {
                 "交易唯一编号": "TX-material", "本方账户": "alipay-account",
                 "来源文件名": "支付宝交易明细.pdf", "银行备注": "材料付2万",
@@ -409,7 +443,7 @@ class TagOptimizedTest(unittest.TestCase):
             "命中关键词": "",
             "命中字段": "",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out-1", "来源行号": "90", "银行备注": "跨行转出",
              "账户方附言": "跨行转出", "收入金额": "", "支出金额": "20000", "账户余额": "647932.08"},
             {**common, "交易唯一编号": "TX-reversal-1", "来源行号": "91", "银行备注": "冲正",
@@ -431,7 +465,7 @@ class TagOptimizedTest(unittest.TestCase):
         self.assertEqual(df.loc[1, "标签来源"], "银行冲正配对")
 
     def test_bank_reversal_does_not_search_past_another_source_row(self):
-        df = pd.DataFrame([
+        df = stage3_frame([
             {
                 "交易唯一编号": "TX-out", "本方账户": "A", "来源文件名": "银行流水.pdf",
                 "来源行号": "10", "交易时间": "2025-01-01", "对手名称": "张三", "对手账户": "12345678",
@@ -460,7 +494,7 @@ class TagOptimizedTest(unittest.TestCase):
             "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他支出",
             "账户方附言": "",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "39",
              "对手账户": "6251939201318881", "银行备注": "跨行汇款",
              "收入金额": "", "支出金额": "3961", "账户余额": "6682.62"},
@@ -482,7 +516,7 @@ class TagOptimizedTest(unittest.TestCase):
             "对手账户": "", "一级标签": "其他类", "二级标签": "其他",
             "三级标签": "其他支出",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "550",
              "银行备注": "转支", "账户方附言": "", "收入金额": "",
              "支出金额": "20000", "账户余额": "898.30"},
@@ -507,7 +541,7 @@ class TagOptimizedTest(unittest.TestCase):
             "二级标签": "其他",
             "三级标签": "其他支出",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "90", "银行备注": "跨行转出",
              "账户方附言": "跨行转出", "收入金额": "", "支出金额": "20000", "账户余额": "647932.08"},
             {**common, "交易唯一编号": "TX-write-off", "来源行号": "91", "银行备注": "抹账",
@@ -531,7 +565,7 @@ class TagOptimizedTest(unittest.TestCase):
             "对手账户": "791917857900055", "一级标签": "其他类",
             "二级标签": "其他", "三级标签": "其他支出",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-write-off", "来源行号": "33",
              "银行备注": "超级网银往贷抹账", "账户方附言": "采购款",
              "收入金额": "18720", "支出金额": "", "账户余额": "128000"},
@@ -554,7 +588,7 @@ class TagOptimizedTest(unittest.TestCase):
             "交易时间": "2025-06-04 09:50:43", "一级标签": "其他类",
             "二级标签": "其他", "三级标签": "其他支出", "账户方附言": "",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-original", "来源行号": "10",
              "对手名称": "熊益文", "对手账户": "6228481568727174579", "银行备注": "转帐",
              "收入金额": "", "支出金额": "10710", "账户余额": "1283528"},
@@ -576,7 +610,7 @@ class TagOptimizedTest(unittest.TestCase):
             "交易时间": "2025-01-01 10:20:30", "对手名称": "张三", "对手账户": "B200",
             "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "10", "银行备注": "转账",
              "账户方附言": "", "收入金额": "", "支出金额": "2000", "账户余额": "178404.59"},
             {**common, "交易唯一编号": "TX-back", "来源行号": "11", "银行备注": "转账",
@@ -596,7 +630,7 @@ class TagOptimizedTest(unittest.TestCase):
             "银行备注": "转账", "账户方附言": "", "一级标签": "其他类",
             "二级标签": "其他", "三级标签": "其他",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "10", "收入金额": "",
              "支出金额": "2000", "账户余额": "178404.59"},
             {**common, "交易唯一编号": "TX-back", "来源行号": "11", "收入金额": "2000",
@@ -619,7 +653,7 @@ class TagOptimizedTest(unittest.TestCase):
             "对手名称": "张三", "对手账户": "B200", "银行备注": "转账", "账户方附言": "",
             "一级标签": "其他类", "二级标签": "其他", "三级标签": "其他",
         }
-        df = pd.DataFrame([
+        df = stage3_frame([
             {**common, "交易唯一编号": "TX-out", "来源行号": "10", "收入金额": "",
              "支出金额": "1000", "账户余额": "2488.09"},
             {**common, "交易唯一编号": "TX-back", "来源行号": "11", "收入金额": "1000",
@@ -630,6 +664,53 @@ class TagOptimizedTest(unittest.TestCase):
 
         self.assertEqual(summary["银行冲正"]["隐式冲正数"], 0)
         self.assertEqual(df["交易状态"].tolist(), ["正常", "正常"])
+
+    def test_bank_implicit_reversal_uses_explicit_precision_in_mixed_datetime_frame(self):
+        common = {
+            "本方账户": "A100", "对手名称": "张三", "对手账户": "B200",
+            "银行备注": "转账", "账户方附言": "", "一级标签": "其他类",
+            "二级标签": "其他", "三级标签": "其他",
+        }
+        df = stage3_frame([
+            {**common, "来源文件名": "日期级.xls", "交易唯一编号": "TX-date-out",
+             "来源行号": "10", "交易时间": "2025-01-01", "__time_precision": "date",
+             "收入金额": "", "支出金额": "1000", "账户余额": "2488.09"},
+            {**common, "来源文件名": "日期级.xls", "交易唯一编号": "TX-date-back",
+             "来源行号": "11", "交易时间": "2025-01-01", "__time_precision": "date",
+             "收入金额": "1000", "支出金额": "", "账户余额": "3488.09"},
+            {**common, "来源文件名": "秒级.xls", "交易唯一编号": "TX-second-out",
+             "来源行号": "20", "交易时间": "2025-01-02 10:20:30", "__time_precision": "second",
+             "收入金额": "", "支出金额": "2000", "账户余额": "1488.09"},
+            {**common, "来源文件名": "秒级.xls", "交易唯一编号": "TX-second-back",
+             "来源行号": "21", "交易时间": "2025-01-02 10:20:30", "__time_precision": "second",
+             "收入金额": "2000", "支出金额": "", "账户余额": "3488.09"},
+        ])
+        df["交易时间"] = pd.to_datetime(df["交易时间"], format="mixed")
+
+        summary = _apply_transaction_relations(df)
+
+        self.assertEqual(summary["银行冲正"]["隐式冲正数"], 1)
+        self.assertEqual(
+            df["交易状态"].tolist(),
+            ["正常", "正常", "被隐式冲正", "隐式冲正"],
+        )
+
+    def test_load_integrated_dataframe_preserves_time_precision_before_conversion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "客户__整合流水.csv"
+            pd.DataFrame({
+                "交易时间": ["2025-01-01", "2025-01-02 10:20", "2025-01-03 10:20:30"],
+                "收入金额": ["1", "2", "3"],
+                "支出金额": ["", "", ""],
+                "交易金额": ["1", "2", "3"],
+                "账户余额": ["1", "3", "6"],
+                "来源行号": ["1", "2", "3"],
+            }).to_csv(path, index=False)
+
+            frame = tag_module.load_integrated_dataframe(path)
+
+        self.assertEqual(frame["__time_precision"].tolist(), ["date", "minute", "second"])
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(frame["交易时间"].dtype))
 
     def test_technical_alipay_order_ids_do_not_match_order_keyword_rules(self):
         rules = pd.DataFrame([
@@ -665,6 +746,89 @@ class TagOptimizedTest(unittest.TestCase):
 
         self.assertIsNone(rule)
         self.assertIsNone(hit_field)
+
+    def test_batch_rule_tags_match_single_row_reference_semantics(self):
+        rules = pd.DataFrame([
+            {
+                "规则编号": "R001", "适用方向": "收入", "依据字段": "银行备注",
+                "匹配方式": "包含", "关键词": "工资", "排除关键词": "退款",
+                "对手名称含": "", "一级标签": "经营类", "二级标签": "人力",
+                "三级标签": "工资", "优先级": "900", "备注": "",
+            },
+            {
+                "规则编号": "R002", "适用方向": "收入", "依据字段": "银行备注",
+                "匹配方式": "包含", "关键词": "工资", "排除关键词": "",
+                "对手名称含": "", "一级标签": "其他类", "二级标签": "退款",
+                "三级标签": "工资退款", "优先级": "800", "备注": "",
+            },
+            {
+                "规则编号": "R003", "适用方向": "支出", "依据字段": "对手名称",
+                "匹配方式": "包含", "关键词": "材料", "排除关键词": "",
+                "对手名称含": "供应商", "一级标签": "经营类", "二级标签": "采购",
+                "三级标签": "材料采购", "优先级": "700", "备注": "",
+            },
+            {
+                "规则编号": "R004", "适用方向": "支出", "依据字段": "账户方附言",
+                "匹配方式": "包含", "关键词": "订单", "排除关键词": "",
+                "对手名称含": "", "一级标签": "经营类", "二级标签": "采购",
+                "三级标签": "订单采购", "优先级": "600", "备注": "",
+            },
+        ])
+        frame = pd.DataFrame([
+            {"交易唯一编号": "T1", "对手名称": "员工", "银行备注": "工资发放",
+             "账户方附言": "", "收入金额": 100.0, "支出金额": 0.0},
+            {"交易唯一编号": "T2", "对手名称": "员工", "银行备注": "工资退款",
+             "账户方附言": "", "收入金额": 100.0, "支出金额": 0.0},
+            {"交易唯一编号": "T3", "对手名称": "材料供应商", "银行备注": "采购",
+             "账户方附言": "", "收入金额": 0.0, "支出金额": 50.0},
+            {"交易唯一编号": "T4", "对手名称": "平台", "银行备注": "",
+             "账户方附言": "支付宝商家订单号=ORDER-1", "收入金额": 0.0, "支出金额": 20.0},
+        ])
+        frame["交易时间"] = pd.Timestamp("2026-01-01 10:00:00")
+        frame["交易金额"] = frame["收入金额"] - frame["支出金额"]
+        frame["账户余额"] = 100.0
+        frame["来源行号"] = range(1, len(frame) + 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rules.csv"
+            rules.to_csv(path, index=False, encoding="utf-8-sig")
+            buckets = load_rules(path)
+            directions = direction_series(frame)
+            expected = []
+            for index, row in frame.iterrows():
+                rule, hit_field = match(row, directions.at[index], buckets)
+                expected.append((
+                    rule["编号"] if rule else "",
+                    rule["L3"] if rule else (
+                        "其他收入" if directions.at[index] == "收入" else "其他支出"
+                    ),
+                    hit_field or "",
+                ))
+
+            tagged, _summary = tag_module.tag_dataframe(frame, path)
+
+        actual = list(zip(
+            tagged["命中规则编号"], tagged["三级标签"], tagged["命中字段"],
+        ))
+        self.assertEqual(actual, expected)
+
+    def test_file_boundary_restores_stage3_types_and_preserves_account_text(self):
+        frame = pd.DataFrame([{
+            "交易唯一编号": "T1", "交易时间": "2026-01-01 10:00:00",
+            "本方账户": "00123456789012345678", "收入金额": "100.00", "支出金额": "",
+            "交易金额": "100.00", "账户余额": "100.00", "来源行号": "2026年1-3月!390",
+        }])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "integrated.csv"
+            frame.to_csv(path, index=False, encoding="utf-8-sig")
+
+            restored = tag_module.load_integrated_dataframe(path)
+
+        self.assertEqual(restored.at[0, "本方账户"], "00123456789012345678")
+        self.assertEqual(restored.at[0, "来源行号"], "2026年1-3月!390")
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(restored["交易时间"].dtype))
+        for column in ("收入金额", "支出金额", "交易金额", "账户余额"):
+            self.assertTrue(pd.api.types.is_numeric_dtype(restored[column].dtype))
 
 
 if __name__ == "__main__":

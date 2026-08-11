@@ -38,8 +38,10 @@ class IntegrateQualityTests(unittest.TestCase):
                 "账户方附言": f"支付宝商家订单号=M1；支付宝交易订单号={order_id}",
             })
 
-        result, info = integrate.dedup_cross_file(pd.DataFrame(rows))
+        frame = pd.DataFrame(rows)
+        result, info = integrate.dedup_cross_file(frame)
 
+        self.assertIs(result, frame)
         self.assertEqual(len(result), 2)
         self.assertEqual(info["移除笔数"], 0)
 

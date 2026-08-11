@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 
@@ -26,3 +26,25 @@ class PipelineExecutionResult:
     artifacts: tuple[Mapping[str, Any], ...]
     run_result: Mapping[str, Any]
     error: str | None = None
+    integration_report: Mapping[str, Any] = field(default_factory=dict)
+    balance_report: Mapping[str, Any] = field(default_factory=dict)
+    tag_report: Mapping[str, Any] = field(default_factory=dict)
+    dataset: Mapping[str, Any] = field(default_factory=dict)
+    deliverable: Mapping[str, Any] = field(default_factory=dict)
+
+    def to_summary_dict(self) -> dict[str, Any]:
+        """返回 SDK/Harness 共用的轻量终态，不包含 DataFrame 和完整业务报告。"""
+        control = dict(self.run_result or {})
+        return {
+            **control,
+            "run_id": self.run_id,
+            "status": self.status,
+            "client_name": self.client_name,
+            "parent_run_id": self.parent_run_id,
+            "exit_code": self.exit_code,
+            "file_results": dict(self.file_results),
+            "stages": {key: dict(value) for key, value in self.stages.items()},
+            "qc": dict(self.qc),
+            "deliverable": dict(self.deliverable),
+            "error": self.error,
+        }

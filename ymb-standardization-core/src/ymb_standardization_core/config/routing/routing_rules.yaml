@@ -1656,6 +1656,34 @@
         交易用途: 银行备注
         交易摘要: 银行备注
   reader_id: openpyxl_grid
+- id: md5:5d5c5dcda1f71e15d5270931f34876f9
+  file_type: excel
+  bank: 中国光大银行
+  account_type: 对公
+  fingerprint:
+    identity:
+      any:
+      - 中国光大银行对公账户对账单
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '账号[:：]\s*([0-9]+)'
+    - field: 本方名称
+      pattern: '账户名称[:：]\s*([^\s]+)'
+    columns:
+      all:
+        交易日期: 交易日期
+        交易时间: 交易时间
+        借方金额（支出）: 支出金额
+        贷方金额（收入）: 收入金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方名称: 对手名称
+        摘要: 银行备注
+        组内序号: null
+        回单编号: null
+  reader_options:
+    source_order: descending
+  reader_id: openpyxl_grid
 - id: md5:47e810879c9143fec9a6c5bde359a12a
   file_type: excel
   bank: 中国银行

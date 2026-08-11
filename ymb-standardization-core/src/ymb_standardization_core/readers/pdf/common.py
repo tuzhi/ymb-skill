@@ -3,6 +3,35 @@
 import re
 
 
+def close_pdf_page(page):
+    """释放当前页及其派生页链上的 pdfplumber 缓存。"""
+    seen = set()
+    current = page
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        close = getattr(current, "close", None)
+        if callable(close):
+            close()
+        current = getattr(current, "parent_page", None)
+
+
+def iter_pdf_pages(pages):
+    """逐页消费并在离开当前迭代时立即释放页面缓存。"""
+    for page in pages:
+        try:
+            yield page
+        finally:
+            close_pdf_page(page)
+
+
+def extract_pdf_text(pdf):
+    """保留全文语义，但不让所有 Page 的字符/layout 缓存同时驻留。"""
+    return "\n".join(
+        page.extract_text() or ""
+        for page in iter_pdf_pages(pdf.pages)
+    )
+
+
 def _clean_pdf_cell(value):
     """合并视觉换行但保留同行空格。"""
     normalized_value = (

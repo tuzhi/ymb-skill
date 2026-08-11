@@ -23,7 +23,7 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
             "本方名称": "测试主体",
             "本方账户": "10001",
             "开户行": "测试银行",
-            "交易时间": "2026-01-01 10:00:00",
+            "交易时间": pd.Timestamp("2026-01-01 10:00:00"),
             "对手名称": "对手",
             "对手账户": "20001",
             "收入金额": "100.00",
@@ -43,6 +43,7 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
             "交易渠道": "网银",
             "来源文件名": "sample.csv",
             "来源行号": "2",
+            "关联冲正交易编号": [],
         }])
         daily = pd.DataFrame([{"日期": "2026-01-01", "10001": 100.0, "合计余额": 100.0}])
         irep = {
@@ -91,7 +92,7 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
             out_path = Path(tmp) / "deliverable.xlsx"
             # 性能约束：写出后不允许再 load_workbook 读回整份 xlsx 做样式处理。
             with patch("openpyxl.load_workbook", side_effect=AssertionError("不应二次加载已写出的 xlsx")):
-                package_deliverable.build_workbook(
+                dataset = package_deliverable.build_workbook(
                     "测试客户",
                     tagged,
                     daily,
@@ -104,6 +105,17 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                 )
 
             self.assertTrue(out_path.exists())
+            self.assertEqual(set(dataset), {
+                "transactions",
+                "daily_balances",
+                "accounts",
+                "balance_checks",
+                "tag_summaries",
+                "review_items",
+            })
+            self.assertEqual(len(dataset["transactions"]), 1)
+            self.assertIs(dataset["transactions"], tagged)
+            self.assertIs(dataset["daily_balances"], daily)
             cover = pd.read_excel(out_path, sheet_name="封面与说明", dtype=str)
             review = pd.read_excel(out_path, sheet_name="人工复核事项", dtype=str)
             self.assertEqual(
@@ -111,6 +123,34 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                 "PASS_WITH_WARNINGS",
             )
             self.assertIn("QC-SOFT", set(review["事项类型"]))
+
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(out_path, read_only=False, data_only=True)
+            self.assertEqual(workbook.sheetnames, [
+                "封面与说明",
+                "整合打标流水",
+                "组合日余额(虚拟账户)",
+                "账户清单",
+                "余额校验",
+                "标签汇总",
+                "人工复核事项",
+            ])
+            flow_sheet = workbook["整合打标流水"]
+            self.assertEqual(flow_sheet.freeze_panes, "A2")
+            self.assertEqual(flow_sheet["A1"].fill.fgColor.rgb, "001F4E78")
+            self.assertTrue(flow_sheet["A1"].font.bold)
+            headers = {cell.value: cell.column for cell in flow_sheet[1]}
+            self.assertEqual(
+                flow_sheet.cell(2, headers["收入金额"]).number_format,
+                "#,##0.00",
+            )
+            self.assertEqual(
+                flow_sheet.cell(2, headers["交易时间"]).number_format,
+                "YYYY-MM-DD HH:MM:SS",
+            )
+            self.assertGreaterEqual(flow_sheet.column_dimensions["A"].width, 12)
+            workbook.close()
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import json
 import sys
 import tempfile
 import unittest
+import pandas as pd
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -22,12 +24,94 @@ from services import (  # noqa: E402
     StatementService,
     YamlRuleService,
 )
-from services.models import RunReference  # noqa: E402
+from services.models import RunReference, StandardizationResult  # noqa: E402
+from services.result_mapper import build_standardization_result  # noqa: E402
 from runtime.models import PipelineExecutionResult  # noqa: E402
 from scripts import repair_coordinator as coordinator_cli  # noqa: E402
 
 
 class StatementServiceTests(unittest.TestCase):
+    def test_result_mapper_builds_public_summary_without_service_state(self):
+        transactions = pd.DataFrame([{
+            "分析收入金额": 120.0,
+            "分析支出金额": 20.0,
+        }])
+        execution = PipelineExecutionResult(
+            exit_code=0,
+            run_id="run-mapped",
+            client_name="客户甲",
+            parent_run_id="",
+            status="DONE",
+            file_results={"files": {}},
+            stages={"stage_3_tag": {"name": "打标", "status": "DONE"}},
+            stage_summaries={},
+            qc={"status": "PASS", "customer": {}},
+            artifacts=(),
+            run_result={"next_action": "DELIVER"},
+            integration_report={
+                "客户整合概览": {"整合交易数": 1, "整体质量评分": 98},
+                "最终判断": {"是否可进入标签分析": True},
+            },
+            balance_report={
+                "组合虚拟账户": {"期初合计余额": 100.0},
+                "组合连续性校验": {"异常日数": 0, "结论": "通过"},
+            },
+            tag_report={
+                "标签梳理概览": {
+                    "规则命中数量": 1,
+                    "兜底其他类数量": 0,
+                    "交易关系汇总": {"银行冲正": {"配对组数": 0}},
+                },
+                "一级标签分布": {"经营类": 1},
+            },
+            dataset={"transactions": transactions},
+        )
+
+        result = build_standardization_result(execution, "rules-v1")
+
+        self.assertEqual(result.summary["net_amount"], 100.0)
+        self.assertEqual(result.business_summary["integration"]["quality_score"], 98)
+        self.assertEqual(result.business_summary["tagging"]["level_1_distribution"], {"经营类": 1})
+        self.assertEqual(result.stages["stage_3"]["status"], "DONE")
+
+    def test_standardization_result_streams_dataframe_directly_to_zip(self):
+        transactions = pd.DataFrame([{
+            "交易唯一编号": "TX-1",
+            "收入金额": 1.0,
+            "支出金额": float("nan"),
+        }])
+        result = StandardizationResult(
+            run_id="run-1",
+            status="DONE",
+            next_action="DELIVER",
+            message="完成",
+            client={"client_name": "客户甲"},
+            rule_snapshot={"version": "sha256-demo"},
+            summary={},
+            file_results=[],
+            stages={},
+            qc_client={},
+            business_summary={},
+            dataset={"transactions": transactions},
+            deliverable={},
+        )
+
+        self.assertIs(result.dataset["transactions"], transactions)
+        self.assertNotIn("dataset", result.to_summary_dict())
+        self.assertFalse(hasattr(result, "to_dict"))
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "result.zip"
+            self.assertEqual(Path(result.write_zip(output)), output.resolve())
+            with zipfile.ZipFile(output) as archive:
+                payload = json.loads(
+                    archive.read("standardization_result.json").decode("utf-8")
+                )
+        self.assertEqual(
+            payload["dataset"]["transactions"][0]["交易唯一编号"],
+            "TX-1",
+        )
+        self.assertIsNone(payload["dataset"]["transactions"][0]["支出金额"])
+
     def test_execute_standardization_uses_supplied_rule_snapshot_and_returns_dto(self):
         production = (
             CORE_PACKAGE
@@ -88,14 +172,12 @@ class StatementServiceTests(unittest.TestCase):
                 )
 
             self.assertEqual(result.status, "DONE")
-            self.assertEqual(result.rules_version, rules.version)
-            self.assertEqual(result.stage_summaries, execution.stage_summaries)
+            self.assertEqual(result.rule_snapshot["version"], rules.version)
+            self.assertEqual(result.stages["stage_1"]["status"], "DONE")
             self.assertEqual(result.file_results[0]["file_id"], "md5:test")
-            self.assertEqual(result.qc, {"status": "PASS"})
-            self.assertEqual(
-                result.artifacts,
-                [{"artifact_id": "artifacts/交付物.xlsx"}],
-            )
+            self.assertEqual(result.qc_client["status"], "PASS")
+            self.assertEqual(result.next_action, "DELIVER")
+            self.assertEqual(result.dataset, {})
             self.assertIs(start.call_args.kwargs["routing_rules_snapshot"], rules)
 
     @staticmethod

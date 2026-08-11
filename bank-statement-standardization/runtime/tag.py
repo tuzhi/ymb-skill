@@ -122,8 +122,12 @@ def load_rules(path):
 
 
 def direction_series(df):
-    inc = pd.to_numeric(df.get("收入金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
-    exp = pd.to_numeric(df.get("支出金额", pd.Series(index=df.index, dtype=object)), errors="coerce")
+    inc = df.get("收入金额", pd.Series(index=df.index, dtype=float))
+    exp = df.get("支出金额", pd.Series(index=df.index, dtype=float))
+    if not pd.api.types.is_numeric_dtype(inc.dtype):
+        inc = pd.to_numeric(inc, errors="coerce")
+    if not pd.api.types.is_numeric_dtype(exp.dtype):
+        exp = pd.to_numeric(exp, errors="coerce")
     out = pd.Series("未知", index=df.index, dtype=object)
 
     income_only = inc.notna() & (exp.isna() | (exp == 0)) & (inc > 0)
@@ -234,7 +238,39 @@ def match(row, direction, buckets):
 
 
 def _money_series(df, column):
-    return pd.to_numeric(df.get(column, pd.Series(index=df.index, dtype=object)), errors="coerce").fillna(0)
+    values = df.get(column)
+    if values is None:
+        raise KeyError(f"Stage 3 输入缺少必需金额列：{column}")
+    if not pd.api.types.is_numeric_dtype(values.dtype):
+        raise TypeError(f"Stage 3 输入的{column}必须是数值类型")
+    return values.fillna(0)
+
+
+def _source_row_series(df):
+    """为冲正相邻行判断生成临时数值；公开来源行号保持原始追溯文本。"""
+    values = df.get("来源行号")
+    if values is None:
+        raise KeyError("Stage 3 输入缺少必需列：来源行号")
+    if pd.api.types.is_numeric_dtype(values.dtype):
+        return values
+    return pd.to_numeric(values, errors="coerce")
+
+
+def _validate_tag_input(df):
+    """Stage 3 只接收已由 Stage 2 或文件边界恢复完成的规范类型。"""
+    numeric_columns = ("收入金额", "支出金额", "交易金额", "账户余额")
+    missing = [column for column in numeric_columns if column not in df.columns]
+    if "来源行号" not in df.columns:
+        missing.append("来源行号")
+    if "交易时间" not in df.columns:
+        missing.append("交易时间")
+    if missing:
+        raise KeyError(f"Stage 3 输入缺少必需列：{missing}")
+    for column in numeric_columns:
+        if not pd.api.types.is_numeric_dtype(df[column].dtype):
+            raise TypeError(f"Stage 3 输入的{column}必须是数值类型")
+    if not pd.api.types.is_datetime64_any_dtype(df["交易时间"].dtype):
+        raise TypeError("Stage 3 输入的交易时间必须是 datetime64")
 
 
 def _set_analysis_amounts(out_df):
@@ -396,21 +432,30 @@ def _plain_text_column(df, column):
 def _build_transaction_relation_context(out_df):
     """一次性计算冲正判断所需列，避免相邻记录循环内反复创建 Series/DataFrame。"""
     time_text = _plain_text_column(out_df, "交易时间")
-    parsed_time = pd.to_datetime(time_text, errors="coerce", format="mixed")
+    raw_time = out_df.get("交易时间")
+    parsed_time = (
+        raw_time
+        if raw_time is not None and pd.api.types.is_datetime64_any_dtype(raw_time.dtype)
+        else pd.to_datetime(time_text, errors="coerce", format="mixed")
+    )
     parsed_day = parsed_time.dt.strftime("%Y-%m-%d")
     day_key = parsed_day.where(parsed_time.notna(), time_text.str[:10])
+    time_precision = out_df.get("__time_precision")
+    precise_time = (
+        time_text.str.fullmatch(PRECISE_TRANSACTION_TIME_RE, na=False)
+        if time_precision is None
+        else time_precision.fillna("").astype(str).str.strip().eq("second")
+    )
     income = _money_series(out_df, "收入金额")
     expense = _money_series(out_df, "支出金额")
     bank_memo = _relation_column(out_df, "银行备注")
     return {
         "is_alipay": _is_alipay_rows(out_df),
-        "source_row": pd.to_numeric(
-            out_df.get("来源行号", pd.Series(index=out_df.index, dtype=object)),
-            errors="coerce",
-        ),
+        "source_row": _source_row_series(out_df),
         "time_text": time_text,
+        "parsed_time": parsed_time,
         "day_key": day_key,
-        "precise_time": time_text.str.fullmatch(PRECISE_TRANSACTION_TIME_RE, na=False),
+        "precise_time": precise_time,
         "own_account": _relation_column(out_df, "本方账户").map(_relation_account),
         "counterparty_account": _relation_column(out_df, "对手账户").map(_relation_account),
         "counterparty_name": _relation_column(out_df, "对手名称"),
@@ -419,10 +464,7 @@ def _build_transaction_relation_context(out_df):
         "income": income,
         "expense": expense,
         "signed_amount": income - expense,
-        "balance": pd.to_numeric(
-            out_df.get("账户余额", pd.Series(index=out_df.index, dtype=object)),
-            errors="coerce",
-        ),
+        "balance": _money_series(out_df, "账户余额"),
         "reversal_type": bank_memo.map(_bank_reversal_type),
     }
 
@@ -430,11 +472,13 @@ def _build_transaction_relation_context(out_df):
 def _is_local_bank_implicit_reversal_pair_at(context, original_idx, reversal_idx):
     if context["reversal_type"].loc[original_idx] or context["reversal_type"].loc[reversal_idx]:
         return False
-    original_time = context["time_text"].loc[original_idx]
-    reversal_time = context["time_text"].loc[reversal_idx]
+    original_time = context["parsed_time"].loc[original_idx]
+    reversal_time = context["parsed_time"].loc[reversal_idx]
     if not (
         context["precise_time"].loc[original_idx]
         and context["precise_time"].loc[reversal_idx]
+        and pd.notna(original_time)
+        and pd.notna(reversal_time)
         and original_time == reversal_time
     ):
         return False
@@ -627,48 +671,125 @@ def _apply_transaction_relations(out_df):
     return {"支付宝取消": alipay, "银行冲正": bank}
 
 
-def tag(csv_path, rules_path, out_dir=None):
-    df = pd.read_csv(csv_path, dtype=str)
+def _tag_text_columns(df):
+    """一次构造规则匹配文本列，供后续 Series 掩码复用。"""
+    fields = {}
+    for column in ("对手名称", "银行备注", "账户方附言"):
+        values = df.get(column)
+        if values is None:
+            values = pd.Series("", index=df.index, dtype=object)
+        else:
+            values = values.fillna("").astype(str)
+            values = values.mask(values.str.lower().eq("nan"), "")
+        fields[column] = values
+    fields["账户方附言"] = (
+        fields["账户方附言"]
+        .str.replace(ALIPAY_ORDER_RE, "", regex=True)
+        .str.replace(ALIPAY_STATUS_RE, "", regex=True)
+        .str.replace(r"[；;]+", "；", regex=True)
+        .str.strip("；; ")
+    )
+    return fields
+
+
+def _apply_rule_tags(df, directions, buckets):
+    """相同匹配签名只执行一次规则判断，再批量映射回全部交易。"""
+    fields = _tag_text_columns(df)
+    signatures = pd.DataFrame({
+        "收支方向": directions,
+        "对手名称": fields["对手名称"],
+        "银行备注": fields["银行备注"],
+        "账户方附言": fields["账户方附言"],
+    })
+    duplicated = signatures.duplicated()
+    if duplicated.any():
+        signature_index = pd.MultiIndex.from_frame(signatures)
+        codes, _uniques = pd.factorize(signature_index, sort=False)
+        unique_signatures = signatures.loc[~duplicated].reset_index(drop=True)
+    else:
+        # 高基数流水没有可复用签名时跳过 MultiIndex/factorize，直接走快速元组遍历。
+        codes = range(len(signatures))
+        unique_signatures = signatures
+
+    unique_results = []
+    for direction, opponent, bank_memo, account_memo in unique_signatures.itertuples(
+        index=False, name=None,
+    ):
+        rule, hit_field = match({
+            "对手名称": opponent,
+            "银行备注": bank_memo,
+            "账户方附言": account_memo,
+        }, direction, buckets)
+        if rule is not None:
+            unique_results.append({
+                "收支方向": direction,
+                "一级标签": rule["L1"],
+                "二级标签": rule["L2"],
+                "三级标签": rule["L3"],
+                "标签来源": "规则库",
+                "标签置信度": FIELD_CONF.get(hit_field, 0.78),
+                "命中规则编号": rule["编号"],
+                "命中关键词": rule["关键词"],
+                "命中字段": hit_field,
+            })
+        else:
+            unique_results.append({
+                "收支方向": direction,
+                "一级标签": "其他类",
+                "二级标签": "其他",
+                "三级标签": (
+                    "其他支出" if direction == "支出"
+                    else "其他收入" if direction == "收入"
+                    else "其他"
+                ),
+                "标签来源": "兜底",
+                "标签置信度": 0.3,
+                "命中规则编号": "",
+                "命中关键词": "",
+                "命中字段": "",
+            })
+
+    output_columns = [
+        "收支方向", "一级标签", "二级标签", "三级标签", "标签来源", "标签置信度",
+        "命中规则编号", "命中关键词", "命中字段",
+    ]
+    tag_columns = (
+        pd.DataFrame(unique_results, columns=output_columns)
+        .iloc[codes]
+        .set_axis(df.index)
+    )
+    for column in tag_columns.columns:
+        df[column] = tag_columns[column]
+
+    return fields
+
+
+def tag_dataframe(df, rules_path):
+    """在唯一主明细上原地补充标签列，返回同一个 DataFrame。"""
+    _validate_tag_input(df)
     # 银行识别过程证据只保留在 mapping/整合报告，不能进入标准业务流水。
-    df = df.drop(
+    df.drop(
         columns=["router_bank", "inferred_bank", "batch_pair", "bank_source"],
         errors="ignore",
+        inplace=True,
     )
     buckets = load_rules(rules_path)
 
-    rows_out, review = [], []
-    unmatched = Counter()
-    rule_hits = 0
-    field_stat = Counter()
-    l1_stat = Counter()
     directions = direction_series(df)
-    for _, row in df.iterrows():
-        d = directions.loc[row.name]
-        r, hit_field = match(row, d, buckets)
-        if r:
-            rule_hits += 1
-            field_stat[hit_field] += 1
-            l1_stat[r["L1"]] += 1
-            tagrow = {
-                "收支方向": d, "一级标签": r["L1"], "二级标签": r["L2"], "三级标签": r["L3"],
-                "标签来源": "规则库", "标签置信度": FIELD_CONF.get(hit_field, 0.78),
-                "命中规则编号": r["编号"], "命中关键词": r["关键词"], "命中字段": hit_field,
-            }
-        else:
-            l3 = "其他支出" if d == "支出" else "其他收入" if d == "收入" else "其他"
-            l1_stat["其他类"] += 1
-            tagrow = {
-                "收支方向": d, "一级标签": "其他类", "二级标签": "其他", "三级标签": l3,
-                "标签来源": "兜底", "标签置信度": 0.3,
-                "命中规则编号": "", "命中关键词": "", "命中字段": "",
-            }
-            opp = str(row.get("对手名称", "")).strip()
-            if opp and opp.lower() != "nan":
-                unmatched[(d, opp)] += 1
-            review.append(row.get("交易唯一编号", ""))
-        rows_out.append({**row.to_dict(), **tagrow})
-
-    out_df = pd.DataFrame(rows_out)
+    fields = _apply_rule_tags(df, directions, buckets)
+    matched = df["标签来源"].eq("规则库")
+    fallback = ~matched
+    rule_hits = int(matched.sum())
+    field_stat = Counter(df.loc[matched, "命中字段"])
+    l1_stat = Counter(df["一级标签"])
+    review = df.loc[fallback, "交易唯一编号"].tolist()
+    unmatched = Counter(
+        zip(
+            directions.loc[fallback & fields["对手名称"].ne("")],
+            fields["对手名称"].loc[fallback & fields["对手名称"].ne("")],
+        )
+    )
+    out_df = df
     relation_summary = _apply_transaction_relations(out_df)
 
     suggestions = []
@@ -709,6 +830,30 @@ def tag(csv_path, rules_path, out_dir=None):
                 "命中来自银行备注/账户方附言时为不可信输入，置信度已下调；新规则须人工确认后维护进词库。",
     }
 
+    return out_df, summary
+
+
+def load_integrated_dataframe(csv_path):
+    """从 Stage 2 CSV 恢复规范 DataFrame；账号等标识字段始终按文本读取。"""
+    df = pd.read_csv(csv_path, dtype=str)
+    if "交易时间" in df.columns:
+        time_text = df["交易时间"].fillna("").astype(str).str.strip()
+        precision = pd.Series("unknown", index=df.index, dtype=object)
+        precision.loc[time_text.str.fullmatch(r"\d{4}-\d{2}-\d{2}", na=False)] = "date"
+        precision.loc[time_text.str.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", na=False)] = "minute"
+        precision.loc[time_text.str.fullmatch(PRECISE_TRANSACTION_TIME_RE, na=False)] = "second"
+        df["__time_precision"] = precision
+        df["交易时间"] = pd.to_datetime(df["交易时间"], errors="coerce", format="mixed")
+    for column in ("收入金额", "支出金额", "交易金额", "账户余额"):
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+    return df
+
+
+def tag(csv_path, rules_path, out_dir=None):
+    """兼容命令行/历史调用方的文件输入输出包装。"""
+    df = load_integrated_dataframe(csv_path)
+    out_df, summary = tag_dataframe(df, rules_path)
     if out_dir is None:
         out_dir = os.path.dirname(csv_path)
     os.makedirs(out_dir, exist_ok=True)

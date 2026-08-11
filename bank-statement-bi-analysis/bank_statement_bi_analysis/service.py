@@ -36,14 +36,27 @@ class BiAnalysisService:
             raise TypeError("request 必须是 BiAnalysisRequest")
         try:
             engine = self._engine()
-            source = Path(request.standardized_file_path).resolve()
-            if not source.exists():
-                raise FileNotFoundError(f"标准化产物不存在：{source}")
-            selected = Path(engine.pick_input(str(source))).resolve()
             whitelist = self._load_whitelist(request.whitelist_path)
             new_loan = request.new_loan or engine.NEW_LOAN
-            frame, daily_balance, validation = engine.load_v4(str(selected))
-            frame = engine.prep(frame)
+            if request.dataset:
+                frame = request.dataset.get("transactions")
+                if frame is None or not hasattr(frame, "columns"):
+                    raise ValueError("dataset.transactions 必须是 DataFrame")
+                # 内存路径直接消费同一主明细；BI 只补派生列，不复制整张交易表。
+                daily_balance = request.dataset.get("daily_balances")
+                validation = request.dataset.get("balance_checks")
+                selected = None
+            else:
+                source = Path(request.standardized_file_path).resolve()
+                if not source.exists():
+                    raise FileNotFoundError(f"标准化产物不存在：{source}")
+                selected = Path(engine.pick_input(str(source))).resolve()
+                frame, daily_balance, validation = engine.load_v4(str(selected))
+            frame = (
+                engine.prep(frame, normalize_types=False)
+                if selected is None
+                else engine.prep(frame)
+            )
             analysis = engine.analyze(
                 frame,
                 engine.daily_balance(frame, daily_balance),
@@ -59,7 +72,12 @@ class BiAnalysisService:
                 loans=loans,
                 whitelist=whitelist_names,
             )
-            output_dir = Path(request.output_dir).resolve() if request.output_dir else selected.parent
+            output_dir = (
+                Path(request.output_dir).resolve()
+                if request.output_dir
+                else selected.parent if selected is not None
+                else Path.cwd()
+            )
             output_dir.mkdir(parents=True, exist_ok=True)
             output = output_dir / f"{request.client_name}__经营流水分析报告_V4.0.xlsx"
             engine.build_workbook(

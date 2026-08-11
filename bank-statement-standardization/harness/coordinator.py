@@ -80,15 +80,32 @@ def _normalize_token_usage(usage: Mapping[str, Any]) -> tuple[dict[str, int | No
 class RepairCoordinator:
     """从 RunResult 和 stage_1_results 推导一次 Repair 请求。"""
 
-    def __init__(self, run_dir: str | Path):
+    def __init__(
+        self,
+        run_dir: str | Path,
+        *,
+        run_result: Mapping[str, Any] | None = None,
+        stage_results: Mapping[str, Any] | None = None,
+        attempts: Mapping[str, Any] | None = None,
+    ):
         self.run_dir = Path(run_dir).resolve()
         self.run_id = self.run_dir.name
-        self.pipeline_result = RS.load_pipeline_result(self.run_dir)
-        self.run_result = RS.run_result_from_pipeline(self.pipeline_result)
-        self.stage_results = _read_json(self.run_dir / "stage_1_results.json")
+        self.pipeline_result = (
+            RS.load_pipeline_result(self.run_dir)
+            if run_result is None or attempts is None
+            else {}
+        )
+        self.run_result = (
+            dict(run_result)
+            if run_result is not None
+            else RS.run_result_from_pipeline(self.pipeline_result)
+        )
+        # 正常内存路径直接接收 PipelineExecutionResult 的逐文件结果；跨会话
+        # submit 优先恢复不可变 repair_request，不再重复回读 Stage 结果。
+        self.stage_results = dict(stage_results) if stage_results is not None else None
         self.input_root = (self.run_dir / "input").resolve()
-        attempts = self.pipeline_result.get("attempts") or {}
-        self.attempt = int(attempts.get("ai_repair") or 0) + 1
+        attempt_state = dict(attempts or self.pipeline_result.get("attempts") or {})
+        self.attempt = int(attempt_state.get("ai_repair") or 0) + 1
         self.repair_root = self.run_dir / "repair" / f"attempt-{self.attempt:02d}"
         self.request_path = self.repair_root / "repair_request.json"
         self.receipt_path = self.repair_root / "session-receipt.json"
@@ -108,6 +125,8 @@ class RepairCoordinator:
             raise FileNotFoundError(f"缺少 Repair 角色说明：{REPAIR_PROMPT}")
 
     def _failed_files(self) -> list[dict[str, Any]]:
+        if self.stage_results is None:
+            self.stage_results = _read_json(self.run_dir / "stage_1_results.json")
         files = self.stage_results.get("files")
         if not isinstance(files, dict):
             raise ValueError("stage_1_results.json 缺少 files 对象")
@@ -138,8 +157,13 @@ class RepairCoordinator:
         return failed
 
     def request(self) -> RepairRequest:
+        if self.request_path.is_file():
+            request = RepairRequest.from_mapping(_read_json(self.request_path))
+            if request.run_id != self.run_id or request.attempt != self.attempt:
+                raise RuntimeError("repair_request.json 与当前 Run 不一致")
+            return request
         failed_files = self._failed_files()
-        input_refs = ["stage_1_results.json", *(item["input_ref"] for item in failed_files)]
+        input_refs = [item["input_ref"] for item in failed_files]
         output_contract = protocol_path("repair-result").resolve()
         seed = {
             "run_id": self.run_id,

@@ -104,8 +104,30 @@ class PdfRouterDecisionTests(unittest.TestCase):
             [page.extract_text() for page in clean_pdf.pages],
             ["正", "文"],
         )
-        self.assertEqual(calls, ["dedupe", "dedupe", "filter", "filter"])
+        self.assertEqual(calls, ["dedupe", "filter", "dedupe", "filter"])
         self.assertIs(_prepare_pdf_reader_view(raw_pdf, {}), raw_pdf)
+
+    def test_pdf_text_extraction_releases_each_page_cache(self):
+        calls = []
+
+        class FakePage:
+            def __init__(self, text):
+                self.text = text
+
+            def extract_text(self):
+                calls.append(f"extract:{self.text}")
+                return self.text
+
+            def close(self):
+                calls.append(f"close:{self.text}")
+
+        pdf = type("FakePdf", (), {"pages": [FakePage("一"), FakePage("二")]})()
+
+        self.assertEqual(common.extract_pdf_text(pdf), "一\n二")
+        self.assertEqual(
+            calls,
+            ["extract:一", "close:一", "extract:二", "close:二"],
+        )
 
     def test_pdf_reader_registry_has_stable_reader_ids_and_rejects_duplicates(self):
         self.assertEqual(

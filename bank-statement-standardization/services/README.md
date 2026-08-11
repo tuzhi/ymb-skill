@@ -29,8 +29,14 @@ DTO 定义在 `models/`：
 
 - `InputFile(file_name, file_path, file_md5="")`
 - `StandardizationRequest(client_name, files, parent_run_id=None, remove_file_ids=(), file_passwords={})`
-- `StandardizationResult(run_id, parent_run_id, client_name, status, rules_version, file_results, stages, qc, stage_summaries, artifacts, run_result, error)`
+- `StandardizationResult(run_id, status, next_action, message, client, rule_snapshot, summary, file_results, stages, qc_client, business_summary, dataset, deliverable)`
 - `ServiceError(code, message, details={})`
+
+`StandardizationResult` 的完整目标结构示例见
+[`examples/standardization_result.example.json`](examples/standardization_result.example.json)。
+示例中的明细数组仅保留代表性记录；正式 Python 返回中的 `dataset`
+保持 DataFrame。`to_summary_dict()` 返回不含明细的轻量结果，`write_zip()`
+把 DataFrame 逐行编码并直接写入 ZIP，不在内存中构造完整 dict 或 JSON 字符串。
 
 ## BiAnalysisService
 

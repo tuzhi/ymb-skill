@@ -1,12 +1,15 @@
 """PDF 打开、路由、Reader 分发与结果编排。"""
 
 import re
+from collections.abc import Sequence
 from types import SimpleNamespace
 
 from ymb_standardization_core.readers.registry import pdf_reader_registry
 from ymb_standardization_core.readers.pdf.common import (
     _clean_pdf_cell,
+    close_pdf_page,
     drop_word_filter_char,
+    extract_pdf_text,
 )
 from ymb_standardization_core.readers.pdf.coordinate_table import _coordinate_metadata_preamble
 from ymb_standardization_core.readers.pdf.line_table import _extract_pdf_tables_from_horizontal_lines
@@ -33,23 +36,66 @@ def _matches_zero_transaction(text, route_info):
     return bool(patterns) and all(re.search(pattern, text or "") for pattern in patterns)
 
 
-def _prepare_pdf_reader_view(pdf, route_info):
-    """按路由声明统一生成供抬头、全文和 Reader 共用的清洁页面视图。"""
-    pages = list(pdf.pages)
-    transformed = False
-    if route_info.get("dedupe_chars"):
-        pages = [page.dedupe_chars() for page in pages]
-        transformed = True
-    word_filters = route_info.get("word_filters") or {}
-    if word_filters.get("drop_chars"):
-        pages = [
-            page.filter(
-                lambda char: not drop_word_filter_char(char, word_filters)
+class _PreparedPdfPages(Sequence):
+    """按访问惰性生成派生页，避免预先物化整份 PDF 的字符缓存。"""
+
+    def __init__(self, pages, route_info):
+        self._pages = pages
+        self._dedupe_chars = bool(route_info.get("dedupe_chars"))
+        self._word_filters = route_info.get("word_filters") or {}
+
+    def __len__(self):
+        return len(self._pages)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[item] for item in range(*index.indices(len(self)))]
+        page = self._pages[index]
+        if self._dedupe_chars:
+            page = page.dedupe_chars()
+        if self._word_filters.get("drop_chars"):
+            page = page.filter(
+                lambda char: not drop_word_filter_char(char, self._word_filters)
             )
-            for page in pages
-        ]
-        transformed = True
-    return SimpleNamespace(pages=pages) if transformed else pdf
+        return page
+
+
+def _prepare_pdf_reader_view(pdf, route_info):
+    """按路由声明惰性生成供抬头和 Reader 共用的清洁页面视图。"""
+    transformed = bool(
+        route_info.get("dedupe_chars")
+        or (route_info.get("word_filters") or {}).get("drop_chars")
+    )
+    if not transformed:
+        return pdf
+    return SimpleNamespace(pages=_PreparedPdfPages(pdf.pages, route_info))
+
+
+def _extract_first_page_text(pdf):
+    if not pdf.pages:
+        return ""
+    page = pdf.pages[0]
+    try:
+        return page.extract_text() or ""
+    finally:
+        close_pdf_page(page)
+
+
+def _route_pdf_from_text(pdf, text, route_rules):
+    from ymb_standardization_core.readers.router import route_pdf
+
+    try:
+        context = _pdf_context(pdf, text)
+        return route_pdf(
+            text,
+            0,
+            len(pdf.pages),
+            context=context,
+            rules=route_rules,
+        )
+    finally:
+        if pdf.pages:
+            close_pdf_page(pdf.pages[0])
 
 
 def _preamble_before_reader_header(text, headers):
@@ -142,22 +188,19 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
     返回 (preamble, rows, route_info)。preamble 供标准化层继续嗅探户名/账号。
     """
     with _open_pdf(path, open_password=open_password) as pdf:
-        preamble = pdf.pages[0].extract_text() if pdf.pages else ""
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        from ymb_standardization_core.readers.router import route_pdf
-
-        route_info = route_pdf(
-            text,
-            0,
-            len(pdf.pages),
-            context=_pdf_context(pdf, text),
-            rules=route_rules,
-        )
+        # 大多数正式导出文件的身份与表头都在首页。先走低内存快速路由；
+        # 首页不能唯一命中时再逐页补充全文，且每页抽取后立即清缓存。
+        text = _extract_first_page_text(pdf)
+        preamble = text
+        route_info = _route_pdf_from_text(pdf, text, route_rules)
+        if route_info.get("decision") != "matched":
+            text = extract_pdf_text(pdf)
+            route_info = _route_pdf_from_text(pdf, text, route_rules)
         reader_pdf = _prepare_pdf_reader_view(pdf, route_info)
         reader_options = route_info
         if reader_pdf is not pdf:
-            preamble = reader_pdf.pages[0].extract_text() if reader_pdf.pages else ""
-            text = "\n".join(page.extract_text() or "" for page in reader_pdf.pages)
+            text = _extract_first_page_text(reader_pdf)
+            preamble = text
         if (route_info.get("word_filters") or {}).get("drop_chars"):
             # 字符级水印已经在统一页面视图中移除；Reader 仍须保留页底、
             # 停止行等结构过滤，返回的 route_info 也保留原始 YAML 供审计。
@@ -184,9 +227,10 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             not table_rows
             and route_info.get("decision") == "matched"
             and route_info.get("reader_id") == "pdfplumber_text_lines"
-            and _matches_zero_transaction(text, route_info)
         ):
-            route_info = {**route_info, "zero_transaction": True}
+            full_text = extract_pdf_text(reader_pdf)
+            if _matches_zero_transaction(full_text, route_info):
+                route_info = {**route_info, "zero_transaction": True}
         route_info = apply_required_reader_header_gate(route_info, table_rows)
         if route_info.get("decision") == "matched_incomplete":
             return preamble or "", [], route_info
