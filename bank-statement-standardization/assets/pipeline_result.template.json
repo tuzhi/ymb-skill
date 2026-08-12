@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "skill_version": "1.4.11",
+  "skill_version": "1.4.12",
   "stages": {
     "stage_1_standardize": {
       "name": "单文件标准化与字段映射",

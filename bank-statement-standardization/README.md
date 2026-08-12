@@ -5,7 +5,7 @@
 输出可直接用于授信尽调、
 贷后监测、风险排查、模型特征加工的可信数据。
 
-v1.4.11 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
+v1.4.12 采用 macOS/Windows 两个平台发行包、一个可选 WorkBuddy 专家包、一个确定性 Coordinator 和一个按需隔离 Repair Agent：
 
 | 方式 | 适用环境 | 用什么 |
 | --- | --- | --- |
@@ -90,7 +90,7 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
 
-客户目录可保留历史 `_file_hints.yaml`，其唯一用途是按 `file_info.<相对文件路径>.open_password` 为加密 PDF/Excel 提供打开密码。它属于 Runtime 兼容输入而不是业务文件，不进入 Stage 1，也不触发 `INPUT_SOURCE_INVALID`。Runner 建立输入快照后会将其转换为内存 `file_passwords` 并立即删除快照副本；显式传入的 `StandardizationRequest.file_passwords` 优先级更高。
+客户目录可保留历史 `_file_hints.yaml`，其唯一用途是按 `file_info.<相对文件路径>.open_password` 为加密 PDF/Excel 提供打开密码。它属于 Runtime 兼容输入而不是业务文件，不进入 Stage 1，也不触发 `INPUT_SOURCE_INVALID`。Runner 建立输入快照后会将其转换为内存 `file_passwords` 并立即删除快照副本；SDK 则通过每个 `InputFile.open_password` 显式传入。
 
 输入预检还会检查可确定的来源真实性元数据。检测到由 WPS 将 PDF 转成的 Excel 时，直接返回 `INPUT_SOURCE_INVALID / REQUEST_USER`，不进入 Reader 或 AI Repair；这类文件应替换为银行原始 Excel 或可抽取文本的原始 PDF。反欺诈核查表、反欺诈报告等分析材料应存放在标准化客户目录之外，由后续反欺诈模块接收。
 
@@ -121,9 +121,9 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 ### 1) Claude Code / Claude 桌面端
 ```bash
 mkdir -p ~/.claude/skills
-unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.claude/skills/
+unzip dist/bank-statement-standardization_v1.4.12_macos.zip -d ~/.claude/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.12_windows.zip`。
 - 项目级（仅当前项目可用）：放到项目根目录的 `.claude/skills/` 下。
 - 重启或新开会话后，说「帮我把这些银行流水标准化/出一份已清洗待分析表」即自动触发。
 
@@ -132,17 +132,17 @@ Kimi Code 兼容 Claude Code 的 skill 机制，默认读取用户目录与项�
 ```bash
 # 用户级（全局可用）
 mkdir -p ~/.kimi/skills
-unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.kimi/skills/
+unzip dist/bank-statement-standardization_v1.4.12_macos.zip -d ~/.kimi/skills/
 # 若你的 Kimi Code 复用 Claude 配置目录，则改放 ~/.claude/skills/（同上）
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.12_windows.zip`。
 - 装好后用 `/skills`（或客户端内「技能/Skills」面板）确认已列出 `bank-statement-standardization`。
 - 国内网络无需代理；脚本仅用本地 Python，不联网。
 
 ### 3) WorkBuddy（职场助手客户端）
 WorkBuddy 通过「技能/插件」目录加载 Agent Skill。进入「设置 → 技能/Skills → 导入」，按操作系统选择
-  `bank-statement-standardization_v1.4.11_macos.zip` 或
-  `bank-statement-standardization_v1.4.11_windows.zip`。需要完整 AI Repair 时，再安装
+  `bank-statement-standardization_v1.4.12_macos.zip` 或
+  `bank-statement-standardization_v1.4.12_windows.zip`。需要完整 AI Repair 时，再安装
   `bank-statement-standardization-expert_v1.0.3.zip`。
 - 确定性快速入口：`/bank-statement-standardization "/path/to/客户文件夹"`。使用技能面板附加
   Skill 时，WorkBuddy 应把用户提供的输入路径作为 Skill `args` 传入。
@@ -152,19 +152,19 @@ OpenClaw 兼容 Claude Code 的 skills/插件加载：
 ```bash
 # 用户级
 mkdir -p ~/.openclaw/skills
-unzip dist/bank-statement-standardization_v1.4.11_macos.zip -d ~/.openclaw/skills/
+unzip dist/bank-statement-standardization_v1.4.12_macos.zip -d ~/.openclaw/skills/
 ```
-- Windows 使用 `bank-statement-standardization_v1.4.11_windows.zip`。
+- Windows 使用 `bank-statement-standardization_v1.4.12_windows.zip`。
 - 启动后用客户端的技能列表命令确认已加载。
 
 ### 5) 平台 `.zip` 分发（推荐发给同事/批量部署）
 本仓库从同一份 Skill 源码生成两个互斥平台包，用户只安装其中一个：
 ```bash
 # macOS
-unzip bank-statement-standardization_v1.4.11_macos.zip -d ~/.workbuddy/skills/
+unzip bank-statement-standardization_v1.4.12_macos.zip -d ~/.workbuddy/skills/
 
 # Windows：通过 WorkBuddy 技能面板导入
-# bank-statement-standardization_v1.4.11_windows.zip
+# bank-statement-standardization_v1.4.12_windows.zip
 ```
 - macOS 包只含 `run-posix.sh` 及对应 `!` 内联命令；Windows 包只含 `run-windows.cmd` 及对应 `!` 内联命令。Skill 触发时命令自动执行，不需要模型先阅读代码块再决定调用 Bash。两个包内部 Skill 名均为 `bank-statement-standardization`，不得同时安装。
 - 完整专家模式还需导入 `bank-statement-standardization-expert_v1.0.3.zip`；包内只包含主专家和 Repair 文字 Agent 定义，独立 Skill 遇到 `NEED_REPAIR` 时只返回结构化结果，不自行创建 Agent。

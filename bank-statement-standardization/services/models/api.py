@@ -28,6 +28,11 @@ class InputFile:
     file_name: str
     file_path: str
     file_md5: str = ""
+    open_password: str | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -38,11 +43,6 @@ class StandardizationRequest:
     files: tuple[InputFile, ...]
     parent_run_id: str | None = None
     remove_file_ids: tuple[str, ...] = ()
-    file_passwords: Mapping[str, str] = field(
-        default_factory=dict,
-        repr=False,
-        compare=False,
-    )
 
 
 @dataclass(frozen=True)

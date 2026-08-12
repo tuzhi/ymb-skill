@@ -232,6 +232,26 @@ class StatementServiceTests(unittest.TestCase):
                 ["新.xlsx"],
             )
 
+    def test_input_file_password_is_available_on_first_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "加密流水.pdf"
+            source.write_bytes(b"%PDF-1.4\n")
+            request = StandardizationRequest(
+                client_name="客户甲",
+                files=(InputFile(
+                    source.name,
+                    str(source),
+                    open_password="secret",
+                ),),
+            )
+
+            runner = StatementService(root / "runs")._create_runner(request)
+
+            self.assertEqual(runner.file_passwords, {source.name: "secret"})
+            self.assertNotIn("secret", repr(request))
+            self.assertNotIn("secret", repr(request.files[0]))
+
     def test_password_child_run_keeps_secret_in_memory_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -255,9 +275,12 @@ class StatementServiceTests(unittest.TestCase):
 
             request = StandardizationRequest(
                 client_name=None,
-                files=(),
+                files=(InputFile(
+                    "加密流水.pdf",
+                    str(input_dir / "加密流水.pdf"),
+                    open_password="secret",
+                ),),
                 parent_run_id="parent-run",
-                file_passwords={"加密流水.pdf": "secret"},
             )
             child = service._create_runner(request)
 
@@ -317,7 +340,9 @@ class StatementServiceTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())["next_action"], "DELIVER")
             request = service._execute_pipeline.call_args.args[0]
             self.assertEqual(request.parent_run_id, "parent-run")
-            self.assertEqual(request.file_passwords, {"加密流水.pdf": "secret"})
+            self.assertEqual(request.files[0].file_name, "加密流水.pdf")
+            self.assertEqual(request.files[0].open_password, "secret")
+            self.assertNotIn("secret", repr(request.files[0]))
 
     def test_coordinator_submit_advances_without_returning_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:

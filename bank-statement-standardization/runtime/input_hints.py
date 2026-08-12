@@ -49,7 +49,7 @@ def consume_file_password_hints(input_dir) -> dict[str, str]:
 
     `_file_hints.yaml` 只是 Skill/CLI 的历史输入适配格式，不进入 Stage 1，
     也不会持久化到 Pipeline 结果。SDK 正式契约仍是
-    ``StandardizationRequest.file_passwords``。
+    ``InputFile.open_password``。
     """
     root = Path(input_dir)
     hints_path = root / HINTS_FILENAME

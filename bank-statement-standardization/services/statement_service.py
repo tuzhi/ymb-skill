@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterable, Mapping
+from typing import Iterable
 import hashlib
 import os
 import shutil
@@ -67,8 +67,9 @@ class StatementService:
             raise ValueError("remove_file_ids 只能用于增量运行")
         if parent_run_id and request.client_name:
             raise ValueError("增量运行的 client_name 必须从父 Run 继承")
-        if (request.file_passwords or repair_result_snapshot) and not parent_run_id:
-            raise ValueError("密码或 Repair snapshot 只能用于显式 Child Run")
+        has_open_passwords = any(item.open_password is not None for item in uploads)
+        if repair_result_snapshot and not parent_run_id:
+            raise ValueError("Repair snapshot 只能用于显式 Child Run")
 
         staging = Path(tempfile.mkdtemp(prefix="statement-input-"))
         try:
@@ -78,7 +79,7 @@ class StatementService:
                 if parent_result.get("status") == "RUNNING":
                     raise RuntimeError("RUNNING 状态的 Run 不能作为父运行")
                 if (
-                    request.file_passwords
+                    has_open_passwords
                     and int(parent.get("password_attempt") or 0)
                     >= DEFAULT_RETRY_POLICY.max_password_attempts
                 ):
@@ -90,10 +91,7 @@ class StatementService:
                 self._remove_files(staging, removed)
 
             changed = self._copy_uploads(staging, uploads)
-            file_passwords = self._normalize_file_passwords(
-                staging,
-                request.file_passwords,
-            )
+            file_passwords = self._file_passwords_from_inputs(staging, uploads)
             password_retry = bool(file_passwords)
             if not any(path.is_file() for path in staging.rglob("*")):
                 raise ValueError("当前有效文件集合不能为空")
@@ -247,17 +245,19 @@ class StatementService:
         return "resume_parent_run"
 
     @staticmethod
-    def _normalize_file_passwords(
+    def _file_passwords_from_inputs(
         staging: Path,
-        passwords: Mapping[str, str],
+        files: Iterable[InputFile],
     ) -> dict[str, str]:
-        """校验并复制文件密码映射；返回值只在当前 Runner 进程内使用。"""
+        """把文件级打开密码转换为 Reader 使用的相对路径映射。"""
         normalized = {}
-        for raw_relative, raw_password in passwords.items():
-            relative = Path(str(raw_relative).replace("\\", "/"))
-            password = str(raw_password)
-            if relative.is_absolute() or ".." in relative.parts or not password:
-                raise ValueError("密码提示必须使用有效的客户目录内相对路径和非空密码")
+        for item in files:
+            if item.open_password is None:
+                continue
+            relative = Path(Path(item.file_name).name)
+            password = str(item.open_password)
+            if not password:
+                raise ValueError(f"文件打开密码不能为空：{item.file_name}")
             target = (staging / relative).resolve()
             if staging.resolve() not in target.parents or not target.is_file():
                 raise FileNotFoundError(f"密码对应文件不存在：{relative.as_posix()}")

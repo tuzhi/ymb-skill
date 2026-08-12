@@ -27,8 +27,8 @@ execute_standardization(
 
 DTO 定义在 `models/`：
 
-- `InputFile(file_name, file_path, file_md5="")`
-- `StandardizationRequest(client_name, files, parent_run_id=None, remove_file_ids=(), file_passwords={})`
+- `InputFile(file_name, file_path, file_md5="", open_password=None)`
+- `StandardizationRequest(client_name, files, parent_run_id=None, remove_file_ids=())`
 - `StandardizationResult(run_id, status, next_action, message, client, rule_snapshot, summary, file_results, stages, qc_client, business_summary, dataset, deliverable)`
 - `ServiceError(code, message, details={})`
 
@@ -38,7 +38,7 @@ DTO 定义在 `models/`：
 保持 DataFrame。`to_summary_dict()` 返回不含明细的轻量结果，`write_zip()`
 把 DataFrame 逐行编码并直接写入 ZIP，不在内存中构造完整 dict 或 JSON 字符串。
 
-Child Run 的 `file_passwords` 只在当前同步调用内存中存在，并按相对路径把单个密码传给 Stage 1 Reader；不会生成密码提示文件，也不会进入结果 DTO、Run 日志或错误包。
+`InputFile.open_password` 只在当前同步调用内存中存在，并转换为相对路径密码映射传给 Stage 1 Reader；不会生成密码提示文件，也不会进入结果 DTO、Run 日志或错误包。
 
 ## BiAnalysisService
 
@@ -71,7 +71,7 @@ service = StatementService("./runs")
 result = service.execute_standardization(
     StandardizationRequest(
         client_name="客户甲",
-        files=(InputFile("流水.xlsx", "/data/流水.xlsx", "md5:..."),),
+        files=(InputFile("流水.xlsx", "/data/流水.xlsx", "md5:...", "密码"),),
     ),
     rules,
 )

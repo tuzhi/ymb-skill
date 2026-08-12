@@ -17,7 +17,7 @@ from harness.coordinator import RepairCoordinator  # noqa: E402
 from runtime.models.run_result import NextAction, RunResult  # noqa: E402
 from runtime.result_store import load_pipeline_result  # noqa: E402
 from runtime.result_store import atomic_write_json  # noqa: E402
-from services.models import StandardizationRequest  # noqa: E402
+from services.models import InputFile, StandardizationRequest  # noqa: E402
 from services.statement_service import StatementService  # noqa: E402
 
 
@@ -128,13 +128,17 @@ def main() -> int:
         if not password:
             raise ValueError("密码不能为空")
         run_dir = Path(args.run_dir).resolve()
+        source = run_dir / "input" / args.file
         service = StatementService(run_dir.parent)
         execution = service._execute_pipeline(
             StandardizationRequest(
                 client_name=None,
-                files=(),
+                files=(InputFile(
+                    file_name=args.file,
+                    file_path=str(source),
+                    open_password=password,
+                ),),
                 parent_run_id=run_dir.name,
-                file_passwords={args.file: password},
             )
         )
         result = dict(execution.run_result)

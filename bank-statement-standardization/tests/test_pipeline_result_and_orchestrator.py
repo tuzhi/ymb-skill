@@ -126,7 +126,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             self.assertEqual(pipeline_result["rerun_reason"], "")
             self.assertEqual(pipeline_result["attempts"]["password"], 0)
             self.assertEqual(pipeline_result["attempts"]["ai_repair"], 0)
-            self.assertEqual(pipeline_result["skill_version"], "1.4.11")
+            self.assertEqual(pipeline_result["skill_version"], "1.4.12")
             self.assertEqual(pipeline_result["file_results"], {"files": {}})
             self.assertEqual(pipeline_result["qc"]["files"], {})
             self.assertEqual(pipeline_result["qc"]["customer"], {})
@@ -169,7 +169,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 json.dumps(
                     {
                         "schema_version": 1,
-                        "skill_version": "1.4.11",
+                        "skill_version": "1.4.12",
                         "client_name": "斑马商业",
                         "parent_run_id": "",
                         "rerun_reason": "",

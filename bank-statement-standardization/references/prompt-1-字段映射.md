@@ -18,7 +18,7 @@
 - 标准化流水字段说明：{{见附件A}}
 
 输入边界：
-- 本提示词只处理“已成功读取并抽取到样本行”的文件；密码问题由确定性 Coordinator 通过 `StandardizationRequest.file_passwords` 重试，不进入 Repair 会话。
+- 本提示词只处理“已成功读取并抽取到样本行”的文件；密码问题由确定性 Coordinator 通过 `InputFile.open_password` 重试，不进入 Repair 会话。
 - 文件名为 `<stem>__standardized.csv` 的 CSV 视为已标准化输入：只校验字段口径和来源追溯，不重新识别原始表头。
 - `*__整合流水.csv`、`*__打标流水.csv`、`*__组合日余额.csv`、最终交付物等管线产物不是原始流水，不得重复标准化。
 - 图片、扫描件、Word、PPT、压缩包、发票、名册、表头不像流水的表格应标记为跳过，并说明原因。
