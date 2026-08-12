@@ -21,7 +21,6 @@ class BiAnalysisRequest:
     statement_run_id: str
     standardized_file_path: str
     client_name: str
-    output_dir: str = ""
     whitelist_path: str = ""
     loans_path: str = ""
     new_loan: tuple[float, float, int] | None = None

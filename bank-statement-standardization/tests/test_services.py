@@ -31,6 +31,34 @@ from scripts import repair_coordinator as coordinator_cli  # noqa: E402
 
 
 class StatementServiceTests(unittest.TestCase):
+    def test_workspace_initialization_creates_fixed_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "task-1"
+
+            service = StatementService(workspace)
+
+            self.assertEqual(service.workspace_path, workspace.resolve())
+            self.assertEqual(service.run_root, workspace.resolve() / "runs")
+            for name in ("inputs", "runs", "bi_output"):
+                self.assertTrue((workspace / name).is_dir())
+
+    def test_workspace_path_must_be_absolute(self):
+        with self.assertRaisesRegex(ValueError, "绝对路径"):
+            StatementService("relative/task")
+
+    def test_first_run_rejects_input_outside_workspace_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "outside.xlsx"
+            source.write_bytes(b"excel")
+            service = StatementService(root / "task-1")
+
+            with self.assertRaisesRegex(ValueError, "Workspace inputs"):
+                service._create_runner(StandardizationRequest(
+                    client_name="客户甲",
+                    files=(InputFile(source.name, str(source)),),
+                ))
+
     def test_result_mapper_builds_public_summary_without_service_state(self):
         transactions = pd.DataFrame([{
             "分析收入金额": 120.0,
@@ -119,10 +147,12 @@ class StatementServiceTests(unittest.TestCase):
             / "routing_rules.yaml"
         )
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "流水.xlsx"
+            inputs = Path(tmp) / "inputs"
+            inputs.mkdir()
+            source = inputs / "流水.xlsx"
             source.write_bytes(b"excel")
             rules = YamlRuleService.deserialize(production.read_text(encoding="utf-8"))
-            service = StatementService(Path(tmp) / "runs")
+            service = StatementService(tmp)
             execution = PipelineExecutionResult(
                 exit_code=0,
                 run_id="run-1",
@@ -180,7 +210,8 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_create_runner_snapshots_input_without_async_service_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "source.xlsx"
+            source = Path(tmp) / "inputs" / "source.xlsx"
+            source.parent.mkdir()
             source.write_bytes(b"excel")
             service = StatementService(tmp)
 
@@ -196,15 +227,17 @@ class StatementServiceTests(unittest.TestCase):
                 ["流水.xlsx"],
             )
             pipeline_result = json.loads(
-                (Path(tmp) / runner.run_id / "pipeline_result.json").read_text(encoding="utf-8")
+                (Path(tmp) / "runs" / runner.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
             self.assertTrue(pipeline_result["rules_version"].startswith("sha256-"))
 
     def test_incremental_run_inherits_parent_and_applies_remove_and_add(self):
         with tempfile.TemporaryDirectory() as tmp:
-            old_source = Path(tmp) / "source-old.xlsx"
+            inputs = Path(tmp) / "inputs"
+            inputs.mkdir()
+            old_source = inputs / "source-old.xlsx"
             old_source.write_bytes(b"old")
-            new_source = Path(tmp) / "source-new.xlsx"
+            new_source = inputs / "source-new.xlsx"
             new_source.write_bytes(b"new")
             service = StatementService(tmp)
             parent = service._create_runner(
@@ -214,7 +247,7 @@ class StatementServiceTests(unittest.TestCase):
                 )
             )
             old_id = "md5:" + hashlib.md5(old_source.read_bytes()).hexdigest()
-            self._finish_run(tmp, parent.run_id)
+            self._finish_run(Path(tmp) / "runs", parent.run_id)
 
             child = service._create_runner(
                 StandardizationRequest(
@@ -235,7 +268,8 @@ class StatementServiceTests(unittest.TestCase):
     def test_input_file_password_is_available_on_first_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "加密流水.pdf"
+            source = root / "inputs" / "加密流水.pdf"
+            source.parent.mkdir()
             source.write_bytes(b"%PDF-1.4\n")
             request = StandardizationRequest(
                 client_name="客户甲",
@@ -246,7 +280,7 @@ class StatementServiceTests(unittest.TestCase):
                 ),),
             )
 
-            runner = StatementService(root / "runs")._create_runner(request)
+            runner = StatementService(root)._create_runner(request)
 
             self.assertEqual(runner.file_passwords, {source.name: "secret"})
             self.assertNotIn("secret", repr(request))
@@ -255,7 +289,7 @@ class StatementServiceTests(unittest.TestCase):
     def test_password_child_run_keeps_secret_in_memory_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            parent = root / "parent-run"
+            parent = root / "runs" / "parent-run"
             input_dir = parent / "input"
             input_dir.mkdir(parents=True)
             (input_dir / "加密流水.pdf").write_bytes(b"%PDF-1.4\n")
@@ -284,7 +318,7 @@ class StatementServiceTests(unittest.TestCase):
             )
             child = service._create_runner(request)
 
-            child_dir = root / child.run_id
+            child_dir = root / "runs" / child.run_id
             pipeline_result = json.loads(
                 (child_dir / "pipeline_result.json").read_text(encoding="utf-8")
             )
@@ -312,8 +346,8 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_password_retry_cli_reads_secret_from_stdin_not_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
-            parent = Path(tmp) / "parent-run"
-            parent.mkdir()
+            parent = Path(tmp) / "runs" / "parent-run"
+            parent.mkdir(parents=True)
             service = mock.Mock()
             service._execute_pipeline.return_value = SimpleNamespace(
                 run_result={"next_action": "DELIVER"},
@@ -346,8 +380,8 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_coordinator_submit_advances_without_returning_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run = Path(tmp) / "parent-run"
-            run.mkdir()
+            run = Path(tmp) / "runs" / "parent-run"
+            run.mkdir(parents=True)
             coordinator = mock.Mock()
             coordinator.run_dir = run.resolve()
             coordinator.submit.return_value = {
@@ -382,8 +416,8 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_coordinator_submit_rejects_prewrite_inside_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run = Path(tmp) / "parent-run"
-            run.mkdir()
+            run = Path(tmp) / "runs" / "parent-run"
+            run.mkdir(parents=True)
             result_path = run / "repair" / "attempt-01" / "repair_result.json"
             result_path.parent.mkdir(parents=True)
             result_path.write_text("{}", encoding="utf-8")
@@ -411,8 +445,8 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_coordinator_auto_starts_child_and_returns_child_run_result(self):
         with tempfile.TemporaryDirectory() as tmp:
-            run = Path(tmp) / "parent-run"
-            run.mkdir()
+            run = Path(tmp) / "runs" / "parent-run"
+            run.mkdir(parents=True)
             coordinator = SimpleNamespace(
                 run_dir=run,
                 run_id="parent-run",
@@ -456,7 +490,7 @@ class StatementServiceTests(unittest.TestCase):
     def test_repair_result_snapshot_creates_isolated_child_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            parent = root / "parent-run"
+            parent = root / "runs" / "parent-run"
             (parent / "input").mkdir(parents=True)
             source = parent / "input" / "流水.csv"
             source.write_text("raw", encoding="utf-8")
@@ -505,13 +539,15 @@ class StatementServiceTests(unittest.TestCase):
             )
 
             child_result = json.loads(
-                (root / child.run_id / "pipeline_result.json").read_text(encoding="utf-8")
+                (root / "runs" / child.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
             parent_result = json.loads((parent / "pipeline_result.json").read_text(encoding="utf-8"))
             self.assertEqual(child_result["parent_run_id"], "parent-run")
             self.assertEqual(child_result["attempts"]["ai_repair"], 1)
             self.assertEqual(child_result["repair_snapshot"]["scope"], "run_only")
-            self.assertTrue((root / child.run_id / "repair" / "standardized" / repaired.name).is_file())
+            self.assertTrue(
+                (root / "runs" / child.run_id / "repair" / "standardized" / repaired.name).is_file()
+            )
             self.assertEqual(parent_result["stages"]["stage_1_standardize"]["status"], "ERROR")
 
 

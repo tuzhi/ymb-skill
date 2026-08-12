@@ -35,9 +35,11 @@ def _md5(path: Path) -> str:
 class StatementService:
     """使用显式规则快照同步执行标准化或草稿规则测试。"""
 
-    def __init__(self, run_root: str | os.PathLike[str]) -> None:
-        self.run_root = Path(run_root).resolve()
-        self.run_root.mkdir(parents=True, exist_ok=True)
+    def __init__(self, workspace_path: str | os.PathLike[str]) -> None:
+        self.workspace_path = self._initialize_workspace(workspace_path)
+        self.input_root = self.workspace_path / "inputs"
+        self.run_root = self.workspace_path / "runs"
+        self.bi_output_root = self.workspace_path / "bi_output"
 
     def _create_runner(
         self,
@@ -55,7 +57,7 @@ class StatementService:
             RoutingRulesSnapshot,
         ):
             raise TypeError("rules 必须是 RoutingRulesSnapshot")
-        self._validate_input_files(request.files)
+        self._validate_input_files(request.files, parent_run_id=request.parent_run_id)
         uploads = list(request.files)
         removed = list(request.remove_file_ids)
         parent_run_id = request.parent_run_id
@@ -265,13 +267,41 @@ class StatementService:
         return normalized
 
     @staticmethod
-    def _validate_input_files(files: Iterable[InputFile]) -> None:
+    def _initialize_workspace(workspace_path: str | os.PathLike[str]) -> Path:
+        raw = Path(workspace_path).expanduser()
+        if not raw.is_absolute():
+            raise ValueError("workspace_path 必须是绝对路径")
+        workspace = raw.resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        for name in ("inputs", "runs", "bi_output"):
+            child = workspace / name
+            child.mkdir(parents=True, exist_ok=True)
+            if child.resolve().parent != workspace:
+                raise ValueError(f"Workspace 子目录不能通过软链接越界：{name}")
+        return workspace
+
+    def _validate_input_files(
+        self,
+        files: Iterable[InputFile],
+        *,
+        parent_run_id: str | None,
+    ) -> None:
+        allowed_roots = [self.input_root]
+        if parent_run_id:
+            allowed_roots.append(self.run_root / parent_run_id / "input")
         for item in files:
             if not isinstance(item, InputFile):
                 raise TypeError("files 必须包含 InputFile")
             path = Path(item.file_path).resolve()
             if not path.is_file():
                 raise FileNotFoundError(f"输入文件不存在：{path}")
+            if not any(path == root or root in path.parents for root in allowed_roots):
+                scope = (
+                    "Workspace inputs/ 或父 Run input/"
+                    if parent_run_id
+                    else "Workspace inputs/"
+                )
+                raise ValueError(f"输入文件必须位于{scope}内：{path}")
             expected = str(item.file_md5 or "").strip()
             if expected:
                 expected = expected if expected.startswith("md5:") else f"md5:{expected}"

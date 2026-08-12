@@ -28,13 +28,21 @@ def _read_object(path: str) -> dict:
     return value
 
 
+def _workspace_from_run_dir(run_dir: Path) -> Path:
+    """由 `<workspace>/runs/<run_id>` 反向定位任务 Workspace。"""
+    resolved = run_dir.resolve()
+    if resolved.parent.name != "runs":
+        raise ValueError("run_dir 必须位于任务 Workspace 的 runs/ 下")
+    return resolved.parent.parent
+
+
 def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
     """幂等创建 Child Run，并返回 Child Run 的紧凑 RunResult。"""
     snapshot_ref = str(outcome.get("repair_result_ref") or "")
     snapshot = (coordinator.run_dir / snapshot_ref).resolve()
     checksum = str(outcome.get("repair_result_sha256") or "")
     launch_path = coordinator.repair_root / "child_run_launch.json"
-    service = StatementService(coordinator.run_dir.parent)
+    service = StatementService(_workspace_from_run_dir(coordinator.run_dir))
     if launch_path.is_file():
         launch = _read_object(str(launch_path))
         if launch.get("parent_run_id") != coordinator.run_id:
@@ -129,7 +137,7 @@ def main() -> int:
             raise ValueError("密码不能为空")
         run_dir = Path(args.run_dir).resolve()
         source = run_dir / "input" / args.file
-        service = StatementService(run_dir.parent)
+        service = StatementService(_workspace_from_run_dir(run_dir))
         execution = service._execute_pipeline(
             StandardizationRequest(
                 client_name=None,

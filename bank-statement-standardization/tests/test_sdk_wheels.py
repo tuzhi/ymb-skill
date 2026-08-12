@@ -92,10 +92,12 @@ class SdkWheelTests(unittest.TestCase):
                         "from importlib.resources import files; "
                         "from ymb_statement_standardization import StatementService, YamlRuleService; "
                         "from bank_statement_bi_analysis import BiAnalysisService; "
+                        "from pathlib import Path; "
                         "assert StatementService.__module__.startswith('ymb_statement_standardization.'); "
                         "assert YamlRuleService.deserialize(files('ymb_standardization_core')"
                         ".joinpath('config/routing/routing_rules.yaml').read_text(encoding='utf-8')); "
-                        "assert BiAnalysisService()._engine().__name__.endswith('build_bi_report_v4')"
+                        "assert BiAnalysisService(Path.cwd() / 'workspace')._engine()"
+                        ".__name__.endswith('build_bi_report_v4')"
                     ),
                 ],
                 cwd=temporary,

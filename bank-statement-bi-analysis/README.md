@@ -16,6 +16,26 @@ python scripts/build_bi_report_v4.py --input "<标准化产物文件或文件夹
   [--out-dir DIR] [--whitelist wl.json] [--new-loan 2000000,0.08,12] [--loans 借据表.csv]
 ```
 
+Python SDK 以任务 Workspace 为运行边界：
+
+```python
+workspace = "/data/runner_workspace/task-20260812-001"
+service = BiAnalysisService(workspace)
+result = service.execute_analysis(BiAnalysisRequest(
+    bi_run_id="bi-1",
+    statement_run_id="statement-1",
+    standardized_file_path=(
+        f"{workspace}/runs/statement-1/artifacts/"
+        "客户甲_已清洗_待分析.xlsx"
+    ),
+    client_name="客户甲",
+))
+```
+
+`workspace` 必须是绝对路径。Service 统一建立 `inputs/`、`runs/`和
+`bi_output/`；BI 只读取当前 Workspace `runs/` 中的标准化产物，
+并将报告固定写入 `bi_output/`。
+
 输入可为标准化交付物 `.xlsx`（含「整合打标流水」等工作表）、`*__打标流水.csv`、`*__整合流水.csv`，
 或包含它们的文件夹。V3/V1 脚本（`build_bi_report_v3.py` / `build_bi_report.py`）保留为兼容入口。
 

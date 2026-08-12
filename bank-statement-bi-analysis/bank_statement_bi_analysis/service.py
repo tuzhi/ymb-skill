@@ -11,7 +11,15 @@ from .models import BiAnalysisRequest, BiAnalysisResult, ServiceError
 
 
 class BiAnalysisService:
-    def __init__(self, script_dir: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        workspace_path: str | Path,
+        script_dir: str | Path | None = None,
+    ) -> None:
+        self.workspace_path = self._initialize_workspace(workspace_path)
+        self.input_root = self.workspace_path / "inputs"
+        self.run_root = self.workspace_path / "runs"
+        self.output_root = self.workspace_path / "bi_output"
         self.script_dir = Path(
             script_dir or Path(__file__).resolve().parents[1] / "scripts"
         ).resolve()
@@ -36,7 +44,9 @@ class BiAnalysisService:
             raise TypeError("request 必须是 BiAnalysisRequest")
         try:
             engine = self._engine()
-            whitelist = self._load_whitelist(request.whitelist_path)
+            whitelist_path = self._optional_input_path(request.whitelist_path, "白名单")
+            loans_path = self._optional_input_path(request.loans_path, "借据")
+            whitelist = self._load_whitelist(whitelist_path)
             new_loan = request.new_loan or engine.NEW_LOAN
             if request.dataset:
                 frame = request.dataset.get("transactions")
@@ -47,10 +57,18 @@ class BiAnalysisService:
                 validation = request.dataset.get("balance_checks")
                 selected = None
             else:
-                source = Path(request.standardized_file_path).resolve()
+                source = self._path_within(
+                    request.standardized_file_path,
+                    self.run_root,
+                    "标准化产物",
+                )
                 if not source.exists():
                     raise FileNotFoundError(f"标准化产物不存在：{source}")
-                selected = Path(engine.pick_input(str(source))).resolve()
+                selected = self._path_within(
+                    engine.pick_input(str(source)),
+                    self.run_root,
+                    "标准化产物",
+                )
                 frame, daily_balance, validation = engine.load_v4(str(selected))
             frame = (
                 engine.prep(frame, normalize_types=False)
@@ -65,21 +83,14 @@ class BiAnalysisService:
                 new_loan,
             )
             detail = engine.analyze_v4(frame, analysis, validation)
-            loans = engine.load_loans(request.loans_path) if request.loans_path else None
+            loans = engine.load_loans(loans_path) if loans_path else None
             whitelist_names = set(whitelist.keys()) if whitelist else None
             metrics = engine.compute_spec_metrics(
                 engine.spec_augment(frame),
                 loans=loans,
                 whitelist=whitelist_names,
             )
-            output_dir = (
-                Path(request.output_dir).resolve()
-                if request.output_dir
-                else selected.parent if selected is not None
-                else Path.cwd()
-            )
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output = output_dir / f"{request.client_name}__经营流水分析报告_V4.0.xlsx"
+            output = self._output_path(request.client_name)
             engine.build_workbook(
                 analysis,
                 detail,
@@ -124,6 +135,44 @@ class BiAnalysisService:
         import build_bi_report_v4
 
         return build_bi_report_v4
+
+    @staticmethod
+    def _initialize_workspace(workspace_path: str | Path) -> Path:
+        raw = Path(workspace_path).expanduser()
+        if not raw.is_absolute():
+            raise ValueError("workspace_path 必须是绝对路径")
+        workspace = raw.resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        for name in ("inputs", "runs", "bi_output"):
+            child = workspace / name
+            child.mkdir(parents=True, exist_ok=True)
+            if child.resolve().parent != workspace:
+                raise ValueError(f"Workspace 子目录不能通过软链接越界：{name}")
+        return workspace
+
+    @staticmethod
+    def _path_within(value: str, root: Path, label: str) -> Path:
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            raise ValueError(f"{label}路径必须是绝对路径")
+        resolved = path.resolve()
+        if resolved != root and root not in resolved.parents:
+            raise ValueError(f"{label}必须位于 Workspace {root.name}/ 内")
+        return resolved
+
+    def _optional_input_path(self, value: str, label: str) -> str:
+        if not value:
+            return ""
+        return str(self._path_within(value, self.input_root, label))
+
+    def _output_path(self, client_name: str) -> Path:
+        name = str(client_name or "").strip()
+        if not name or Path(name).name != name or name in {".", ".."}:
+            raise ValueError("客户名称不能包含路径字符")
+        output = self.output_root / f"{name}__经营流水分析报告_V4.0.xlsx"
+        if output.is_symlink():
+            raise ValueError("BI 输出文件不能是软链接")
+        return output
 
     @staticmethod
     def _load_whitelist(path: str) -> dict[str, tuple[Any, ...]]:
