@@ -2,6 +2,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -39,6 +40,123 @@ from ymb_standardization_core.transforms import repeated_header_bottom  # noqa: 
 
 
 class PdfRouterDecisionTests(unittest.TestCase):
+    class _ProbePage:
+        width = 300
+        height = 800
+
+        def __init__(self, words, edges=()):
+            self._words = list(words)
+            self.edges = list(edges)
+            self.extract_words_calls = 0
+
+        def extract_words(self, **_kwargs):
+            self.extract_words_calls += 1
+            return list(self._words)
+
+        def close(self):
+            pass
+
+    class _ProbePdf:
+        def __init__(self, pages):
+            self.pages = pages
+
+    @staticmethod
+    def _probe_word(index):
+        return {
+            "text": f"2025-01-{index + 1:02d}",
+            "x0": 10,
+            "x1": 70,
+            "top": 100 + index * 10,
+        }
+
+    def test_vertical_boundary_probe_detects_ruled_rows(self):
+        edges = [
+            {
+                "orientation": "v",
+                "x0": x,
+                "top": 110 + segment * 20,
+                "bottom": 110 + segment * 20 + 15,
+            }
+            for x in (0, 100, 200, 300)
+            for segment in range(5)
+        ]
+        page = self._ProbePage(
+            [self._probe_word(index) for index in range(5)],
+            edges=edges,
+        )
+
+        detected = coordinate_table._probe_pdf_vertical_boundary_table(
+            self._ProbePdf([page]),
+            row_anchor={"column": "交易日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
+        )
+
+        self.assertTrue(detected)
+        self.assertEqual(page.extract_words_calls, 1)
+
+    def test_vertical_boundary_probe_stops_at_three_pages(self):
+        pages = [self._ProbePage([self._probe_word(0)]) for _ in range(4)]
+
+        detected = coordinate_table._probe_pdf_vertical_boundary_table(
+            self._ProbePdf(pages),
+            row_anchor={"column": "交易日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
+        )
+
+        self.assertFalse(detected)
+        self.assertEqual(
+            [page.extract_words_calls for page in pages],
+            [1, 1, 1, 0],
+        )
+
+    def test_vertical_boundary_probe_stops_at_one_hundred_rows(self):
+        first = self._ProbePage([
+            {
+                "text": "2025-01-01",
+                "x0": 10,
+                "x1": 70,
+                "top": 100 + index,
+            }
+            for index in range(120)
+        ])
+        second = self._ProbePage([self._probe_word(0)])
+
+        detected = coordinate_table._probe_pdf_vertical_boundary_table(
+            self._ProbePdf([first, second]),
+            row_anchor={"column": "交易日期", "pattern": r"^20\d{2}-\d{2}-\d{2}$"},
+        )
+
+        self.assertFalse(detected)
+        self.assertEqual(first.extract_words_calls, 1)
+        self.assertEqual(second.extract_words_calls, 0)
+
+    def test_coordinate_reader_does_not_run_both_full_strategies(self):
+        expected = [["交易日期", "金额"], ["2025-01-01", "1.00"]]
+        with (
+            mock.patch.object(
+                coordinate_table,
+                "_probe_pdf_vertical_boundary_table",
+                return_value=False,
+            ),
+            mock.patch.object(
+                coordinate_table,
+                "_extract_pdf_vertical_boundary_table_rows",
+                side_effect=AssertionError("vertical strategy must not run"),
+            ),
+            mock.patch.object(
+                coordinate_table,
+                "_extract_pdf_coordinate_table_rows",
+                return_value=expected,
+            ) as coordinate_reader,
+            mock.patch.object(
+                coordinate_table,
+                "_starts_with_text_separator_table",
+                return_value=False,
+            ),
+        ):
+            rows = coordinate_table.read(self._ProbePdf([]), {})
+
+        self.assertEqual(rows, expected)
+        coordinate_reader.assert_called_once()
+
     def test_coordinate_boundaries_use_gap_between_header_boxes(self):
         boundaries = coordinate_table._coordinate_boundaries(
             841.875,

@@ -317,6 +317,49 @@ def _vertical_boundary_headers(words, boundaries, candidate_headers, first_ancho
     return headers
 
 
+def _probe_pdf_vertical_boundary_table(
+        pdf, row_anchor=None, word_filters=None, max_pages=3, max_rows=100):
+    """用有限页面和行锚点判断是否应采用图形竖线表格策略。"""
+    row_anchor = row_anchor or {}
+    if not row_anchor or max_pages <= 0 or max_rows <= 0:
+        return False
+
+    probed_rows = 0
+    for page in iter_pdf_pages(pdf.pages[:max_pages]):
+        words = _coordinate_page_words(page, word_filters=word_filters)
+        anchor_words = [
+            word
+            for word in words
+            if _vertical_boundary_anchor_text_match(word, row_anchor)
+        ]
+        remaining_rows = max_rows - probed_rows
+        anchor_words = anchor_words[:remaining_rows]
+        probed_rows += len(anchor_words)
+        if anchor_words:
+            first_anchor_top = min(float(word.get("top", 0)) for word in anchor_words)
+            boundaries = _vertical_boundary_positions(
+                page,
+                body_top_min=first_anchor_top,
+            )
+            if boundaries:
+                anchor_column = str(row_anchor.get("column") or "").strip()
+                for left, right in zip(boundaries, boundaries[1:]):
+                    if any(
+                        left <= float(word.get("x0", 0)) < right
+                        and _is_coordinate_row_anchor(
+                            word,
+                            left,
+                            anchor_column,
+                            row_anchor,
+                        )
+                        for word in anchor_words
+                    ):
+                        return True
+        if probed_rows >= max_rows:
+            break
+    return False
+
+
 def _coordinate_row_bounds(index, anchors, body_top_min, page_height, row_anchor):
     anchor_top = anchors[index][0]
     continuation = str((row_anchor or {}).get("continuation") or "").strip()
@@ -752,18 +795,26 @@ def _extract_pdf_text_separator_table_rows(pdf):
 
 
 def read(pdf, options):
-    rows = _extract_pdf_vertical_boundary_table_rows(
+    candidate_headers = options.get("reader_header_candidates") or []
+    row_anchor = options.get("row_anchor") or {}
+    word_filters = options.get("word_filters") or {}
+    if _probe_pdf_vertical_boundary_table(
         pdf,
-        options.get("reader_header_candidates") or [],
-        options.get("row_anchor") or {},
-        word_filters=options.get("word_filters") or {},
-    )
-    if not rows:
+        row_anchor=row_anchor,
+        word_filters=word_filters,
+    ):
+        rows = _extract_pdf_vertical_boundary_table_rows(
+            pdf,
+            candidate_headers,
+            row_anchor,
+            word_filters=word_filters,
+        )
+    else:
         rows = _extract_pdf_coordinate_table_rows(
             pdf,
-            options.get("reader_header_candidates") or [],
-            options.get("row_anchor") or {},
-            word_filters=options.get("word_filters") or {},
+            candidate_headers,
+            row_anchor,
+            word_filters=word_filters,
             repeated_header=options.get("repeated_header") or {},
         )
     separator_rows = []
