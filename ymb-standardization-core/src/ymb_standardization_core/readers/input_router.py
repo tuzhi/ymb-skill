@@ -4,7 +4,6 @@
 字段映射、金额方向、账户识别仍由 core.standardize 处理。
 """
 
-import base64
 import inspect
 import os
 import re
@@ -20,6 +19,7 @@ from ymb_standardization_core.readers.routing.rule_loader import (
 )
 from ymb_standardization_core.models import RouteDecision
 from ymb_standardization_core.models import ReadResult
+from ymb_standardization_core.source_authenticity import pdf_to_wps_rejection_reason
 from ymb_standardization_core.transforms import (
     apply_reader_options,
     merge_configured_header,
@@ -29,37 +29,6 @@ from ymb_standardization_core.transforms import (
 
 _excel_reader = None
 _unsupported_error = RuntimeError
-
-
-def pdf_to_wps_rejection_reason(path):
-    """Return a user-facing rejection reason for spreadsheets converted from PDF by WPS."""
-    ext = os.path.splitext(path)[1].lower()
-    if ext not in (".xlsx", ".xlsm"):
-        return ""
-    try:
-        with zipfile.ZipFile(path) as archive:
-            custom_properties = archive.read("docProps/custom.xml")
-        root = ET.fromstring(custom_properties)
-    except (OSError, KeyError, zipfile.BadZipFile, ET.ParseError):
-        return ""
-
-    for prop in root:
-        if prop.attrib.get("name") != "CRO":
-            continue
-        encoded = next((str(child.text or "").strip() for child in prop if child.text), "")
-        if not encoded:
-            continue
-        try:
-            padded = encoded + "=" * (-len(encoded) % 4)
-            marker = base64.b64decode(padded, validate=True).decode("utf-8", errors="replace")
-        except (ValueError, UnicodeError):
-            marker = encoded
-        if "Kingsoft PDF to WPS" in marker:
-            return (
-                f"WPS PDF 转 Excel 文件（检测到 {marker} 元数据），不作为原始流水接收；"
-                "请提供银行原始 Excel 或可抽取文本的原始 PDF"
-            )
-    return ""
 
 
 def configure_readers(excel_reader, csv_reader=None, unsupported_error=RuntimeError):

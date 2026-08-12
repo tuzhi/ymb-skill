@@ -49,6 +49,32 @@ def iter_string_values(value):
 
 
 class InputRouterTests(unittest.TestCase):
+    def test_core_passes_in_memory_password_to_reader(self):
+        from ymb_standardization_core.readers import input_router
+
+        captured = []
+        original = input_router.read_rows
+
+        def fake_read_rows(path, hints=None, route_rules=None):
+            captured.append((Path(path).name, dict(hints or {})))
+            return input_router.ReadResult(
+                kind="pdf",
+                preamble="",
+                rows=[["交易日期", "收入金额"]],
+                route_info={},
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = Path(tmp) / "locked.pdf"
+            pdf.write_bytes(b"%PDF")
+            input_router.read_rows = fake_read_rows
+            try:
+                core.read_rows(str(pdf), open_password="secret")
+            finally:
+                input_router.read_rows = original
+
+        self.assertEqual(captured, [("locked.pdf", {"open_password": "secret"})])
+
     def test_unmatched_excel_exposes_only_structural_routing_evidence(self):
         module = load_input_router()
         rows = [
@@ -218,6 +244,14 @@ class InputRouterTests(unittest.TestCase):
                 module.read_rows(str(csv_path))
 
         self.assertIn("CSV/TXT/TSV 当前不作为原始流水支持格式", str(cm.exception))
+
+    def test_raw_csv_is_not_a_stage_one_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "sample.csv"
+            csv_path.write_text("交易日期,金额\n2026-01-01,1.00\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(core.UnsupportedInputError, "仅接受 PDF"):
+                core.screen_files([str(csv_path)])
 
     def test_excel_input_uses_specialized_excel_route(self):
         module = load_input_router()

@@ -24,6 +24,7 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
             "本方账户": "10001",
             "开户行": "测试银行",
             "交易时间": pd.Timestamp("2026-01-01 10:00:00"),
+            "__time_precision": "second",
             "对手名称": "对手",
             "对手账户": "20001",
             "收入金额": "100.00",
@@ -150,6 +151,38 @@ class PackageDeliverableWorkbookTest(unittest.TestCase):
                 "YYYY-MM-DD HH:MM:SS",
             )
             self.assertGreaterEqual(flow_sheet.column_dimensions["A"].width, 12)
+            workbook.close()
+
+    def test_transaction_time_uses_original_precision_for_excel_display(self):
+        frame = pd.DataFrame([
+            {"交易时间": pd.Timestamp("2026-01-01 00:00:00"), "__time_precision": "date"},
+            {"交易时间": pd.Timestamp("2026-01-02 10:20:00"), "__time_precision": "minute"},
+            {"交易时间": pd.Timestamp("2026-01-03 10:20:30"), "__time_precision": "second"},
+            {"交易时间": pd.Timestamp("2026-01-04 00:00:00"), "__time_precision": "unknown"},
+        ])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "time-precision.xlsx"
+            package_deliverable._write_streaming_workbook(
+                out_path,
+                [("整合打标流水", frame, ["交易时间"])],
+            )
+
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(out_path, read_only=False, data_only=True)
+            sheet = workbook["整合打标流水"]
+            self.assertEqual(
+                [sheet.cell(row, 1).number_format for row in range(2, 6)],
+                [
+                    "YYYY-MM-DD",
+                    "YYYY-MM-DD HH:MM",
+                    "YYYY-MM-DD HH:MM:SS",
+                    "YYYY-MM-DD HH:MM:SS",
+                ],
+            )
+            self.assertEqual(sheet.max_column, 1)
+            self.assertEqual(sheet["A2"].value, pd.Timestamp("2026-01-01").to_pydatetime())
             workbook.close()
 
 

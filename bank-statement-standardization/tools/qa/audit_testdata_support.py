@@ -37,7 +37,7 @@ if str(CORE_PACKAGE) not in sys.path:
     sys.path.insert(0, str(CORE_PACKAGE))
 
 from ymb_standardization_core import core as standardize_core  # noqa: E402
-from ymb_standardization_core.file_hints import load_file_hints, load_file_hints_for_path  # noqa: E402
+from ymb_standardization_core.readers.input_router import pdf_to_wps_rejection_reason  # noqa: E402
 from ymb_standardization_core.readers.routing.rule_loader import fingerprint_md5  # noqa: E402
 
 
@@ -90,7 +90,10 @@ def iter_statement_files(root):
             continue
         if any(marker.lower() in lower for marker in GENERATED_NAME_MARKERS):
             continue
-        candidates, _skipped = standardize_core.screen_files([str(path)])
+        # 支持矩阵只审计银行原始导出；生产 Stage 1 则必须记录该 Excel 的失败事实。
+        if pdf_to_wps_rejection_reason(path):
+            continue
+        candidates = standardize_core.screen_files([str(path)])
         if not candidates:
             continue
         files.append(path)
@@ -151,20 +154,10 @@ def _parse_pdf_datetime(value):
         return None
 
 
-def _hints_for_metadata(path, hints_root=None):
-    if hints_root is not None:
-        file_hints = load_file_hints(hints_root)
-    else:
-        file_hints = load_file_hints_for_path(path)
-    return file_hints.for_file(path), file_hints.audit_for_file(path)
-
-
-def metadata_checks(path, hints_root=None):
+def metadata_checks(path, open_password=None):
     """读取文档元数据，输出支持矩阵用的两项一致性核验。"""
     path = Path(path)
     ext = path.suffix.lower()
-    hints, _hints_audit = _hints_for_metadata(path, hints_root=hints_root)
-    open_password = hints.get("open_password") or None
     try:
         if ext in {".xlsx", ".xlsm"}:
             import openpyxl
@@ -385,7 +378,6 @@ def read_csv_summary(csv_path):
 def _new_record_and_baseline(path, root, today):
     relative_path = path.relative_to(root).as_posix()
     metadata_check = metadata_checks(path)
-    _hints, hints_audit = _hints_for_metadata(path)
     record = {
         "银行": "",
         "账户类型(YAML)": "",
@@ -412,7 +404,6 @@ def _new_record_and_baseline(path, root, today):
         "error": "",
         "mapping": {},
         "csv_summary": {},
-        "file_hints": hints_audit,
     }
     return record, baseline
 
@@ -422,11 +413,11 @@ def _stage_route_image(csv_path):
     csv_path = Path(csv_path).resolve()
     route = {}
     for run_dir in csv_path.parents:
-        results_path = run_dir / "stage_1_results.json"
+        results_path = run_dir / "pipeline_result.json"
         if not results_path.exists():
             continue
         with results_path.open(encoding="utf-8") as f:
-            files = (json.load(f) or {}).get("files") or {}
+            files = ((json.load(f) or {}).get("file_results") or {}).get("files") or {}
         for record in files.values():
             output = str(record.get("output") or "").strip()
             if not output:
@@ -471,7 +462,7 @@ def _populate_record_from_standardized_outputs(record, baseline, csv_path, json_
     if not image:
         image = _stage_route_image(csv_path)
     if not image:
-        raise ValueError("缺少 mapping.json 和 stage_1_results.json 路由结果")
+        raise ValueError("缺少 mapping.json 和 pipeline_result.json 路由结果")
     summary = read_csv_summary(csv_path)
 
     fingerprint_id = image.get("fingerprint_id") or ""

@@ -14,6 +14,7 @@ if str(SKILL_ROOT) not in sys.path:
 
 from runtime import runner as runner_runtime  # noqa: E402
 from runtime import result_store as result_store  # noqa: E402
+from runtime.models import RunResult  # noqa: E402
 
 
 def runner_args(run_root, folder, *, client="测试客户", parent_run_id=""):
@@ -65,6 +66,8 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             (source / "正常.pdf").write_bytes(b"good")
             (source / "失败.pdf").write_bytes(b"bad")
             runner = runner_runtime.Runner(runner_args(root / "runs", source))
+            runner.args.verbose = True
+            Path(runner.receipt_dir).mkdir(parents=True, exist_ok=True)
 
             def standardize(context):
                 if Path(context.path).name == "失败.pdf":
@@ -96,9 +99,9 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 runner.stages["stage_1_standardize"],
                 RuntimeError("阶段一存在失败文件"),
             )
-            run_result = result_store.run_result_from_pipeline(json.loads(
+            run_result = RunResult.from_pipeline_result(json.loads(
                 Path(runner.pipeline_result_path).read_text(encoding="utf-8")
-            ))
+            )).to_dict()
             self.assertEqual(run_result["next_action"], "NEED_REPAIR")
             public = runner_runtime.public_result(run_result, runner.run_dir)
             self.assertEqual(
@@ -312,7 +315,7 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             self.assertEqual(result["rerun"], [])
             self.assertEqual(result["removed"], [f"md5:{runner_runtime.md5(parent_source / 'A.pdf')}"])
 
-    def test_same_run_duplicate_content_is_standardized_once(self):
+    def test_same_run_duplicate_content_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
@@ -326,18 +329,12 @@ class StageOneResultsAndQCTest(unittest.TestCase):
                 "standardize_file",
                 side_effect=self.standardize_success,
             ) as standardize:
-                result = runner.stage_1_standardize()
+                with self.assertRaisesRegex(RuntimeError, "重复文件"):
+                    runner.stage_1_standardize()
 
-            self.assertEqual(standardize.call_count, 1)
-            self.assertEqual(result["processed_files"], 1)
-            self.assertEqual(len(runner.load_stage_1_results()["files"]), 1)
-            self.assertEqual(len(runner.pipeline_state["skipped_inputs"]), 1)
-            self.assertIn(
-                "内容 MD5 相同",
-                runner.pipeline_state["skipped_inputs"][0]["reason"],
-            )
+            self.assertEqual(standardize.call_count, 0)
 
-    def test_qc_results_separate_file_contains_file_and_customer_sections(self):
+    def test_pipeline_result_contains_file_and_customer_qc_sections(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "input"
@@ -352,13 +349,16 @@ class StageOneResultsAndQCTest(unittest.TestCase):
             ):
                 runner.stage_1_standardize()
 
-            qc = json.loads(Path(runner.qc_results_file()).read_text(encoding="utf-8"))
+            pipeline = json.loads(Path(runner.pipeline_result_path).read_text(encoding="utf-8"))
+            qc = pipeline["qc"]
             file_rules = next(iter(qc["files"].values()))
             self.assertIn("file.openable", file_rules)
             self.assertIn("file.source_format_quality", file_rules)
             self.assertIn("customer.coverage_two_years", qc["customer"])
             self.assertEqual(qc["status"], "RUNNING")
-            self.assertNotIn("qc", runner.pipeline_state)
+            self.assertIn("file_results", pipeline)
+            self.assertFalse((Path(runner.run_dir) / "stage_1_results.json").exists())
+            self.assertFalse((Path(runner.run_dir) / "qc_results.json").exists())
 
             self.assertEqual(
                 runner_runtime.Q.update_status(qc, final=True),

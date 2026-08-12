@@ -36,6 +36,11 @@ MONEY_COLUMNS = {
     "分析收入金额", "分析支出金额", "分析交易金额",
     "账户余额", "虚拟账户余额",
 }
+TIME_PRECISION_NUMBER_FORMATS = {
+    "date": "YYYY-MM-DD",
+    "minute": "YYYY-MM-DD HH:MM",
+    "second": "YYYY-MM-DD HH:MM:SS",
+}
 
 
 def _excel_scalar(value):
@@ -81,6 +86,11 @@ def _write_dataframe_sheet(workbook, title, frame, columns=None):
 
     columns = list(columns or frame.columns)
     widths, positions = _sheet_widths(frame, columns)
+    time_precision_position = (
+        frame.columns.get_loc("__time_precision")
+        if title == "整合打标流水" and "__time_precision" in frame.columns
+        else None
+    )
     worksheet = workbook.create_sheet(title)
     worksheet.freeze_panes = "A2"
     worksheet.sheet_view.showGridLines = True
@@ -100,13 +110,29 @@ def _write_dataframe_sheet(workbook, title, frame, columns=None):
 
     for row in frame.itertuples(index=False, name=None):
         cells = []
+        time_precision_value = (
+            _excel_scalar(row[time_precision_position])
+            if time_precision_position is not None
+            else None
+        )
+        time_precision = (
+            str(time_precision_value).strip().lower()
+            if time_precision_value is not None
+            else ""
+        )
         for column, source_index in zip(columns, positions):
             value = _excel_scalar(row[source_index])
             cell = WriteOnlyCell(worksheet, value=value)
             if title == "整合打标流水" and column in MONEY_COLUMNS:
                 cell.number_format = "#,##0.00"
             elif isinstance(value, datetime):
-                cell.number_format = "YYYY-MM-DD HH:MM:SS"
+                if title == "整合打标流水" and column == "交易时间":
+                    cell.number_format = TIME_PRECISION_NUMBER_FORMATS.get(
+                        time_precision,
+                        "YYYY-MM-DD HH:MM:SS",
+                    )
+                else:
+                    cell.number_format = "YYYY-MM-DD HH:MM:SS"
             elif isinstance(value, date):
                 cell.number_format = "YYYY-MM-DD"
             cells.append(cell)

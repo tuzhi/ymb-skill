@@ -38,7 +38,11 @@ class StandardizationRequest:
     files: tuple[InputFile, ...]
     parent_run_id: str | None = None
     remove_file_ids: tuple[str, ...] = ()
-    file_passwords: Mapping[str, str] = field(default_factory=dict)
+    file_passwords: Mapping[str, str] = field(
+        default_factory=dict,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)

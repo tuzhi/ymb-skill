@@ -45,7 +45,7 @@ bank-statement-standardization/
 │   ├── rules/               # tag_rules.csv 生成工具
 │   └── release/             # Skill 发布打包工具
 ├── references/              # 源码维护资料；正常路径不加载，Repair 包仅携带必需的 Prompt 1B/附件A
-│   ├── prompt-1a-输入读取与文件识别.md、prompt-1-字段映射.md ~ prompt-5-交付物组装.md
+│   ├── prompt-1-字段映射.md ~ prompt-5-交付物组装.md
 │   ├── 附件A-标准化字段说明.md / 附件B-标签体系参考.md / 附件C-附件清单.md
 │   └── 流水标签规则文档v20220517.xlsx   # 打标规则权威来源
 └── assets/
@@ -86,14 +86,18 @@ python scripts/orchestrator.py run --folder "/path/to/客户文件夹" \
 
 生产流程只通过 orchestrator 编排；`runtime/` 模块供 orchestrator 和专项测试调用，不再提供第二套流水线入口。
 
-每个 Run 固定生成 `pipeline_result.json`、`stage_1_results.json`、`qc_results.json` 和 `token_usage.json`。`pipeline_result.json` 保存 Run 上下文、顶层最终决策、最终 `deliverables`，并将每个 Stage 的状态、耗时和紧凑摘要统一放在 `stages.<stage_id>`；逐文件明细与 QC 通过 `refs` 指向独立事实文件。新 Run 不再生成 `manifest.json` 或 `run_result.json`。`token_usage.json` 是独立 Harness 统计文件，不进入 Pipeline 业务结果引用；它只统计 Repair 宿主回传的用量，不代表入口会话的总 Token。宿主未回传时使用 `measurement_status=unavailable` 和 `null`，不以 `0` 表示未知。正常 stdout 仍只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，无需回读结果文件。完整事件与回执留在 Run 目录。
+每个 Run 以 `pipeline_result.json` 作为唯一结构化结果：它保存 Run 上下文、顶层最终决策、每个 Stage 的状态与耗时、`file_results`、`qc` 和最终 `deliverables`。新 Run 不再生成 `manifest.json`、`run_result.json`、`stage_1_results.json` 或 `qc_results.json`。`token_usage.json` 仅在 Repair 宿主实际提交用量后生成；它不代表入口会话的总 Token。默认不生成 `events.jsonl`、`receipts/`、`traceback.txt` 和诊断 ZIP；`--verbose` 开启事件/回执诊断，`--error-bundle-mode safe|full` 显式生成诊断包。正常 stdout 仍只输出紧凑 RunResult；成功 `DELIVER` 的 `summary` 已携带输入/处理文件数、QC 状态和至多 5 条去重告警，无需回读结果文件。
 
 生产 Stage 1 默认开启严格 YAML 门禁：原始 PDF/Excel 必须唯一命中已发布 YAML，未命中或多命中会以 `BLOCKED` 结束，通用 Reader 结果仅供诊断，不进入正式产物和后续阶段。上游明确声明的 `__standardized.csv` 输入不受此限制。
+
+客户目录可保留历史 `_file_hints.yaml`，其唯一用途是按 `file_info.<相对文件路径>.open_password` 为加密 PDF/Excel 提供打开密码。它属于 Runtime 兼容输入而不是业务文件，不进入 Stage 1，也不触发 `INPUT_SOURCE_INVALID`。Runner 建立输入快照后会将其转换为内存 `file_passwords` 并立即删除快照副本；显式传入的 `StandardizationRequest.file_passwords` 优先级更高。
+
+输入预检还会检查可确定的来源真实性元数据。检测到由 WPS 将 PDF 转成的 Excel 时，直接返回 `INPUT_SOURCE_INVALID / REQUEST_USER`，不进入 Reader 或 AI Repair；这类文件应替换为银行原始 Excel 或可抽取文本的原始 PDF。反欺诈核查表、反欺诈报告等分析材料应存放在标准化客户目录之外，由后续反欺诈模块接收。
 
 ## Stage 1 按需 Repair
 
 1. Stage 1 出现可修复异常时，Orchestrator 内部调用 Coordinator，入口 stdout 直接返回 `NEED_REPAIR + request`，不需要专家先调用 `next`。
-2. 专家创建一个不继承主会话的 Repair Agent。Agent 直接读取 `stage_1_results.json`、失败原文件、`roles/repair.md` 及其明示引用。
+2. 专家创建一个不继承主会话的 Repair Agent。Agent 从 `pipeline_result.json.file_results` 获取失败文件，并直接读取失败原文件、`roles/repair.md` 及其明示引用。
 3. Repair 自由选择解析方法，只在 `repair/attempt-N/standardized/` 写入当前失败文件的标准化 CSV，并返回紧凑 result；不改父 Run、正式 Skill、源码或 routing rules。
 4. 专家将 result 和宿主的真实 `sessionId` 提交给 Coordinator。Coordinator 检查契约、源文件 MD5、结果 checksum 和路径范围，然后自动启动 Child Run。
 5. Child Run 复用父 Run 已成功文件，失败文件使用 Repair CSV，并执行原 Stage 1 Validator、QC 及 Stage 2～4；通过才 `DELIVER`，再失败则直接返回下一次 `NEED_REPAIR + request`，AI 修复最多两次。

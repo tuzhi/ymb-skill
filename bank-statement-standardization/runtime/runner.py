@@ -5,7 +5,6 @@ import csv
 import glob
 import hashlib
 import json
-import mimetypes
 import os
 import shutil
 import sys
@@ -48,6 +47,7 @@ from runtime.input_snapshot import (
     sha256,
     snapshot_input_folder,
 )
+from runtime.input_hints import consume_file_password_hints
 from runtime.models import IntegrationContext, PipelineExecutionResult, StageResult
 from runtime.models import run_result as R
 
@@ -72,15 +72,16 @@ def now():
     return datetime.now(LOCAL_TZ).isoformat()
 
 
-def entry_result(next_action, message, *, reason_code="", status="ERROR", context_ref=""):
+def entry_result(decision, *, status="ERROR", context_ref=""):
+    """把统一 RunDecision 转为入口边界的紧凑 JSON。"""
     return {
         "run_id": "",
         "status": status,
-        "next_action": next_action,
-        "reason_code": reason_code,
+        "next_action": decision.next_action,
+        "reason_code": decision.reason_code,
         "artifact_refs": [],
         "context_ref": context_ref,
-        "message": message,
+        "message": decision.message,
         "contract_version": R.CONTRACT_VERSION,
     }
 
@@ -89,26 +90,20 @@ def validate_input_source(raw_folder):
     value = str(raw_folder or "").strip()
     if not value or value == "$ARGUMENTS":
         return "", entry_result(
-            R.REQUEST_USER,
-            "请提供客户流水目录或 zip 路径",
-            reason_code="INPUT_SOURCE_INVALID",
+            F.INPUT_PATH_REQUIRED,
             status="BLOCKED",
         )
     source = os.path.abspath(os.path.expanduser(value))
     if not os.path.exists(source):
         return source, entry_result(
-            R.REQUEST_USER,
-            f"输入路径不存在：{source}",
-            reason_code="INPUT_SOURCE_INVALID",
+            F.INPUT_PATH_NOT_FOUND.with_message(f"输入路径不存在：{source}"),
             status="BLOCKED",
         )
     if not os.path.isdir(source) and not (
         os.path.isfile(source) and source.lower().endswith(".zip")
     ):
         return source, entry_result(
-            R.REQUEST_USER,
-            "请输入流水目录或 zip 文件",
-            reason_code="INPUT_SOURCE_INVALID",
+            F.INPUT_PATH_INVALID,
             status="BLOCKED",
         )
     return source, None
@@ -124,7 +119,6 @@ def protocol_exit_status(result, fallback_status=1):
     if isinstance(result, dict) and result.get("status") in {
         "NEED_REPAIR",
         "REQUEST_USER",
-        "UNSUPPORTED",
         "MAINTAINER_REQUIRED",
         "STOPPED",
     }:
@@ -134,7 +128,7 @@ def protocol_exit_status(result, fallback_status=1):
 
 def public_result(result, run_dir, *, stage_results=None, attempts=None):
     """把 NEED_REPAIR 原子推进为专家可直接消费的 Repair 请求。"""
-    if isinstance(result, dict) and result.get("next_action") == R.NEED_REPAIR:
+    if isinstance(result, dict) and result.get("next_action") == R.NextAction.NEED_REPAIR:
         from harness.coordinator import RepairCoordinator
 
         decision = RepairCoordinator(
@@ -224,16 +218,6 @@ def failure_route_summary(route_info):
     }
 
 
-def has_open_password_hint(path):
-    try:
-        from ymb_standardization_core.file_hints import load_file_hints_for_path
-
-        hints = load_file_hints_for_path(path).for_file(path)
-        return bool(hints.get("open_password"))
-    except Exception:
-        return False
-
-
 def reusable_stage_1_route(route, source_name, standardization_source=""):
     """原始文件只复用唯一命中 YAML 的结果；声明式标准化 CSV 是明确例外。"""
     if not valid_yaml_route(route):
@@ -311,16 +295,14 @@ class Runner:
         self.pipeline_result_path = os.path.join(
             self.run_dir, RS.PIPELINE_RESULT_FILENAME
         )
-        self.stage_1_results_path = os.path.join(self.run_dir, "stage_1_results.json")
-        self.qc_results_path = os.path.join(self.run_dir, "qc_results.json")
         self.token_usage_path = os.path.join(self.run_dir, "token_usage.json")
         os.makedirs(self.out_dir, exist_ok=True)
-        os.makedirs(self.receipt_dir, exist_ok=True)
+        if bool(getattr(self.args, "verbose", False)):
+            os.makedirs(self.receipt_dir, exist_ok=True)
         self.warning_events = []
         self.receipt_sequence = 0
         # Stage 业务摘要保留在内存中；receipt 只是同一份结果的持久化副本。
         self.stage_summaries = {}
-        self.artifacts = {}
         # 阶段一校验结果仅用于本次执行内的回执和兜底判断。
         self.stage_validation_results = {}
         # Stage 1 把 DataFrame 所有权直接转交 Stage 2；CSV 只作为旁路产物。
@@ -337,6 +319,8 @@ class Runner:
         # 最终交付验收在 stage_4_package 内完成，execute 复用结果，避免重复打开 XLSX。
         self.final_validation_result = None
         self.original_input_folder = os.path.abspath(args.folder)
+        self.file_passwords = dict(getattr(args, "file_passwords", {}) or {})
+        args.file_passwords = {}
         parent_context = load_parent_run_context(root, args.parent_run_id) if args.parent_run_id else None
         self.parent_context = parent_context
         if parent_context and parent_context.get("parent_client"):
@@ -350,7 +334,15 @@ class Runner:
             self.original_input_folder,
             self.run_dir,
         )
+        compatibility_passwords = consume_file_password_hints(self.input_dir)
+        # 显式 SDK/专家参数是正式契约，优先于历史 YAML 兼容输入。
+        self.file_passwords = {
+            **compatibility_passwords,
+            **self.file_passwords,
+        }
         self.args.folder = self.input_dir
+        self.file_results = {"files": {}}
+        self.qc_results = Q.empty_results()
         self.initialize_pipeline_result()
         self.pipeline_state["client_name"] = args.client
         self.pipeline_state["parent_run_id"] = args.parent_run_id or ""
@@ -417,23 +409,8 @@ class Runner:
             if self.routing_rules_snapshot is not None
             else S.routing_rules_version()
         )
-        self.pipeline_state["skipped_inputs"] = []
         self.write_pipeline_result()
-        self.file_results = {"files": {}}
-        self.qc_results = Q.empty_results()
-        self.write_stage_1_results(self.file_results)
-        self.write_qc_results(self.qc_results)
-        RS.atomic_write_json(self.token_usage_path, {
-            "contract_version": 1,
-            "run_id": self.run_id,
-            "measurement_scope": "repair_sessions_only",
-            "measurement_status": "not_started",
-            "ai_session_count": 0,
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cached_input_tokens": 0,
-            "sessions": [],
-        })
+        self.write_pipeline_result()
 
     def initialize_pipeline_result(self):
         if not os.path.isfile(self.pipeline_result_template_path):
@@ -449,7 +426,7 @@ class Runner:
         self.run_result = R.RunResult(
             run_id=self.run_id,
             status="RUNNING",
-            next_action=R.EXECUTE_PIPELINE,
+            next_action=R.NextAction.EXECUTE_PIPELINE,
             message="流水线执行中",
         )
         self.pipeline_state.update({
@@ -460,7 +437,6 @@ class Runner:
             "rules_version": "",
             "rerun_reason": "",
             "attempts": {"password": 0, "ai_repair": 0},
-            "skipped_inputs": [],
             "error": None,
         })
         self.write_pipeline_result()
@@ -544,7 +520,7 @@ class Runner:
         return sorted(
             os.path.relpath(path, self.input_dir).replace(os.sep, "/")
             for path in glob.glob(os.path.join(self.input_dir, "**", "*"), recursive=True)
-            if os.path.isfile(path) and os.path.basename(path) != "_file_hints.yaml"
+            if os.path.isfile(path)
         )
 
     def first_pending_stage(self):
@@ -590,24 +566,21 @@ class Runner:
             "message": str(run_result.get("message") or ""),
             "attempts": dict(self.pipeline_state.get("attempts") or {}),
             "stages": stages,
+            "file_results": dict(getattr(self, "file_results", {"files": {}})),
+            "qc": dict(getattr(self, "qc_results", Q.empty_results())),
             "summary": dict(run_result.get("summary") or {}),
-            "deliverables": artifact_refs if next_action == R.DELIVER else [],
-            "refs": {
-                "stage_1": "stage_1_results.json",
-                "qc": "qc_results.json",
-            },
-            "skipped_inputs": list(self.pipeline_state.get("skipped_inputs") or []),
+            "deliverables": artifact_refs if next_action == R.NextAction.DELIVER else [],
             "error": self.pipeline_state.get("error"),
         }
         context_ref = str(run_result.get("context_ref") or "")
         if context_ref and not (
-            next_action == R.DELIVER
+            next_action == R.NextAction.DELIVER
             and context_ref == RS.PIPELINE_RESULT_FILENAME
         ):
             result["context_ref"] = context_ref
         if run_result.get("action"):
             result["action"] = dict(run_result["action"])
-        if next_action != R.DELIVER and artifact_refs:
+        if next_action != R.NextAction.DELIVER and artifact_refs:
             result["artifact_refs"] = artifact_refs
         if self.pipeline_state.get("repair_snapshot"):
             result["repair_snapshot"] = dict(self.pipeline_state["repair_snapshot"])
@@ -642,58 +615,53 @@ class Runner:
     def emit(self, level, code, message, **extra):
         event = {"at": now(), "level": level, "code": code, "message": message}
         event.update(extra)
-        with open(self.event_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(event, ensure_ascii=False) + "\n")
-        if bool(getattr(self.args, "verbose", False)):
+        verbose = bool(getattr(self.args, "verbose", False))
+        if verbose:
+            with open(self.event_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
             print(f"[{level}][{code}] {message}")
         if level == "WARNING":
             self.warning_events.append(event)
 
     def receipt(self, stage, status, details=None):
+        if not bool(getattr(self.args, "verbose", False)):
+            return None
         row = {"stage": stage, "status": status, "at": now(), "details": details or {}}
         self.receipt_sequence += 1
+        os.makedirs(self.receipt_dir, exist_ok=True)
         path = os.path.join(self.receipt_dir, f"{self.receipt_sequence:02d}-{stage}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(row, f, ensure_ascii=False, indent=2)
-
-    def stage_1_results_file(self, run_dir=None):
-        if run_dir is not None:
-            return os.path.join(run_dir, "stage_1_results.json")
-        return getattr(
-            self,
-            "stage_1_results_path",
-            os.path.join(self.run_dir, "stage_1_results.json"),
-        )
-
-    def qc_results_file(self):
-        run_dir = getattr(self, "run_dir", "") or os.path.dirname(self.out_dir)
-        return getattr(
-            self,
-            "qc_results_path",
-            os.path.join(run_dir, "qc_results.json"),
-        )
+        return path
 
     def load_stage_1_results(self, run_dir=None):
         if run_dir is None and hasattr(self, "file_results"):
             data = self.file_results
-            path = self.stage_1_results_file()
+            source = getattr(
+                self,
+                "pipeline_result_path",
+                os.path.join(self.run_dir, RS.PIPELINE_RESULT_FILENAME),
+            )
         else:
-            path = self.stage_1_results_file(run_dir)
-            data = read_json_if_exists(path, {"files": {}})
+            source = os.path.join(run_dir or self.run_dir, RS.PIPELINE_RESULT_FILENAME)
+            pipeline = RS.load_pipeline_result(run_dir or self.run_dir)
+            data = pipeline.get("file_results", {"files": {}})
         if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
-            raise RuntimeError(f"阶段一文件结果结构无效：{path}")
+            raise RuntimeError(f"阶段一文件结果结构无效：{source}")
         return data
 
     def write_stage_1_results(self, data):
         if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
             raise RuntimeError("阶段一文件结果必须包含 files 对象")
         self.file_results = data
-        Q.atomic_write_json(self.stage_1_results_file(), data)
+        self.write_pipeline_result()
 
     def load_qc_results(self):
-        if hasattr(self, "qc_results"):
-            return self.qc_results
-        return Q.load_results(self.qc_results_file())
+        if not hasattr(self, "qc_results"):
+            # QC 是本次 Runner 的内存状态；直接调用 Stage 的轻量场景
+            # 从空契约开始，不为组装结果回读文件。
+            self.qc_results = Q.empty_results()
+        return self.qc_results
 
     def delivery_summary(self):
         """生成成功交付所需的紧凑事实，避免宿主回读 manifest/QC。"""
@@ -703,7 +671,6 @@ class Runner:
             for record in stage_files.values()
             if isinstance(record, dict) and record.get("status") == DONE
         )
-        skipped_file_count = len(self.pipeline_state.get("skipped_inputs") or [])
         qc_results = self.load_qc_results()
 
         warnings = []
@@ -725,7 +692,7 @@ class Runner:
                     warnings.append(message)
 
         summary = {
-            "input_file_count": processed_file_count + skipped_file_count,
+            "input_file_count": processed_file_count,
             "processed_file_count": processed_file_count,
             "qc_status": str(qc_results.get("status") or ""),
             "warning_count": len(warnings),
@@ -739,7 +706,7 @@ class Runner:
 
     def write_qc_results(self, data):
         self.qc_results = data
-        Q.atomic_write_json(self.qc_results_file(), data)
+        self.write_pipeline_result()
 
     def run_file_qc(self, file_id, checkpoint, context):
         results = self.load_qc_results()
@@ -836,31 +803,8 @@ class Runner:
         return value
 
     def _remember_artifact(self, path):
-        """登记已落盘文件的轻量引用，不读取文件内容。"""
-        reference = self.run_relative_ref(path)
-        contract_files = {
-            "stage_1_results.json",
-            "qc_results.json",
-            "token_usage.json",
-        }
-        is_public_artifact = (
-            reference.startswith("artifacts/")
-            or reference in contract_files
-            or reference.endswith(".zip")
-        )
-        if is_public_artifact and os.path.isfile(path):
-            artifacts = getattr(self, "artifacts", None)
-            if artifacts is None:
-                artifacts = self.artifacts = {}
-            artifacts[reference] = {
-                "artifact_id": reference,
-                "filename": os.path.basename(path),
-                "content_type": (
-                    mimetypes.guess_type(path)[0] or "application/octet-stream"
-                ),
-                "size": os.path.getsize(path),
-            }
-        return reference
+        """把 Run 内绝对路径转换为稳定相对引用。"""
+        return self.run_relative_ref(path)
 
     def input_relative_path(self, path):
         input_root = os.path.abspath(
@@ -870,6 +814,12 @@ class Runner:
         if os.path.commonpath([input_root, resolved]) != input_root:
             return os.path.basename(resolved)
         return normalize_relpath(os.path.relpath(resolved, input_root))
+
+    def input_password(self, path):
+        """返回当前文件的一次性内存密码，不写入 Run 文件。"""
+        return (getattr(self, "file_passwords", {}) or {}).get(
+            self.input_relative_path(path)
+        )
 
     def latest_artifact(self, pattern):
         hits = sorted(glob.glob(os.path.join(self.work_dir(), pattern)))
@@ -939,7 +889,7 @@ class Runner:
             return sum(1 for _ in csv.DictReader(f))
 
     def write_stage_1_routes(self, work, file_routes):
-        """旧调用兼容：把路由写入新的 stage_1_results.json，不再生成路由文件。"""
+        """旧调用兼容：把路由写入 pipeline_result.json，不再生成路由文件。"""
         results = {"files": {}}
         for csv_name, route in file_routes.items():
             path = os.path.join(work, csv_name)
@@ -953,7 +903,7 @@ class Runner:
                 "route": dict(route),
             }
         self.write_stage_1_results(results)
-        return self.stage_1_results_file()
+        return self.pipeline_result_path
 
     def load_stage_1_routes(self):
         results = self.load_stage_1_results()
@@ -1049,7 +999,7 @@ class Runner:
                     "relative_path": self.input_relative_path(source_path),
                     "status": "BLOCKED",
                     "message": "文件级前置 HARD QC 未通过",
-                    "reason_code": F.QC_HARD_FAILURE,
+                    "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                 }
                 self.write_stage_1_results(stage_results)
                 continue
@@ -1080,7 +1030,7 @@ class Runner:
                         "relative_path": self.input_relative_path(source_path),
                         "status": BLOCKED,
                         "message": self.file_qc_failure_message(file_id),
-                        "reason_code": F.QC_HARD_FAILURE,
+                        "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                     }
                 else:
                     stage_results["files"][file_id] = {
@@ -1106,7 +1056,6 @@ class Runner:
                 }
             self.write_stage_1_results(stage_results)
 
-        self.pipeline_state["skipped_inputs"] = []
         self.write_stage_1_results(stage_results)
         self.pipeline_state["upstream_manifest"] = {
             "path": manifest_path,
@@ -1122,7 +1071,11 @@ class Runner:
             "upstream_manifest": self.pipeline_state["upstream_manifest"],
             "processed_files": len(processed),
             "standardized": processed,
-            "stage_1_results": self.stage_1_results_file(),
+            "pipeline_result": getattr(
+                self,
+                "pipeline_result_path",
+                os.path.join(self.run_dir, RS.PIPELINE_RESULT_FILENAME),
+            ),
         })
 
     def stage_1_standardize(self):
@@ -1150,13 +1103,9 @@ class Runner:
                 raise RuntimeError(f"阶段一存在 {len(failed)} 个失败文件")
             return declared_result
 
-        raw_files, skipped = S.screen_files(collect_input_files(self.args.folder))
-        skipped_reason_codes = {}
-        self.pipeline_state["skipped_inputs"] = [{"name": n, "reason": w} for n, w in skipped]
-        self.write_pipeline_result()
+        raw_files = S.screen_files(collect_input_files(self.args.folder))
         if not raw_files:
-            detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "目录内无候选文件"
-            raise RuntimeError(f"客户「{self.args.client}」无可处理的银行流水文件。已跳过：{detail}")
+            raise RuntimeError(f"客户「{self.args.client}」无可处理的银行流水文件")
 
         processed = []
         decisions = {}
@@ -1168,7 +1117,9 @@ class Runner:
         parent_dir = parent.get("parent_run_dir")
         parent_results = (
             self.load_stage_1_results(parent_dir)
-            if parent_dir and os.path.isfile(self.stage_1_results_file(parent_dir))
+            if parent_dir and os.path.isfile(
+                os.path.join(parent_dir, RS.PIPELINE_RESULT_FILENAME)
+            )
             else {"files": {}}
         )
         parent_files = parent_results["files"]
@@ -1178,16 +1129,16 @@ class Runner:
         )
         descriptors = []
         seen_file_ids = {}
+        duplicate_files = []
         for path in raw_files:
             file_id = f"md5:{md5(path)}"
             if file_id in seen_file_ids:
-                skipped.append((
-                    os.path.basename(path),
-                    f"与 {seen_file_ids[file_id]} 内容 MD5 相同，按重复文件跳过",
-                ))
+                duplicate_files.append(f"{os.path.basename(path)} 与 {seen_file_ids[file_id]}")
                 continue
             seen_file_ids[file_id] = os.path.basename(path)
             descriptors.append((file_id, path, os.path.basename(path)))
+        if duplicate_files:
+            raise RuntimeError("输入包含内容相同的重复文件：" + "；".join(duplicate_files))
         current_ids = {file_id for file_id, _path, _name in descriptors}
         removed = sorted(set(parent_files) - current_ids)
 
@@ -1209,7 +1160,7 @@ class Runner:
                     "relative_path": self.input_relative_path(path),
                     "status": BLOCKED,
                     "message": "文件级前置 HARD QC 未通过",
-                    "reason_code": F.QC_HARD_FAILURE,
+                    "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                 }
                 decisions[file_id] = {
                     "decision": decision,
@@ -1251,7 +1202,7 @@ class Runner:
                             "relative_path": self.input_relative_path(path),
                             "status": BLOCKED,
                             "message": self.file_qc_failure_message(file_id),
-                            "reason_code": F.QC_HARD_FAILURE,
+                            "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                         }
                         result_status = BLOCKED
                     else:
@@ -1283,7 +1234,7 @@ class Runner:
                         "relative_path": self.input_relative_path(path),
                         "status": ERROR,
                         "message": str(exc),
-                        "reason_code": F.VALIDATION_FAILED,
+                        "reason_code": R.ReasonCode.VALIDATION_FAILED,
                     }
                     result_status = ERROR
                     try:
@@ -1345,7 +1296,7 @@ class Runner:
                             "relative_path": self.input_relative_path(path),
                             "status": BLOCKED,
                             "message": self.file_qc_failure_message(file_id),
-                            "reason_code": F.QC_HARD_FAILURE,
+                            "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                         }
                         result_status = BLOCKED
                     else:
@@ -1398,6 +1349,7 @@ class Runner:
                     write_mapping=False,
                     route_rules=getattr(self, "routing_rules_snapshot", None),
                     return_dataframe=True,
+                    open_password=self.input_password(path),
                 ))
                 csv_path, _json_path, report = standardization[:3]
                 standardized = standardization[3] if len(standardization) == 4 else None
@@ -1417,7 +1369,7 @@ class Runner:
                         "relative_path": self.input_relative_path(path),
                         "status": BLOCKED,
                         "message": self.file_qc_failure_message(file_id),
-                        "reason_code": F.QC_HARD_FAILURE,
+                        "reason_code": R.ReasonCode.QC_HARD_FAILURE,
                     }
                 else:
                     stage_results["files"][file_id] = {
@@ -1437,9 +1389,9 @@ class Runner:
             except S.YamlRouteRequiredError as exc:
                 route = failure_route_summary(getattr(exc, "route_info", {}))
                 reason_code = (
-                    F.ROUTE_AMBIGUOUS
+                    R.ReasonCode.ROUTE_AMBIGUOUS
                     if route.get("yaml_match_status") == "ambiguous"
-                    else F.ROUTE_UNMATCHED
+                    else R.ReasonCode.ROUTE_UNMATCHED
                 )
                 stage_results["files"][file_id] = {
                     "name": name,
@@ -1460,21 +1412,28 @@ class Runner:
                     "relative_path": self.input_relative_path(path),
                     "status": BLOCKED,
                     "message": exc.reason,
-                    "reason_code": F.INPUT_SOURCE_INVALID,
+                    "reason_code": R.ReasonCode.INPUT_SOURCE_INVALID,
                 }
             except S.ZeroTransactionStatement as exc:
-                skipped.append((name, exc.reason))
-                skipped_reason_codes[name] = exc.code
-                stage_results["files"].pop(file_id, None)
-                self.remove_file_qc(file_id)
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "relative_path": self.input_relative_path(path),
+                    "status": BLOCKED,
+                    "message": exc.reason,
+                    "reason_code": R.ReasonCode.ZERO_TRANSACTION_STATEMENT,
+                    "route": failure_route_summary(getattr(exc, "route_info", {})),
+                }
             except S.NotABankStatement as exc:
-                skipped.append((name, exc.reason))
-                stage_results["files"].pop(file_id, None)
-                self.remove_file_qc(file_id)
+                stage_results["files"][file_id] = {
+                    "name": name,
+                    "relative_path": self.input_relative_path(path),
+                    "status": ERROR,
+                    "message": exc.reason,
+                    "reason_code": R.ReasonCode.READER_FAILED,
+                }
             except Exception as exc:
-                password_attempt = max(
-                    int((self.pipeline_state.get("attempts") or {}).get("password") or 0),
-                    1 if has_open_password_hint(path) else 0,
+                password_attempt = int(
+                    (self.pipeline_state.get("attempts") or {}).get("password") or 0
                 )
                 failure = F.classify_failure(
                     "stage_1_standardize",
@@ -1491,7 +1450,7 @@ class Runner:
             result_status = (
                 stage_results["files"].get(file_id, {}).get("status")
                 if file_id in stage_results["files"]
-                else "SKIPPED"
+                else ERROR
             )
             decisions[file_id] = {
                 "decision": decision,
@@ -1502,18 +1461,6 @@ class Runner:
             if file_sleep_seconds and index < len(descriptors):
                 time.sleep(file_sleep_seconds)
 
-        self.pipeline_state["skipped_inputs"] = [
-            {
-                "name": n,
-                "reason": w,
-                **(
-                    {"reason_code": skipped_reason_codes[n]}
-                    if n in skipped_reason_codes
-                    else {}
-                ),
-            }
-            for n, w in skipped
-        ]
         self.write_pipeline_result()
         done_paths = self.standardized_paths_from_results()
         customer_hard_failed = self.run_customer_qc(
@@ -1548,15 +1495,18 @@ class Runner:
             )
             raise RuntimeError(f"阶段一处理完成但存在失败文件：{detail}")
         if not processed:
-            detail = "；".join(f"{n}（{w}）" for n, w in skipped) or "无成功标准化文件"
-            raise RuntimeError(f"阶段一没有生成标准化产物：{detail}")
+            raise RuntimeError("阶段一没有生成标准化产物")
 
         return StageResult(
             "stage_1_standardize",
             {
                 "processed_files": len(processed),
                 "standardized": processed,
-                "stage_1_results": self.stage_1_results_file(),
+                "pipeline_result": getattr(
+                    self,
+                    "pipeline_result_path",
+                    os.path.join(self.run_dir, RS.PIPELINE_RESULT_FILENAME),
+                ),
                 **decision_summary,
             },
         )
@@ -1632,10 +1582,6 @@ class Runner:
             raise RuntimeError("阶段三内存结果不存在")
         tagged = self.tagged_transactions
         daily = self.daily_balances
-        skipped = [
-            (row.get("name", ""), row.get("reason", ""))
-            for row in self.pipeline_state.get("skipped_inputs", [])
-        ]
         qc_summary = self.load_qc_results()
         Q.update_status(qc_summary, final=True)
         try:
@@ -1647,7 +1593,7 @@ class Runner:
                 self.tag_report,
                 self.balance_report,
                 self.out_dir,
-                skipped,
+                [],
                 qc_results=qc_summary,
             )
         except P.DeliverableWriteError as exc:
@@ -1717,7 +1663,6 @@ class Runner:
         if stage_id == "stage_1_standardize":
             return V.validate_standardize(
                 work,
-                skipped_inputs=self.pipeline_state.get("skipped_inputs", []),
                 file_routes=self.load_stage_1_routes(),
                 stage_1_results=self.load_stage_1_results(),
                 run_dir=self.run_dir,
@@ -1725,6 +1670,8 @@ class Runner:
         raise RuntimeError(f"未知阶段验证器：{stage_id}")
 
     def bundle(self, level):
+        if getattr(self.args, "error_bundle_mode", "none") == "none":
+            return ""
         bundle = self.bundle_path(level)
         with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as zf:
             for root, dirs, files in os.walk(self.run_dir):
@@ -1750,7 +1697,10 @@ class Runner:
         return bundle
 
     def bundle_path(self, level):
-        return os.path.join(self.run_dir, f"{self.run_id}__{level}__{self.args.error_bundle_mode}.zip")
+        mode = getattr(self.args, "error_bundle_mode", "none")
+        if mode == "none":
+            return ""
+        return os.path.join(self.run_dir, f"{self.run_id}__{level}__{mode}.zip")
 
     def handle_stage_failure(self, stage_id, spec, exc, duration_seconds=None):
         if stage_id != "stage_1_standardize":
@@ -1772,8 +1722,8 @@ class Runner:
             })
             self.write_run_result(
                 status=ERROR,
-                next_action=R.REPORT_ERROR,
-                reason_code=F.DOWNSTREAM_STAGE_FAILURE,
+                next_action=R.NextAction.REPORT_ERROR,
+                reason_code=R.ReasonCode.DOWNSTREAM_STAGE_FAILURE,
                 context_ref=RS.PIPELINE_RESULT_FILENAME,
                 message=f"{stage_id} 失败，确定性流水线已停止",
             )
@@ -1802,17 +1752,16 @@ class Runner:
             password_attempt=int(
                 (self.pipeline_state.get("attempts") or {}).get("password") or 0
             ),
-            skipped_inputs=self.pipeline_state.get("skipped_inputs") or [],
         )
         if (
-            failure.next_action == R.NEED_REPAIR
+            failure.next_action == R.NextAction.NEED_REPAIR
             and int(
                 (self.pipeline_state.get("attempts") or {}).get("ai_repair") or 0
-            ) >= F.MAX_AI_REPAIR_ATTEMPTS
+            ) >= F.DEFAULT_RETRY_POLICY.max_repair_attempts
         ):
-            failure = R.FailureRoute(
+            failure = R.RunDecision(
+                R.NextAction.MAINTAINER_REQUIRED,
                 failure.reason_code,
-                R.MAINTAINER_REQUIRED,
                 "AI 修复次数已达上限",
             )
         self.stages[stage_id]["reason_code"] = failure.reason_code
@@ -1822,14 +1771,14 @@ class Runner:
             duration_seconds=duration_seconds,
         )
 
-        if failure.next_action != R.NEED_REPAIR:
+        if failure.next_action != R.NextAction.NEED_REPAIR:
             event_code = (
                 "USER_INPUT_REQUIRED"
-                if failure.next_action == R.REQUEST_USER
+                if failure.next_action == R.NextAction.REQUEST_USER
                 else "STAGE_ERROR"
             )
             self.emit(
-                "WARNING" if failure.next_action == R.REQUEST_USER else "ERROR",
+                "WARNING" if failure.next_action == R.NextAction.REQUEST_USER else "ERROR",
                 event_code,
                 failure.message,
                 stage=stage_id,
@@ -1842,13 +1791,16 @@ class Runner:
                 "error": str(exc),
             })
             action = {}
-            if failure.reason_code in {F.INPUT_PASSWORD_REQUIRED, F.INPUT_PASSWORD_INVALID}:
+            if failure.reason_code in {
+                R.ReasonCode.INPUT_PASSWORD_REQUIRED,
+                R.ReasonCode.INPUT_PASSWORD_INVALID,
+            }:
                 action = self.coordinator_action(
                     "retry-password",
                     file_refs=self.password_file_refs(failed_files),
                     input_transport="stdin",
                 )
-            elif failure.next_action == R.REQUEST_USER:
+            elif failure.next_action == R.NextAction.REQUEST_USER:
                 action = {
                     "handler": "user",
                     "operation": "provide_supported_input",
@@ -1857,8 +1809,8 @@ class Runner:
                 status=ERROR,
                 next_action=failure.next_action,
                 reason_code=failure.reason_code,
-                artifact_refs=("stage_1_results.json", "qc_results.json"),
-                context_ref="stage_1_results.json",
+                artifact_refs=(RS.PIPELINE_RESULT_FILENAME,),
+                context_ref=RS.PIPELINE_RESULT_FILENAME,
                 message=failure.message,
                 action=action,
             )
@@ -1870,20 +1822,20 @@ class Runner:
             f"阶段 {stage_id} 失败，需要独立 Repair Agent 读取失败文件并修复",
             stage=stage_id,
             reason_code=failure.reason_code,
-            max_retry=F.MAX_AI_REPAIR_ATTEMPTS,
+            max_retry=F.DEFAULT_RETRY_POLICY.max_repair_attempts,
         )
         self.receipt(stage_id, "error", {
             "orchestrator_handler": self.stage_handler_name(stage_id),
             "reason_code": failure.reason_code,
-            "next_action": R.NEED_REPAIR,
+            "next_action": R.NextAction.NEED_REPAIR,
             "error": str(exc),
         })
         self.write_run_result(
             status=ERROR,
-            next_action=R.NEED_REPAIR,
+            next_action=R.NextAction.NEED_REPAIR,
             reason_code=failure.reason_code,
-            artifact_refs=("stage_1_results.json", "qc_results.json"),
-            context_ref="stage_1_results.json",
+            artifact_refs=(RS.PIPELINE_RESULT_FILENAME,),
+            context_ref=RS.PIPELINE_RESULT_FILENAME,
             message=failure.message,
         )
 
@@ -1959,6 +1911,9 @@ class Runner:
                     duration_seconds=duration_seconds,
                 )
                 raise
+            finally:
+                if stage_id == "stage_1_standardize":
+                    self.file_passwords.clear()
 
     def _pipeline_execution_result(self, exit_code, error=None):
         """用三份内存结果构造 Service 聚合 DTO，并持久化整体结果。"""
@@ -1969,21 +1924,6 @@ class Runner:
         }
         file_results = self.load_stage_1_results()
         qc = self.load_qc_results()
-        for reference in (
-            *run_result.get("artifact_refs", []),
-            "stage_1_results.json",
-            "qc_results.json",
-            "token_usage.json",
-        ):
-            path = os.path.join(self.run_dir, str(reference))
-            if os.path.isfile(path):
-                self._remember_artifact(path)
-        artifacts = tuple(
-            dict(value)
-            for _key, value in sorted(
-                (getattr(self, "artifacts", {}) or {}).items()
-            )
-        )
         self.pipeline_state["status"] = str(
             run_result.get("status") or (DONE if exit_code == 0 else ERROR)
         )
@@ -1997,9 +1937,7 @@ class Runner:
             status=str(run_result.get("status") or (DONE if exit_code == 0 else ERROR)),
             file_results=file_results,
             stages=stages,
-            stage_summaries=dict(getattr(self, "stage_summaries", {}) or {}),
             qc=qc,
-            artifacts=artifacts,
             run_result=run_result,
             error=str(error) if error is not None else None,
             integration_report=dict(self.integration_report),
@@ -2033,7 +1971,7 @@ class Runner:
                 message = "Pipeline 计算完成，旁路交付物生成或验收失败"
             self.write_run_result(
                 status=DONE,
-                next_action=R.DELIVER,
+                next_action=R.NextAction.DELIVER,
                 artifact_refs=artifact_refs,
                 context_ref=RS.PIPELINE_RESULT_FILENAME,
                 message=message,
@@ -2041,27 +1979,33 @@ class Runner:
             )
             self.pipeline_state["error"] = None
             self.write_pipeline_result()
-            if self.warning_events:
+            if self.warning_events and self.bundle_path("WARNING"):
                 bundle = self.bundle_path("WARNING")
                 self.emit("INFO", "WARNING_BUNDLE_READY", f"告警任务已完成归档：{bundle}")
                 self.bundle("WARNING")
             return self._pipeline_execution_result(0)
         except Exception as exc:
-            with open(os.path.join(self.run_dir, "traceback.txt"), "w", encoding="utf-8") as f:
-                f.write(traceback.format_exc())
-            if self.run_result.next_action == R.EXECUTE_PIPELINE:
+            unexpected_failure = self.run_result.next_action == R.NextAction.EXECUTE_PIPELINE
+            if unexpected_failure:
+                traceback_ref = RS.PIPELINE_RESULT_FILENAME
+                if bool(getattr(self.args, "verbose", False)):
+                    traceback_ref = "traceback.txt"
+                    with open(os.path.join(self.run_dir, traceback_ref), "w", encoding="utf-8") as f:
+                        f.write(traceback.format_exc())
                 self.write_run_result(
                     status=ERROR,
-                    next_action=R.REPORT_ERROR,
-                    reason_code=F.UNKNOWN,
-                    context_ref="traceback.txt",
+                    next_action=R.NextAction.REPORT_ERROR,
+                    reason_code=R.ReasonCode.UNKNOWN,
+                    context_ref=traceback_ref,
                     message="流水线在生成结构化失败路由前中止",
                 )
             self.pipeline_state["error"] = str(exc)
             self.write_pipeline_result()
             bundle = self.bundle_path("ERROR")
-            self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}；错误包：{bundle}")
-            self.bundle("ERROR")
+            suffix = f"；错误包：{bundle}" if bundle else ""
+            self.emit("ERROR", "PIPELINE_ABORTED", f"{exc}{suffix}")
+            if bundle:
+                self.bundle("ERROR")
             return self._pipeline_execution_result(1, exc)
 
 

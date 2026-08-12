@@ -50,9 +50,9 @@ class AuditTestdataSupportTests(unittest.TestCase):
                     "2026-01-01,张三,62170001,100,,流水.pdf\n",
                     encoding="utf-8-sig",
                 )
-                (run_dir / "stage_1_results.json").write_text(
+                (run_dir / "pipeline_result.json").write_text(
                     json.dumps({
-                        "files": {
+                        "file_results": {"files": {
                             "md5:test": {
                                 "name": "流水.pdf",
                                 "status": "DONE",
@@ -64,7 +64,7 @@ class AuditTestdataSupportTests(unittest.TestCase):
                                     "yaml_match_status": "matched",
                                 },
                             }
-                        }
+                        }}
                     }, ensure_ascii=False),
                     encoding="utf-8",
                 )

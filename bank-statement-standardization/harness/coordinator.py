@@ -13,23 +13,19 @@ from runtime.models import run_result as R
 from runtime import result_store as RS
 from runtime.result_store import atomic_write_json
 
-from .contracts import (
-    CHILD_RUN_READY,
+from .models import (
     CONTRACT_VERSION,
-    MAINTAINER_REQUIRED,
-    NEED_REPAIR,
     REPAIR,
-    REQUEST_USER,
-    UNSUPPORTED,
-    validate_repair_payload,
+    REPAIR_RESULT_PROTOCOL,
+    RepairRequest,
+    RepairResult,
+    RepairStatus,
 )
-from .models import RepairRequest
 from .protocols import protocol_path
 
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
-REPAIR_PROMPT = SKILL_ROOT / "roles" / "repair.md"
-TOKEN_USAGE_KEYS = ("input_tokens", "output_tokens", "cached_input_tokens")
+REPAIR_ROLE_PATH = SKILL_ROOT / "roles" / "repair.md"
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -63,12 +59,13 @@ def _canonical_hash(value: object) -> str:
 
 
 def _normalize_token_usage(usage: Mapping[str, Any]) -> tuple[dict[str, int | None], str]:
+    keys = ("input_tokens", "output_tokens", "cached_input_tokens")
     normalized = {
         key: max(0, int(usage[key])) if usage.get(key) is not None else None
-        for key in TOKEN_USAGE_KEYS
+        for key in keys
     }
     known_count = sum(value is not None for value in normalized.values())
-    if known_count == len(TOKEN_USAGE_KEYS):
+    if known_count == len(keys):
         status = "available"
     elif known_count == 0:
         status = "unavailable"
@@ -78,7 +75,7 @@ def _normalize_token_usage(usage: Mapping[str, Any]) -> tuple[dict[str, int | No
 
 
 class RepairCoordinator:
-    """从 RunResult 和 stage_1_results 推导一次 Repair 请求。"""
+    """从唯一 Pipeline 结果推导一次 Repair 请求。"""
 
     def __init__(
         self,
@@ -98,7 +95,7 @@ class RepairCoordinator:
         self.run_result = (
             dict(run_result)
             if run_result is not None
-            else RS.run_result_from_pipeline(self.pipeline_result)
+            else R.RunResult.from_pipeline_result(self.pipeline_result).to_dict()
         )
         # 正常内存路径直接接收 PipelineExecutionResult 的逐文件结果；跨会话
         # submit 优先恢复不可变 repair_request，不再重复回读 Stage 结果。
@@ -115,21 +112,21 @@ class RepairCoordinator:
     def _validate_run(self) -> None:
         if self.run_result.get("run_id") != self.run_id:
             raise ValueError("RunResult 与 Run 目录不一致")
-        if self.run_result.get("next_action") != R.NEED_REPAIR:
+        if self.run_result.get("next_action") != R.NextAction.NEED_REPAIR:
             raise ValueError("当前 Run 不需要 AI Repair")
-        if self.attempt > F.MAX_AI_REPAIR_ATTEMPTS:
+        if self.attempt > F.DEFAULT_RETRY_POLICY.max_repair_attempts:
             raise RuntimeError("AI 修复次数已达上限")
         if not self.input_root.is_dir():
             raise FileNotFoundError("父 Run 缺少 input 快照")
-        if not REPAIR_PROMPT.is_file():
-            raise FileNotFoundError(f"缺少 Repair 角色说明：{REPAIR_PROMPT}")
+        if not REPAIR_ROLE_PATH.is_file():
+            raise FileNotFoundError(f"缺少 Repair 角色说明：{REPAIR_ROLE_PATH}")
 
     def _failed_files(self) -> list[dict[str, Any]]:
         if self.stage_results is None:
-            self.stage_results = _read_json(self.run_dir / "stage_1_results.json")
+            self.stage_results = dict(self.pipeline_result.get("file_results") or {})
         files = self.stage_results.get("files")
         if not isinstance(files, dict):
-            raise ValueError("stage_1_results.json 缺少 files 对象")
+            raise ValueError("pipeline_result.json 缺少 file_results.files 对象")
         failed = []
         for file_id, record in files.items():
             if not isinstance(record, Mapping) or record.get("status") not in {"ERROR", "BLOCKED"}:
@@ -164,12 +161,12 @@ class RepairCoordinator:
             return request
         failed_files = self._failed_files()
         input_refs = [item["input_ref"] for item in failed_files]
-        output_contract = protocol_path("repair-result").resolve()
+        output_contract = protocol_path(REPAIR_RESULT_PROTOCOL).resolve()
         seed = {
             "run_id": self.run_id,
             "attempt": self.attempt,
             "failed_files": failed_files,
-            "role_prompt_sha256": _sha256(REPAIR_PROMPT),
+            "role_prompt_sha256": _sha256(REPAIR_ROLE_PATH),
             "output_contract_sha256": _sha256(output_contract),
         }
         return RepairRequest(
@@ -177,7 +174,7 @@ class RepairCoordinator:
             run_id=self.run_id,
             run_dir=self.run_dir.as_posix(),
             attempt=self.attempt,
-            role_prompt_ref=REPAIR_PROMPT.resolve().as_posix(),
+            role_prompt_ref=REPAIR_ROLE_PATH.resolve().as_posix(),
             input_refs=tuple(input_refs),
             failed_files=tuple(failed_files),
             repair_dir=self.repair_root.resolve().as_posix(),
@@ -195,7 +192,7 @@ class RepairCoordinator:
             "contract_version": CONTRACT_VERSION,
             "run_id": self.run_id,
             "attempt": self.attempt,
-            "status": NEED_REPAIR,
+            "status": R.NextAction.NEED_REPAIR,
             "role": REPAIR,
             "request": request_value,
             "action": {
@@ -221,28 +218,32 @@ class RepairCoordinator:
         if not str(session_id or "").strip():
             raise ValueError("session_id 不能为空")
         self._assert_fresh_session(session_id)
-        value = validate_repair_payload(payload, request)
-        if value["status"] == "REPAIRED":
-            value["outputs"] = self._validate_outputs(value.get("outputs") or [], request)
+        result = RepairResult.from_mapping(payload)
+        result.validate_for(request)
+        if result.status is RepairStatus.REPAIRED:
+            result = result.with_outputs(self._validate_outputs(list(result.outputs), request))
+        value = result.to_dict()
         self.repair_root.mkdir(parents=True, exist_ok=True)
         if self.output_path.is_file() and _read_json(self.output_path) != value:
             raise RuntimeError("repair_result.json 不可覆盖")
         atomic_write_json(self.output_path, value)
         self._write_receipt(request, session_id, usage or {})
 
-        status = value["status"]
-        if status == REQUEST_USER:
-            return self._outcome(REQUEST_USER, message=value.get("message") or "请补充修复所需信息")
-        if status == UNSUPPORTED:
-            return self._outcome(UNSUPPORTED, message=value.get("message") or "当前输入不支持自动修复")
-        if status == MAINTAINER_REQUIRED:
-            return self._outcome(MAINTAINER_REQUIRED, message=value.get("message") or "需要维护者处理")
+        if result.status is RepairStatus.REQUEST_USER:
+            return self._outcome(
+                R.NextAction.REQUEST_USER,
+                message=result.message or "请补充修复所需信息",
+            )
+        if result.status is RepairStatus.MAINTAINER_REQUIRED:
+            return self._outcome(
+                R.NextAction.MAINTAINER_REQUIRED,
+                message=result.message or "需要维护者处理",
+            )
 
-        return self._outcome(
-            CHILD_RUN_READY,
-            repair_result_ref=self.output_path.relative_to(self.run_dir).as_posix(),
-            repair_result_sha256=_sha256(self.output_path),
-        )
+        return {
+            "repair_result_ref": self.output_path.relative_to(self.run_dir).as_posix(),
+            "repair_result_sha256": _sha256(self.output_path),
+        }
 
     def _validate_outputs(
         self,

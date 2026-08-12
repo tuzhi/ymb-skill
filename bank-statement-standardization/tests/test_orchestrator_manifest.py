@@ -23,7 +23,6 @@ class OrchestratorManifestTest(unittest.TestCase):
         runner.pipeline_state = {
             "skill": {},
             "client_name": client,
-            "skipped_inputs": [],
         }
         runner.stages = {
             "stage_1_standardize": {"route_artifact": ""},
@@ -60,7 +59,7 @@ class OrchestratorManifestTest(unittest.TestCase):
             writer.writeheader()
             writer.writerow(row)
 
-    def test_stage_one_records_wps_pdf_to_excel_as_skipped_input(self):
+    def test_stage_one_rejects_wps_pdf_to_excel_before_reader_and_repair(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "source"
@@ -75,21 +74,22 @@ class OrchestratorManifestTest(unittest.TestCase):
 </Properties>"""
             with zipfile.ZipFile(converted, "w") as archive:
                 archive.writestr("docProps/custom.xml", custom_properties)
-            self._write_standardized_csv(source / "有效流水__standardized.csv", "有效流水.xlsx")
-
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(folder=str(source), client="测试客户", account_type=None)
             runner.out_dir = str(root / "output")
             runner.run_dir = str(root)
             self._configure_pipeline_state(runner)
 
-            result = runner.stage_1_standardize()
+            with patch.object(runner_runtime.S, "standardize_file") as standardize_file:
+                with self.assertRaisesRegex(
+                    runner_runtime.S.UnsupportedInputError,
+                    "Kingsoft PDF to WPS 120",
+                ):
+                    runner.stage_1_standardize()
 
-            self.assertEqual(result["processed_files"], 1)
-            self.assertEqual(len(runner.pipeline_state["skipped_inputs"]), 1)
-            skipped = runner.pipeline_state["skipped_inputs"][0]
-            self.assertEqual(skipped["name"], "转换流水.xlsx")
-            self.assertIn("Kingsoft PDF to WPS 120", skipped["reason"])
+            records = runner.load_stage_1_results()["files"]
+            self.assertEqual(records, {})
+            standardize_file.assert_not_called()
 
     def test_stage_one_records_zero_transaction_statement_with_stable_reason_code(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -112,17 +112,13 @@ class OrchestratorManifestTest(unittest.TestCase):
                     "已唯一命中中国银行流水模板，且借贷合计均为 0",
                 ),
             ):
-                with self.assertRaisesRegex(RuntimeError, "阶段一没有生成标准化产物"):
+                with self.assertRaisesRegex(RuntimeError, "阶段一处理完成但存在失败文件"):
                     runner.stage_1_standardize()
 
-            self.assertEqual(
-                runner.pipeline_state["skipped_inputs"],
-                [{
-                    "name": statement.name,
-                    "reason": "已唯一命中中国银行流水模板，且借贷合计均为 0",
-                    "reason_code": "ZERO_TRANSACTION_STATEMENT",
-                }],
-            )
+            record = next(iter(runner.load_stage_1_results()["files"].values()))
+            self.assertEqual(record["name"], statement.name)
+            self.assertEqual(record["status"], "BLOCKED")
+            self.assertEqual(record["reason_code"], "ZERO_TRANSACTION_STATEMENT")
 
     def test_stage_one_blocks_when_identified_export_lacks_required_optional_column(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -151,7 +147,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             finally:
                 runner_runtime.S.standardize_file = original
 
-            self.assertEqual(runner.pipeline_state["skipped_inputs"], [])
 
     def test_stage_one_recursively_reads_nested_customer_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -219,7 +214,6 @@ class OrchestratorManifestTest(unittest.TestCase):
                     runner.stage_1_standardize()
 
             self.assertTrue((Path(runner.work_dir()) / "空流水__pdf__standardized.csv").exists())
-            self.assertEqual(runner.pipeline_state["skipped_inputs"], [])
             results = runner.load_stage_1_results()["files"]
             statuses = {record["name"]: record["status"] for record in results.values()}
             self.assertEqual(statuses["空流水.pdf"], "ERROR")
@@ -545,7 +539,6 @@ class OrchestratorManifestTest(unittest.TestCase):
             runner.pipeline_result_template_path = str(template)
             runner.pipeline_result_path = str(runtime)
             runner.stage_summaries = {}
-            runner.artifacts = {}
 
             runner.initialize_pipeline_result()
 
@@ -567,16 +560,13 @@ class OrchestratorManifestTest(unittest.TestCase):
             run_root = Path(tmp) / "runs"
             parent = run_root / "parent-run"
             parent.mkdir(parents=True)
-            (parent / "manifest.json").write_text(
+            (parent / "pipeline_result.json").write_text(
                 json.dumps(
                     {
-                        "client": "斑马商业",
-                        "password_attempt": 1,
-                        "ai_repair_attempt": 1,
-                        "stage_1_standardize": {
-                            "name": "stage 1",
-                            "status": "ERROR",
-                        },
+                        "schema_version": 1,
+                        "client_name": "斑马商业",
+                        "attempts": {"password": 1, "ai_repair": 1},
+                        "stages": {"stage_1_standardize": {"status": "ERROR"}},
                     },
                     ensure_ascii=False,
                 ),

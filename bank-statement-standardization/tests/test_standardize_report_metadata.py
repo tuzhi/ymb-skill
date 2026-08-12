@@ -638,23 +638,15 @@ class StandardizeReportMetadataTest(unittest.TestCase):
         self.assertEqual(image["确认银行"], "上饶银行")
         self.assertEqual(image["internal_transaction_profile"]["candidate_count"], 11)
 
-    def test_wps_converted_pdfs_are_marked_and_skipped(self):
-        samples = (
-            ("广源流水", "熊亮流水.pdf_2"),
-            ("金伟", "2063891248809000962_1.pdf_2"),
-            ("徐长河", "工商银行历史明细（申请单号：26060513375455134973）.pdf_2"),
-            ("宁聚&付亮亮&徐美琴", "付亮亮建行3763.pdf_2"),
-        )
-        paths = [
-            str(TESTDATA_ROOT / folder / filename)
-            for folder, filename in samples
-        ]
+    def test_pseudo_extensions_are_rejected_without_external_testdata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = [root / "转换流水.pdf_2", root / "转换流水.xlsx_2"]
+            for path in paths:
+                path.write_bytes(b"converted")
 
-        candidates, skipped = standardize.screen_files(paths)
-
-        self.assertEqual(candidates, [])
-        self.assertEqual({name for name, _reason in skipped}, {filename for _folder, filename in samples})
-        self.assertTrue(all("转换文件或非原始文件" in reason for _name, reason in skipped))
+            with self.assertRaisesRegex(standardize.UnsupportedInputError, "仅接受 PDF"):
+                standardize.screen_files([str(path) for path in paths])
 
     def test_icbc_timestamp_pdf_extracts_corporate_owner_and_account(self):
         pdf = (
@@ -906,6 +898,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 csv_path, _json_path, _report = standardize.standardize(
                     str(folder / name),
                     out_dir=str(out_dir),
+                    open_password="350142" if name == "曾耀招商密码350142.pdf" else None,
                 )
                 with open(csv_path, encoding="utf-8-sig", newline="") as f:
                     rows = list(csv.DictReader(f))

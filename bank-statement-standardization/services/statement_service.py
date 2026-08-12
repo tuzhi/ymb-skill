@@ -2,44 +2,26 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Iterable, Mapping
+from typing import Iterable, Mapping
 import hashlib
-import json
-import mimetypes
 import os
 import shutil
 import tempfile
-import yaml
 
-from runtime.failure_policy import MAX_PASSWORD_ATTEMPTS
-from runtime import standardize as S
+from runtime.failure_policy import DEFAULT_RETRY_POLICY
 from runtime import result_store as RS
 from runtime.models import PipelineExecutionResult
 from runtime.runner import Runner, load_parent_run_context
 
 from .models import (
     InputFile,
-    RunDetail,
-    RunReference,
-    ServiceError,
     StandardizationRequest,
     StandardizationResult,
 )
 from .result_mapper import build_standardization_result
 from ymb_standardization_core.readers.routing.rule_loader import RoutingRulesSnapshot
-
-
-_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="statement-run")
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    if not path.is_file():
-        return default
-    with path.open("r", encoding="utf-8") as stream:
-        return json.load(stream)
 
 
 def _md5(path: Path) -> str:
@@ -53,47 +35,52 @@ def _md5(path: Path) -> str:
 class StatementService:
     """使用显式规则快照同步执行标准化或草稿规则测试。"""
 
-    def __init__(
-        self,
-        run_root: str | os.PathLike[str],
-        submit: Callable[[Callable[[], PipelineExecutionResult]], Any] | None = None,
-    ) -> None:
+    def __init__(self, run_root: str | os.PathLike[str]) -> None:
         self.run_root = Path(run_root).resolve()
         self.run_root.mkdir(parents=True, exist_ok=True)
-        self._submit = submit or _EXECUTOR.submit
-        self._active_runs: dict[str, Any] = {}
 
-    def _start_run(
+    def _create_runner(
         self,
-        client_name: str | None,
-        files: Iterable[InputFile],
-        parent_run_id: str | None = None,
-        remove_file_ids: Iterable[str] | None = None,
-        file_passwords: Mapping[str, str] | None = None,
+        request: StandardizationRequest,
+        routing_rules_snapshot: RoutingRulesSnapshot | None = None,
+        *,
         repair_result_snapshot: str | os.PathLike[str] | None = None,
         repair_result_sha256: str | None = None,
-        routing_rules_snapshot: RoutingRulesSnapshot | None = None,
-    ) -> RunReference:
-        uploads = list(files or [])
-        removed = list(remove_file_ids or [])
-        if not parent_run_id and (not str(client_name or "").strip() or not uploads):
+    ) -> Runner:
+        """把公开请求转换为一次确定性 Runner；密码只保留在内存中。"""
+        if not isinstance(request, StandardizationRequest):
+            raise TypeError("request 必须是 StandardizationRequest")
+        if routing_rules_snapshot is not None and not isinstance(
+            routing_rules_snapshot,
+            RoutingRulesSnapshot,
+        ):
+            raise TypeError("rules 必须是 RoutingRulesSnapshot")
+        self._validate_input_files(request.files)
+        uploads = list(request.files)
+        removed = list(request.remove_file_ids)
+        parent_run_id = request.parent_run_id
+        if not parent_run_id and (
+            not str(request.client_name or "").strip() or not uploads
+        ):
             raise ValueError("首次运行必须提供 client_name 和至少一个文件")
         if not parent_run_id and removed:
             raise ValueError("remove_file_ids 只能用于增量运行")
-        if parent_run_id and client_name:
+        if parent_run_id and request.client_name:
             raise ValueError("增量运行的 client_name 必须从父 Run 继承")
-        if (file_passwords or repair_result_snapshot) and not parent_run_id:
+        if (request.file_passwords or repair_result_snapshot) and not parent_run_id:
             raise ValueError("密码或 Repair snapshot 只能用于显式 Child Run")
 
         staging = Path(tempfile.mkdtemp(prefix="statement-input-"))
         try:
             if parent_run_id:
-                if self._get_run(parent_run_id).status == "RUNNING":
-                    raise RuntimeError("RUNNING 状态的 Run 不能作为父运行")
                 parent = load_parent_run_context(str(self.run_root), parent_run_id)
+                parent_result = RS.load_pipeline_result(parent["parent_run_dir"])
+                if parent_result.get("status") == "RUNNING":
+                    raise RuntimeError("RUNNING 状态的 Run 不能作为父运行")
                 if (
-                    file_passwords
-                    and int(parent.get("password_attempt") or 0) >= MAX_PASSWORD_ATTEMPTS
+                    request.file_passwords
+                    and int(parent.get("password_attempt") or 0)
+                    >= DEFAULT_RETRY_POLICY.max_password_attempts
                 ):
                     raise RuntimeError("密码尝试次数已达上限")
                 parent_input = Path(parent["parent_run_dir"]) / "input"
@@ -103,15 +90,19 @@ class StatementService:
                 self._remove_files(staging, removed)
 
             changed = self._copy_uploads(staging, uploads)
-            password_retry = self._write_file_passwords(staging, file_passwords or {})
+            file_passwords = self._normalize_file_passwords(
+                staging,
+                request.file_passwords,
+            )
+            password_retry = bool(file_passwords)
             if not any(path.is_file() for path in staging.rglob("*")):
                 raise ValueError("当前有效文件集合不能为空")
 
             args = SimpleNamespace(
                 run_root=str(self.run_root),
                 folder=str(staging),
-                client=str(client_name or ""),
-                client_arg_provided=bool(client_name),
+                client=str(request.client_name or ""),
+                client_arg_provided=bool(request.client_name),
                 error_bundle_mode="full",
                 parent_run_id=parent_run_id,
                 rerun_reason=self._rerun_reason(
@@ -129,18 +120,30 @@ class StatementService:
                 repair_result_snapshot=str(repair_result_snapshot or ""),
                 repair_result_sha256=str(repair_result_sha256 or ""),
                 routing_rules_snapshot=routing_rules_snapshot,
+                file_passwords=file_passwords,
             )
-            runner = Runner(args)
+            return Runner(args)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
-        submitted = self._submit(runner.execute)
-        if hasattr(submitted, "done"):
-            self._active_runs[runner.run_id] = submitted
-        return RunReference(
-            run_id=runner.run_id,
-            parent_run_id=parent_run_id or "",
+    def _execute_pipeline(
+        self,
+        request: StandardizationRequest,
+        routing_rules_snapshot: RoutingRulesSnapshot | None = None,
+        *,
+        repair_result_snapshot: str | os.PathLike[str] | None = None,
+        repair_result_sha256: str | None = None,
+    ) -> PipelineExecutionResult:
+        runner = self._create_runner(
+            request,
+            routing_rules_snapshot,
+            repair_result_snapshot=repair_result_snapshot,
+            repair_result_sha256=repair_result_sha256,
         )
+        execution = runner.execute()
+        if not isinstance(execution, PipelineExecutionResult):
+            raise TypeError("Runner 必须返回 PipelineExecutionResult")
+        return execution
 
     def execute_standardization(
         self,
@@ -165,76 +168,10 @@ class StatementService:
         方法会创建独立 Run 目录并同步等待 Stage 1～4、QC 和 Validator
         完成。Run 启动后固定使用 ``rules``，不会在文件之间重新加载 YAML。
         """
-        if not isinstance(request, StandardizationRequest):
-            raise TypeError("request 必须是 StandardizationRequest")
         if not isinstance(rules, RoutingRulesSnapshot):
             raise TypeError("rules 必须是 RoutingRulesSnapshot")
-        self._validate_input_files(request.files)
-        reference = self._start_run(
-            request.client_name,
-            request.files,
-            parent_run_id=request.parent_run_id,
-            remove_file_ids=request.remove_file_ids,
-            file_passwords=request.file_passwords,
-            routing_rules_snapshot=rules,
-        )
-        active = self._active_runs.pop(reference.run_id, None)
-        if active is None:
-            raise RuntimeError("Runner 未返回可等待的执行句柄")
-        execution = active.result()
-        if not isinstance(execution, PipelineExecutionResult):
-            raise TypeError("Runner 必须返回 PipelineExecutionResult")
+        execution = self._execute_pipeline(request, rules)
         return build_standardization_result(execution, rules.version)
-
-    def _get_run(self, run_id: str) -> RunDetail:
-        run_dir = self._run_dir(run_id)
-        pipeline_result = RS.load_pipeline_result(run_dir)
-        stage_1_results = _read_json(run_dir / "stage_1_results.json", {"files": {}})
-        qc = _read_json(run_dir / "qc_results.json", {})
-        stages = dict(pipeline_result.get("stages") or {})
-        files = []
-        for path in sorted((run_dir / "input").rglob("*")):
-            if not path.is_file():
-                continue
-            file_id = _md5(path)
-            files.append({
-                "file_id": file_id,
-                "name": path.name,
-                "relative_path": path.relative_to(run_dir / "input").as_posix(),
-                "size": path.stat().st_size,
-                "stage_1": (stage_1_results.get("files") or {}).get(file_id, {}),
-            })
-
-        error = self._error_summary(run_dir)
-        return RunDetail(
-            run_id=run_id,
-            parent_run_id=str(pipeline_result.get("parent_run_id") or ""),
-            client_name=str(pipeline_result.get("client_name") or ""),
-            status=self._status(run_id, stages),
-            files=files,
-            stages=stages,
-            stage_1_results=stage_1_results,
-            qc=qc,
-            artifacts=self._artifact_entries(run_dir),
-            run_result=RS.run_result_from_pipeline(pipeline_result),
-            error=error,
-        )
-
-    def _run_dir(self, run_id: str) -> Path:
-        if not run_id or Path(run_id).name != run_id:
-            raise ValueError("非法 run_id")
-        path = (self.run_root / run_id).resolve()
-        if self.run_root not in path.parents or not path.is_dir():
-            raise FileNotFoundError(f"Run 不存在：{run_id}")
-        return path
-
-    @staticmethod
-    def _sha256_path(path: Path) -> str:
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
 
     @staticmethod
     def _copy_uploads(staging: Path, uploads: list[InputFile]) -> bool:
@@ -310,17 +247,12 @@ class StatementService:
         return "resume_parent_run"
 
     @staticmethod
-    def _write_file_passwords(staging: Path, passwords: Mapping[str, str]) -> bool:
-        if not passwords:
-            return False
-        hints_path = staging / "_file_hints.yaml"
-        payload: dict[str, Any] = {"file_info": {}}
-        if hints_path.is_file():
-            loaded = yaml.safe_load(hints_path.read_text(encoding="utf-8")) or {}
-            if not isinstance(loaded, dict) or not isinstance(loaded.get("file_info", {}), dict):
-                raise ValueError("现有 _file_hints.yaml 结构无效")
-            payload = loaded
-            payload.setdefault("file_info", {})
+    def _normalize_file_passwords(
+        staging: Path,
+        passwords: Mapping[str, str],
+    ) -> dict[str, str]:
+        """校验并复制文件密码映射；返回值只在当前 Runner 进程内使用。"""
+        normalized = {}
         for raw_relative, raw_password in passwords.items():
             relative = Path(str(raw_relative).replace("\\", "/"))
             password = str(raw_password)
@@ -329,35 +261,8 @@ class StatementService:
             target = (staging / relative).resolve()
             if staging.resolve() not in target.parents or not target.is_file():
                 raise FileNotFoundError(f"密码对应文件不存在：{relative.as_posix()}")
-            current = payload["file_info"].get(relative.as_posix()) or {}
-            if not isinstance(current, dict):
-                raise ValueError(f"文件 hints 结构无效：{relative.as_posix()}")
-            payload["file_info"][relative.as_posix()] = {
-                **current,
-                "open_password": password,
-            }
-        descriptor, temporary = tempfile.mkstemp(prefix="._file_hints.", dir=staging)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                yaml.safe_dump(payload, stream, allow_unicode=True, sort_keys=False)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, hints_path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
-        return True
-
-    def _status(self, run_id: str, stages: dict[str, Any]) -> str:
-        active = self._active_runs.get(run_id)
-        if active is not None and not active.done():
-            return "RUNNING"
-        statuses = [str(spec.get("status") or "") for spec in stages.values()]
-        if "ERROR" in statuses:
-            return "ERROR"
-        if statuses and all(status == "DONE" for status in statuses):
-            return "DONE"
-        return "RUNNING"
+            normalized[relative.as_posix()] = password
+        return normalized
 
     @staticmethod
     def _validate_input_files(files: Iterable[InputFile]) -> None:
@@ -372,40 +277,3 @@ class StatementService:
                 expected = expected if expected.startswith("md5:") else f"md5:{expected}"
                 if _md5(path) != expected:
                     raise ValueError(f"输入文件 MD5 不一致：{item.file_name}")
-
-    @staticmethod
-    def _artifact_entries(run_dir: Path) -> list[dict[str, Any]]:
-        candidates = []
-        artifact_dir = run_dir / "artifacts"
-        if artifact_dir.is_dir():
-            candidates.extend(path for path in artifact_dir.rglob("*") if path.is_file())
-        for name in (
-            "stage_1_results.json",
-            "qc_results.json",
-            "token_usage.json",
-        ):
-            path = run_dir / name
-            if path.is_file():
-                candidates.append(path)
-        candidates.extend(path for path in run_dir.glob("*.zip") if path.is_file())
-        entries = []
-        for path in sorted(set(candidates)):
-            artifact_id = path.relative_to(run_dir).as_posix()
-            content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-            entries.append({
-                "artifact_id": artifact_id,
-                "filename": path.name,
-                "content_type": content_type,
-                "size": path.stat().st_size,
-            })
-        return entries
-
-    @staticmethod
-    def _error_summary(run_dir: Path) -> str | None:
-        traceback_path = run_dir / "traceback.txt"
-        if traceback_path.is_file():
-            lines = [line.strip() for line in traceback_path.read_text(
-                encoding="utf-8", errors="replace"
-            ).splitlines() if line.strip()]
-            return lines[-1].replace(str(run_dir), "<run>") if lines else "运行失败"
-        return None

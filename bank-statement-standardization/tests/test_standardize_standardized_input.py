@@ -107,7 +107,7 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
                 saved_report = json.load(f)
             self.assertEqual(saved_report["表头识别"]["表头行号"], 0)
 
-    def test_screen_files_keeps_standardized_csv_as_candidate(self):
+    def test_screen_files_ignores_pipeline_csv_inputs(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             standardized = tmp_path / "client__standardized.csv"
@@ -115,37 +115,27 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
             standardized.write_text("交易时间,本方名称,本方账户,交易金额\n", encoding="utf-8")
             integrated.write_text("交易时间,本方名称,本方账户,交易金额\n", encoding="utf-8")
 
-            candidates, skipped = standardize.screen_files([str(standardized), str(integrated)])
+            candidates = standardize.screen_files([str(standardized), str(integrated)])
 
-            self.assertEqual(candidates, [str(standardized)])
-            self.assertEqual(skipped, [])
+            self.assertEqual(candidates, [])
 
     def test_screen_files_reports_pdf_with_duplicate_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
             disguised_pdf = Path(tmp) / "statement.pdf_2"
             disguised_pdf.write_bytes(b"%PDF-1.7\n")
 
-            candidates, skipped = standardize.screen_files([str(disguised_pdf)])
-
-            self.assertEqual(candidates, [])
-            self.assertEqual(len(skipped), 1)
-            self.assertEqual(skipped[0][0], "statement.pdf_2")
-            self.assertIn("伪后缀", skipped[0][1])
+            with self.assertRaisesRegex(standardize.UnsupportedInputError, "statement.pdf_2"):
+                standardize.screen_files([str(disguised_pdf)])
 
     def test_screen_files_reports_excel_with_duplicate_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
             converted_excel = Path(tmp) / "statement.xlsx_2"
             converted_excel.write_bytes(b"converted workbook")
 
-            candidates, skipped = standardize.screen_files([str(converted_excel)])
+            with self.assertRaisesRegex(standardize.UnsupportedInputError, "statement.xlsx_2"):
+                standardize.screen_files([str(converted_excel)])
 
-            self.assertEqual(candidates, [])
-            self.assertEqual(len(skipped), 1)
-            self.assertEqual(skipped[0][0], "statement.xlsx_2")
-            self.assertIn("转换文件", skipped[0][1])
-            self.assertIn("不作为原始流水接收", skipped[0][1])
-
-    def test_screen_files_rejects_wps_pdf_to_excel_conversion(self):
+    def test_screen_files_rejects_wps_pdf_to_excel_before_reader(self):
         with tempfile.TemporaryDirectory() as tmp:
             converted = Path(tmp) / "converted.xlsx"
             custom_properties = """<?xml version="1.0" encoding="UTF-8"?>
@@ -158,13 +148,11 @@ class AlreadyStandardizedInputTest(unittest.TestCase):
             with zipfile.ZipFile(converted, "w") as archive:
                 archive.writestr("docProps/custom.xml", custom_properties)
 
-            candidates, skipped = standardize.screen_files([str(converted)])
-
-            self.assertEqual(candidates, [])
-            self.assertEqual(len(skipped), 1)
-            self.assertEqual(skipped[0][0], "converted.xlsx")
-            self.assertIn("Kingsoft PDF to WPS 120", skipped[0][1])
-            self.assertIn("不作为原始流水接收", skipped[0][1])
+            with self.assertRaisesRegex(
+                standardize.UnsupportedInputError,
+                "Kingsoft PDF to WPS 120",
+            ):
+                standardize.screen_files([str(converted)])
 
 
 if __name__ == "__main__":

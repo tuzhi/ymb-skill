@@ -30,6 +30,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 
 from ymb_standardization_core.models import StandardizationContext
+from ymb_standardization_core.source_authenticity import pdf_to_wps_rejection_reason
 
 try:
     import pandas as pd
@@ -37,17 +38,13 @@ try:
 except ImportError:
     sys.exit("需要 pandas/PyYAML：pip install pandas openpyxl xlrd pdfplumber pyyaml")
 
-# ---- 支持的格式 / 非流水文件识别（用户常把图片、发票、名册等杂糅进来，需自动排除） --------
-SUPPORTED_EXT = (".xlsx", ".xlsm", ".xls", ".pdf")
-# 已知的非流水格式（图片/扫描件、Word/PPT、压缩包等）：报告给用户「已跳过」，不静默吞掉
-KNOWN_NONSTATEMENT_EXT = {
-    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".heic", ".heif",
-    ".doc", ".docx", ".ppt", ".pptx", ".key", ".pages", ".numbers", ".zip", ".rar", ".7z",
-}
+# ---- 用户原始输入只接受 PDF / Excel -----------------------------------------
+SUPPORTED_EXTENSIONS = frozenset({".xlsx", ".xlsm", ".xls", ".pdf"})
 # 本技能自身的下游产物后缀；扫描原始流水时跳过，避免把整合/打标/交付物重复摄入。
-# <stem>__standardized.csv 是阶段一标准产物，也允许作为输入直接透传。
+# <stem>__standardized.csv 是阶段一内部产物，只能通过声明式复用或 Repair 路径接收。
 PRODUCT_SUFFIXES = ("__整合流水.csv", "__打标流水.csv",
-                    "__组合日余额.csv", "__多客户底表.csv", "_已清洗_待分析.xlsx")
+                    "__组合日余额.csv", "__多客户底表.csv", "__standardized.csv",
+                    "_已清洗_待分析.xlsx")
 
 
 class NotABankStatement(Exception):
@@ -56,6 +53,10 @@ class NotABankStatement(Exception):
     def __init__(self, reason):
         super().__init__(reason)
         self.reason = reason
+
+
+class UnsupportedInputError(ValueError):
+    """用户输入包含白名单以外的真实文件。"""
 
 
 class ZeroTransactionStatement(NotABankStatement):
@@ -90,43 +91,29 @@ def is_pipeline_product(path):
     return any(base.endswith(s) for s in PRODUCT_SUFFIXES)
 
 
-def classify_ext(path):
-    """按扩展名初筛：返回 ('候选'|'跳过'|'忽略', 原因)。
-    候选=可尝试解析；跳过=已知非流水格式(报告给用户)；忽略=无关文件(.DS_Store 等，静默)。"""
-    ext = os.path.splitext(path)[1].lower()
-    if os.path.basename(path).lower().endswith("__standardized.csv"):
-        return "候选", ""
-    if ext in SUPPORTED_EXT:
-        return "候选", ""
-    if re.search(r"\.(?:xlsx|xlsm|xls|pdf)_\d+$", os.path.basename(path).lower()):
-        return (
-            "跳过",
-            "文件已用 _数字伪后缀标记为转换文件或非原始文件，不作为原始流水接收",
-        )
-    if ext in KNOWN_NONSTATEMENT_EXT:
-        return "跳过", f"非流水格式（{ext}）：本技能仅支持 Excel/CSV/文本/非图片PDF；图片或扫描件请先 OCR 转文本"
-    return "忽略", ""
-
-
 def screen_files(paths):
-    """把一批路径分成 (候选文件列表, 跳过清单[(文件名,原因)])。无关文件静默忽略。
-    内容层面的『图片型PDF / 非流水表格』在 standardize() 里进一步判定并抛 NotABankStatement。"""
-    from ymb_standardization_core.readers.input_router import pdf_to_wps_rejection_reason
-
-    candidates, skipped = [], []
+    """返回 PDF/Excel 候选；技术产物忽略，其他真实文件明确拒绝。"""
+    candidates, unsupported = [], []
     for f in paths:
         if not os.path.isfile(f) or is_pipeline_product(f):
             continue
-        kind, reason = classify_ext(f)
-        if kind == "候选":
-            reason = pdf_to_wps_rejection_reason(f)
-            if reason:
-                skipped.append((os.path.basename(f), reason))
+        name = os.path.basename(f)
+        if name.lower() == ".ds_store" or name.startswith("~$"):
+            continue
+        if os.path.splitext(f)[1].lower() in SUPPORTED_EXTENSIONS:
+            rejection_reason = pdf_to_wps_rejection_reason(f)
+            if rejection_reason:
+                unsupported.append(f"{name}：{rejection_reason}")
             else:
                 candidates.append(f)
-        elif kind == "跳过":
-            skipped.append((os.path.basename(f), reason))
-    return candidates, skipped
+        else:
+            unsupported.append(name)
+    if unsupported:
+        raise UnsupportedInputError(
+            "不支持的输入格式或来源（仅接受 PDF/XLS/XLSX/XLSM 银行原始文件）："
+            + "、".join(sorted(unsupported))
+        )
+    return candidates
 
 
 # ---- 标准字段 ----------------------------------------------------------------
@@ -790,13 +777,11 @@ def read_rows_csv(path):
     return "\n".join(preamble), out
 
 
-def read_rows(path, route_rules=None):
+def read_rows(path, route_rules=None, open_password=None):
     """返回 (kind, preamble, rows, route_info)。preamble 为表格之外的抬头文本（可为空）。"""
-    from ymb_standardization_core.file_hints import load_file_hints_for_path
     from ymb_standardization_core.readers import input_router
 
-    file_hints = load_file_hints_for_path(path)
-    hints = file_hints.for_file(path)
+    hints = {"open_password": open_password} if open_password else {}
     input_router.configure_readers(read_rows_excel, read_rows_csv, NotABankStatement)
     selected_rules = route_rules
     if route_rules is not None and hasattr(route_rules, "pdf_rules"):
@@ -809,12 +794,6 @@ def read_rows(path, route_rules=None):
         result = input_router.read_rows(path, hints=hints)
     else:
         result = input_router.read_rows(path, hints=hints, route_rules=selected_rules)
-    route_info = dict(result.route_info or {})
-    hints_audit = file_hints.audit_for_file(path)
-    if hints_audit:
-        route_info["file_hints"] = hints_audit
-    result.route_info.clear()
-    result.route_info.update(route_info)
     return (result.kind, result.preamble, result.rows, result.route_info)
 
 
@@ -1371,7 +1350,8 @@ def adopt_standardized_input(
 
 def standardize(path, out_dir=None, bank=None,
                 account_type=None, header_row=None, overrides=None, write_mapping=True,
-                strict_yaml_route=True, route_rules=None, return_dataframe=False):
+                strict_yaml_route=True, route_rules=None, return_dataframe=False,
+                open_password=None):
     fname = os.path.basename(path)
     stem = os.path.splitext(fname)[0]
     manual_account_type = account_type
@@ -1384,9 +1364,19 @@ def standardize(path, out_dir=None, bank=None,
         )
 
     if route_rules is None:
-        file_kind, preamble, rows, route_info = read_rows(path)
+        if open_password:
+            file_kind, preamble, rows, route_info = read_rows(
+                path,
+                open_password=open_password,
+            )
+        else:
+            file_kind, preamble, rows, route_info = read_rows(path)
     else:
-        file_kind, preamble, rows, route_info = read_rows(path, route_rules=route_rules)
+        file_kind, preamble, rows, route_info = read_rows(
+            path,
+            route_rules=route_rules,
+            open_password=open_password,
+        )
     route_info = dict(route_info or {})
 
     if route_info.get("decision") == "matched_incomplete":
@@ -2081,6 +2071,8 @@ def standardize_file(context: StandardizationContext):
         kwargs["return_dataframe"] = True
     if context.route_rules is not None:
         kwargs["route_rules"] = context.route_rules
+    if context.open_password:
+        kwargs["open_password"] = context.open_password
     return standardize(context.path, **kwargs)
 
 

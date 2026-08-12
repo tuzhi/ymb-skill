@@ -13,9 +13,9 @@ for path in (SKILL_ROOT, CORE_PACKAGE):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from harness.contracts import CHILD_RUN_READY, MAINTAINER_REQUIRED, NEED_REPAIR, REQUEST_USER
 from harness.coordinator import RepairCoordinator
 from harness.protocols import normalize_protocol, protocol_path
+from runtime.models.run_result import NextAction
 
 
 class HarnessRepairTests(unittest.TestCase):
@@ -31,17 +31,14 @@ class HarnessRepairTests(unittest.TestCase):
             "status": "ERROR",
             "next_action": "NEED_REPAIR",
             "reason_code": "ROUTE_UNMATCHED",
-            "artifact_refs": ["stage_1_results.json"],
-            "context_ref": "stage_1_results.json",
+            "artifact_refs": ["pipeline_result.json"],
+            "context_ref": "pipeline_result.json",
         }
         (run / "pipeline_result.json").write_text(json.dumps({
-            "run_id": run.name,
+            **run_result,
             "attempts": {"password": 0, "ai_repair": attempt},
             "stages": {"stage_1_standardize": {"status": "ERROR"}},
-            "run_result": run_result,
-        }), encoding="utf-8")
-        (run / "stage_1_results.json").write_text(json.dumps({
-            "files": {
+            "file_results": {"files": {
                 file_id: {
                     "name": source.name,
                     "relative_path": source.name,
@@ -49,7 +46,8 @@ class HarnessRepairTests(unittest.TestCase):
                     "reason_code": "ROUTE_UNMATCHED",
                     "message": "未唯一命中 YAML",
                 }
-            }
+            }},
+            "qc": {"status": "RUNNING", "files": {}, "customer": {}},
         }), encoding="utf-8")
         return run
 
@@ -107,7 +105,7 @@ class HarnessRepairTests(unittest.TestCase):
             result = RepairCoordinator(run).decision()
             request = result["request"]
 
-            self.assertEqual(result["status"], NEED_REPAIR)
+            self.assertEqual(result["status"], NextAction.NEED_REPAIR)
             self.assertEqual(request["input_refs"], ["input/流水.pdf"])
             self.assertTrue(request["role_prompt_ref"].endswith("/roles/repair.md"))
             self.assertEqual(request["output_contract_ref"], protocol_path("repair-result").as_posix())
@@ -121,9 +119,10 @@ class HarnessRepairTests(unittest.TestCase):
     def test_failed_file_must_have_resolvable_relative_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = self._run(Path(tmp))
-            data = json.loads((run / "stage_1_results.json").read_text(encoding="utf-8"))
-            next(iter(data["files"].values())).pop("relative_path")
-            (run / "stage_1_results.json").write_text(json.dumps(data), encoding="utf-8")
+            path = run / "pipeline_result.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            next(iter(data["file_results"]["files"].values())).pop("relative_path")
+            path.write_text(json.dumps(data), encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "relative_path"):
                 RepairCoordinator(run).decision()
@@ -142,7 +141,6 @@ class HarnessRepairTests(unittest.TestCase):
                 usage={"input_tokens": 100, "output_tokens": 20, "cached_input_tokens": 80},
             )
 
-            self.assertEqual(outcome["status"], CHILD_RUN_READY)
             self.assertEqual(outcome["repair_result_ref"], "repair/attempt-01/repair_result.json")
             self.assertTrue(outcome["repair_result_sha256"])
             receipt = json.loads((repair_dir / "session-receipt.json").read_text(encoding="utf-8"))
@@ -157,11 +155,14 @@ class HarnessRepairTests(unittest.TestCase):
             self.assertEqual(usage["output_tokens"], 20)
             self.assertEqual(usage["cached_input_tokens"], 80)
 
-    def test_submit_recovers_request_without_stage_result_file(self):
+    def test_submit_recovers_immutable_request_without_file_results(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = self._run(Path(tmp))
             request = RepairCoordinator(run).decision()["request"]
-            (run / "stage_1_results.json").unlink()
+            path = run / "pipeline_result.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data.pop("file_results")
+            path.write_text(json.dumps(data), encoding="utf-8")
 
             outcome = RepairCoordinator(run).submit(
                 request_id=request["request_id"],
@@ -169,7 +170,7 @@ class HarnessRepairTests(unittest.TestCase):
                 payload=self._payload(request),
             )
 
-            self.assertEqual(outcome["status"], CHILD_RUN_READY)
+            self.assertEqual(outcome["repair_result_ref"], "repair/attempt-01/repair_result.json")
 
     def test_partial_usage_is_not_treated_as_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -229,7 +230,10 @@ class HarnessRepairTests(unittest.TestCase):
 
     def test_request_user_and_maintainer_stop_without_child_run(self):
         with tempfile.TemporaryDirectory() as tmp:
-            for status, expected in (("REQUEST_USER", REQUEST_USER), ("MAINTAINER_REQUIRED", MAINTAINER_REQUIRED)):
+            for status, expected in (
+                ("REQUEST_USER", NextAction.REQUEST_USER),
+                ("MAINTAINER_REQUIRED", NextAction.MAINTAINER_REQUIRED),
+            ):
                 run = self._run(Path(tmp) / status)
                 coordinator = RepairCoordinator(run)
                 request = coordinator.decision()["request"]
@@ -257,6 +261,34 @@ class HarnessRepairTests(unittest.TestCase):
     def test_protocol_rejects_unknown_fields(self):
         with self.assertRaisesRegex(ValueError, "模板外字段"):
             normalize_protocol("repair-result", {"unexpected": True})
+
+    def test_repair_result_rejects_mismatched_request_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self._run(Path(tmp))
+            coordinator = RepairCoordinator(run)
+            request = coordinator.decision()["request"]
+            payload = self._payload(request)
+            payload["run_id"] = "another-run"
+
+            with self.assertRaisesRegex(ValueError, "契约身份"):
+                coordinator.submit(
+                    request_id=request["request_id"],
+                    session_id="repair-session-wrong-run",
+                    payload=payload,
+                )
+
+    def test_repair_result_has_no_unsupported_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = self._run(Path(tmp))
+            coordinator = RepairCoordinator(run)
+            request = coordinator.decision()["request"]
+
+            with self.assertRaisesRegex(ValueError, "status 无效"):
+                coordinator.submit(
+                    request_id=request["request_id"],
+                    session_id="repair-session-unsupported",
+                    payload=self._payload(request, status="UNSUPPORTED"),
+                )
 
 
 if __name__ == "__main__":

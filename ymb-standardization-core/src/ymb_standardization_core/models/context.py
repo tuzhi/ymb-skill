@@ -17,3 +17,4 @@ class StandardizationContext:
     write_mapping: bool = True
     route_rules: Any = None
     return_dataframe: bool = False
+    open_password: str | None = field(default=None, repr=False, compare=False)

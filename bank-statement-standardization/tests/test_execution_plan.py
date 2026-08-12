@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -82,13 +83,16 @@ class ExecutionPlanTest(unittest.TestCase):
                 "next_action": "DELIVER",
             }
             (Path(run_dir) / "pipeline_result.json").write_text(
-                json.dumps({"run_result": expected}),
+                json.dumps(expected),
                 encoding="utf-8",
             )
 
             actual = execution_plan.wait_for_run_result(run_dir, 0.1)
 
-            self.assertEqual(actual, expected)
+            self.assertEqual(
+                {key: actual[key] for key in expected},
+                expected,
+            )
 
     def test_release_only_removes_matching_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -129,6 +133,37 @@ class ExecutionPlanTest(unittest.TestCase):
             self.assertEqual(result["reason_code"], "INPUT_SOURCE_INVALID")
             self.assertFalse(run_root.exists())
 
+    def test_wps_pdf_conversion_returns_input_source_invalid_without_repair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source"
+            source.mkdir()
+            converted = source / "转换流水.xlsx"
+            with zipfile.ZipFile(converted, "w") as archive:
+                archive.writestr(
+                    "docProps/custom.xml",
+                    """<?xml version="1.0" encoding="UTF-8"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
+ xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="CRO">
+    <vt:lpwstr>wqlLaW5nc29mdCBQREYgdG8gV1BTIDEyMA</vt:lpwstr>
+  </property>
+</Properties>""",
+                )
+            output = StringIO()
+            with redirect_stdout(output):
+                status = self.orchestrator.main([
+                    "run",
+                    "--folder", str(source),
+                    "--run-root", str(Path(tmp) / "runs"),
+                ])
+
+            result = json.loads(output.getvalue())
+            self.assertEqual(status, 0)
+            self.assertEqual(result["next_action"], "REQUEST_USER")
+            self.assertEqual(result["reason_code"], "INPUT_SOURCE_INVALID")
+            self.assertNotEqual(result["next_action"], "NEED_REPAIR")
+            self.assertIn("银行原始", result["message"])
+
     def test_valid_business_run_result_uses_zero_process_status(self):
         result = {
             "contract_version": 1,
@@ -149,7 +184,7 @@ class ExecutionPlanTest(unittest.TestCase):
                 "next_action": "NEED_REPAIR",
                 "reason_code": "ROUTE_UNMATCHED",
                 "artifact_refs": [],
-                "context_ref": "stage_1_results.json",
+                "context_ref": "pipeline_result.json",
                 "message": "需要诊断",
                 "contract_version": 1,
             }
@@ -170,9 +205,7 @@ class ExecutionPlanTest(unittest.TestCase):
                         status="ERROR",
                         file_results={"files": {}},
                         stages={},
-                        stage_summaries={},
                         qc={},
-                        artifacts=(),
                         run_result=result,
                         error="需要诊断",
                     )

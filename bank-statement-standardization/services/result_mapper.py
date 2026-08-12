@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from runtime.models import PipelineExecutionResult
+from runtime.models.run_result import NextAction
 
 from .models import StandardizationResult
 
@@ -225,7 +226,7 @@ def build_standardization_result(
     return StandardizationResult(
         run_id=execution.run_id,
         status=execution.status,
-        next_action=str(run_result.get("next_action") or "REPORT_ERROR"),
+        next_action=str(run_result.get("next_action") or NextAction.REPORT_ERROR),
         message=str(run_result.get("message") or execution.error or ""),
         client={
             "client_name": execution.client_name,

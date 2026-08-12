@@ -25,5 +25,4 @@
 - 所有状态都原样返回 request 的 `run_id/attempt`；
 - `REPAIRED`：`outputs` 为所有失败文件的标准化 CSV，逐项填写 `file_id`、`source_md5`、相对 `standardized_csv`、`row_count` 和文件 `sha256`；
 - `REQUEST_USER`：需要用户补充文件或信息；
-- `UNSUPPORTED`：当前输入无法处理；
-- `MAINTAINER_REQUIRED`：必须由维护者处理。
+- `MAINTAINER_REQUIRED`：当前输入超出单次文件修复能力，必须由维护者处理。

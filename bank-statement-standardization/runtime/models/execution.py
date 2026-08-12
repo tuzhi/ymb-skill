@@ -10,8 +10,8 @@ from typing import Any, Mapping
 class PipelineExecutionResult:
     """一次完整流水线执行的内存聚合结果。
 
-    整体状态持久化到 pipeline_result.json；逐文件结果和 QC 分别保存在
-    stage_1_results.json、qc_results.json，Service 路径直接使用这里的内存值。
+    轻量可序列化结果统一持久化到 pipeline_result.json；Service 路径
+    直接使用这里的内存值，不回读独立的 Stage 1/QC 文件。
     """
 
     exit_code: int
@@ -21,9 +21,7 @@ class PipelineExecutionResult:
     status: str
     file_results: Mapping[str, Any]
     stages: Mapping[str, Any]
-    stage_summaries: Mapping[str, Any]
     qc: Mapping[str, Any]
-    artifacts: tuple[Mapping[str, Any], ...]
     run_result: Mapping[str, Any]
     error: str | None = None
     integration_report: Mapping[str, Any] = field(default_factory=dict)

@@ -24,7 +24,7 @@ from services import (  # noqa: E402
     StatementService,
     YamlRuleService,
 )
-from services.models import RunReference, StandardizationResult  # noqa: E402
+from services.models import StandardizationResult  # noqa: E402
 from services.result_mapper import build_standardization_result  # noqa: E402
 from runtime.models import PipelineExecutionResult  # noqa: E402
 from scripts import repair_coordinator as coordinator_cli  # noqa: E402
@@ -44,9 +44,7 @@ class StatementServiceTests(unittest.TestCase):
             status="DONE",
             file_results={"files": {}},
             stages={"stage_3_tag": {"name": "打标", "status": "DONE"}},
-            stage_summaries={},
             qc={"status": "PASS", "customer": {}},
-            artifacts=(),
             run_result={"next_action": "DELIVER"},
             integration_report={
                 "客户整合概览": {"整合交易数": 1, "整体质量评分": 98},
@@ -124,7 +122,7 @@ class StatementServiceTests(unittest.TestCase):
             source = Path(tmp) / "流水.xlsx"
             source.write_bytes(b"excel")
             rules = YamlRuleService.deserialize(production.read_text(encoding="utf-8"))
-            service = StatementService(Path(tmp) / "runs", submit=lambda execute: None)
+            service = StatementService(Path(tmp) / "runs")
             execution = PipelineExecutionResult(
                 exit_code=0,
                 run_id="run-1",
@@ -141,28 +139,14 @@ class StatementServiceTests(unittest.TestCase):
                     },
                 },
                 stages={"stage_1_standardize": {"status": "DONE"}},
-                stage_summaries={
-                    "stage_2_integrate": {"integrated_rows": 10},
-                },
                 qc={"status": "PASS"},
-                artifacts=({"artifact_id": "artifacts/交付物.xlsx"},),
                 run_result={"next_action": "DELIVER"},
             )
-            active = mock.Mock()
-            active.result.return_value = execution
-            service._active_runs["run-1"] = active
-            with (
-                mock.patch.object(
-                    service,
-                    "_start_run",
-                    return_value=RunReference("run-1", ""),
-                ) as start,
-                mock.patch.object(
-                    service,
-                    "_get_run",
-                    side_effect=AssertionError("正常 Service 路径不应回读 Run 文件"),
-                ),
-            ):
+            with mock.patch.object(
+                service,
+                "_execute_pipeline",
+                return_value=execution,
+            ) as execute:
                 result = service.execute_standardization(
                     StandardizationRequest(
                         client_name="客户甲",
@@ -178,7 +162,7 @@ class StatementServiceTests(unittest.TestCase):
             self.assertEqual(result.qc_client["status"], "PASS")
             self.assertEqual(result.next_action, "DELIVER")
             self.assertEqual(result.dataset, {})
-            self.assertIs(start.call_args.kwargs["routing_rules_snapshot"], rules)
+            self.assertIs(execute.call_args.args[1], rules)
 
     @staticmethod
     def _finish_run(run_root, run_id):
@@ -187,37 +171,34 @@ class StatementServiceTests(unittest.TestCase):
         for spec in pipeline_result["stages"].values():
             if isinstance(spec, dict):
                 spec["status"] = "DONE"
+        pipeline_result["status"] = "DONE"
+        pipeline_result["next_action"] = "DELIVER"
         result_path.write_text(
             json.dumps(pipeline_result, ensure_ascii=False),
             encoding="utf-8",
         )
 
-    def test_start_run_accepts_input_file_and_returns_aggregated_detail(self):
+    def test_create_runner_snapshots_input_without_async_service_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "source.xlsx"
             source.write_bytes(b"excel")
-            submitted = []
-            service = StatementService(tmp, submit=lambda execute: submitted.append(execute))
+            service = StatementService(tmp)
 
-            reference = service._start_run(
-                "客户甲",
-                [InputFile("流水.xlsx", str(source))],
+            runner = service._create_runner(
+                StandardizationRequest(
+                    client_name="客户甲",
+                    files=(InputFile("流水.xlsx", str(source)),),
+                )
             )
-            receipt_dir = Path(tmp) / reference.run_id / "receipts"
-            receipt_dir.mkdir(exist_ok=True)
-            (receipt_dir / "invalid.json").write_text("not-json", encoding="utf-8")
-            detail = service._get_run(reference.run_id)
 
-            self.assertEqual(reference.status, "RUNNING")
-            self.assertEqual(detail.client_name, "客户甲")
-            self.assertEqual(detail.status, "RUNNING")
-            self.assertEqual([item["name"] for item in detail.files], ["流水.xlsx"])
-            self.assertEqual(len(submitted), 1)
+            self.assertEqual(
+                [path.name for path in Path(runner.input_dir).iterdir()],
+                ["流水.xlsx"],
+            )
             pipeline_result = json.loads(
-                (Path(tmp) / reference.run_id / "pipeline_result.json").read_text(encoding="utf-8")
+                (Path(tmp) / runner.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
             self.assertTrue(pipeline_result["rules_version"].startswith("sha256-"))
-            self.assertTrue(detail.artifacts)
 
     def test_incremental_run_inherits_parent_and_applies_remove_and_add(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -225,62 +206,72 @@ class StatementServiceTests(unittest.TestCase):
             old_source.write_bytes(b"old")
             new_source = Path(tmp) / "source-new.xlsx"
             new_source.write_bytes(b"new")
-            service = StatementService(tmp, submit=lambda execute: None)
-            parent = service._start_run(
-                "客户甲",
-                [InputFile("旧.xlsx", str(old_source))],
+            service = StatementService(tmp)
+            parent = service._create_runner(
+                StandardizationRequest(
+                    client_name="客户甲",
+                    files=(InputFile("旧.xlsx", str(old_source)),),
+                )
             )
-            old_id = service._get_run(parent.run_id).files[0]["file_id"]
+            old_id = "md5:" + hashlib.md5(old_source.read_bytes()).hexdigest()
             self._finish_run(tmp, parent.run_id)
 
-            child = service._start_run(
-                None,
-                [InputFile("新.xlsx", str(new_source))],
-                parent_run_id=parent.run_id,
-                remove_file_ids=[old_id],
+            child = service._create_runner(
+                StandardizationRequest(
+                    client_name=None,
+                    files=(InputFile("新.xlsx", str(new_source)),),
+                    parent_run_id=parent.run_id,
+                    remove_file_ids=(old_id,),
+                )
             )
-            detail = service._get_run(child.run_id)
 
-            self.assertEqual(detail.parent_run_id, parent.run_id)
-            self.assertEqual(detail.client_name, "客户甲")
-            self.assertEqual([item["name"] for item in detail.files], ["新.xlsx"])
+            self.assertEqual(child.pipeline_state["parent_run_id"], parent.run_id)
+            self.assertEqual(child.args.client, "客户甲")
+            self.assertEqual(
+                [path.name for path in Path(child.input_dir).iterdir()],
+                ["新.xlsx"],
+            )
 
-    def test_password_child_run_writes_hints_without_consuming_ai_attempt(self):
+    def test_password_child_run_keeps_secret_in_memory_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             parent = root / "parent-run"
             input_dir = parent / "input"
             input_dir.mkdir(parents=True)
             (input_dir / "加密流水.pdf").write_bytes(b"%PDF-1.4\n")
-            (parent / "manifest.json").write_text(json.dumps({
-                "client": "客户甲",
-                "password_attempt": 0,
-                "ai_repair_attempt": 0,
-                "stage_1_standardize": {
-                    "status": "ERROR",
-                    "ai_fallback_used": False,
-                    "ai_fallback_artifacts": [],
-                },
+            (parent / "pipeline_result.json").write_text(json.dumps({
+                "schema_version": 1,
+                "run_id": "parent-run",
+                "client_name": "客户甲",
+                "status": "ERROR",
+                "next_action": "REQUEST_USER",
+                "reason_code": "INPUT_PASSWORD_REQUIRED",
+                "attempts": {"password": 0, "ai_repair": 0},
+                "stages": {"stage_1_standardize": {"status": "ERROR"}},
+                "file_results": {"files": {}},
+                "qc": {"status": "RUNNING", "files": {}, "customer": {}},
             }, ensure_ascii=False), encoding="utf-8")
-            (parent / "stage_1_results.json").write_text(
-                json.dumps({"files": {}}, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            service = StatementService(root, submit=lambda execute: None)
+            service = StatementService(root)
 
-            child = service._start_run(
-                None,
-                [],
+            request = StandardizationRequest(
+                client_name=None,
+                files=(),
                 parent_run_id="parent-run",
                 file_passwords={"加密流水.pdf": "secret"},
             )
+            child = service._create_runner(request)
 
             child_dir = root / child.run_id
             pipeline_result = json.loads(
                 (child_dir / "pipeline_result.json").read_text(encoding="utf-8")
             )
-            hints = (child_dir / "input" / "_file_hints.yaml").read_text(encoding="utf-8")
-            self.assertIn("open_password: secret", hints)
+            self.assertEqual(child.file_passwords, {"加密流水.pdf": "secret"})
+            self.assertEqual(child.args.file_passwords, {})
+            self.assertEqual(
+                child.input_password(child_dir / "input" / "加密流水.pdf"),
+                "secret",
+            )
+            self.assertFalse((child_dir / "input" / "_file_hints.yaml").exists())
             self.assertEqual(pipeline_result["attempts"]["password"], 1)
             self.assertEqual(pipeline_result["attempts"]["ai_repair"], 0)
             self.assertEqual(pipeline_result["rerun_reason"], "password_retry")
@@ -288,18 +279,20 @@ class StatementServiceTests(unittest.TestCase):
                 "secret",
                 (child_dir / "pipeline_result.json").read_text(encoding="utf-8"),
             )
+            self.assertNotIn("secret", repr(request))
+            for path in child_dir.rglob("*"):
+                if path.is_file() and path.suffix in {".json", ".jsonl", ".txt", ".yaml"}:
+                    self.assertNotIn(
+                        "secret",
+                        path.read_text(encoding="utf-8", errors="replace"),
+                    )
 
     def test_password_retry_cli_reads_secret_from_stdin_not_argv(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent = Path(tmp) / "parent-run"
             parent.mkdir()
             service = mock.Mock()
-            service._start_run.return_value = SimpleNamespace(
-                run_id="child-run",
-                parent_run_id="parent-run",
-            )
-            service._get_run.return_value = SimpleNamespace(
-                status="DONE",
+            service._execute_pipeline.return_value = SimpleNamespace(
                 run_result={"next_action": "DELIVER"},
             )
             argv = [
@@ -322,12 +315,9 @@ class StatementServiceTests(unittest.TestCase):
 
             self.assertNotIn("secret", argv)
             self.assertEqual(json.loads(output.getvalue())["next_action"], "DELIVER")
-            service._start_run.assert_called_once_with(
-                None,
-                [],
-                parent_run_id="parent-run",
-                file_passwords={"加密流水.pdf": "secret"},
-            )
+            request = service._execute_pipeline.call_args.args[0]
+            self.assertEqual(request.parent_run_id, "parent-run")
+            self.assertEqual(request.file_passwords, {"加密流水.pdf": "secret"})
 
     def test_coordinator_submit_advances_without_returning_receipt(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -407,28 +397,36 @@ class StatementServiceTests(unittest.TestCase):
             snapshot = coordinator.repair_root / "repair_result.json"
             snapshot.write_text('{"status":"REPAIRED","outputs":[]}', encoding="utf-8")
             outcome = {
-                "status": "CHILD_RUN_READY",
                 "repair_result_ref": "repair/attempt-01/repair_result.json",
                 "repair_result_sha256": "sha256-test",
             }
             service = mock.Mock()
-            service._start_run.return_value = SimpleNamespace(run_id="child-run")
-            service._get_run.return_value = SimpleNamespace(
+            service._execute_pipeline.return_value = SimpleNamespace(
+                run_id="child-run",
                 run_result={"run_id": "child-run", "status": "DONE", "next_action": "DELIVER"},
             )
-            with mock.patch.object(coordinator_cli, "StatementService", return_value=service):
-                result = coordinator_cli._advance(coordinator, outcome)
-                repeated = coordinator_cli._advance(coordinator, outcome)
+            with (
+                mock.patch.object(coordinator_cli, "StatementService", return_value=service),
+                mock.patch.object(
+                    coordinator_cli,
+                    "load_pipeline_result",
+                    return_value={
+                        "schema_version": 1,
+                        "run_id": "child-run",
+                        "status": "DONE",
+                        "next_action": "DELIVER",
+                    },
+                ),
+            ):
+                result = coordinator_cli._start_child_run(coordinator, outcome)
+                repeated = coordinator_cli._start_child_run(coordinator, outcome)
 
             self.assertEqual(result["next_action"], "DELIVER")
-            self.assertEqual(repeated, result)
-            service._start_run.assert_called_once_with(
-                None,
-                [],
-                parent_run_id="parent-run",
-                repair_result_snapshot=snapshot.resolve(),
-                repair_result_sha256="sha256-test",
-            )
+            self.assertEqual(repeated["run_id"], result["run_id"])
+            self.assertEqual(repeated["next_action"], result["next_action"])
+            service._execute_pipeline.assert_called_once()
+            request = service._execute_pipeline.call_args.args[0]
+            self.assertEqual(request.parent_run_id, "parent-run")
 
     def test_repair_result_snapshot_creates_isolated_child_run(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -438,18 +436,18 @@ class StatementServiceTests(unittest.TestCase):
             source = parent / "input" / "流水.csv"
             source.write_text("raw", encoding="utf-8")
             file_id = "md5:" + hashlib.md5(source.read_bytes()).hexdigest()
-            (parent / "manifest.json").write_text(json.dumps({
-                "client": "客户甲",
-                "password_attempt": 0,
-                "ai_repair_attempt": 0,
-                "stage_1_standardize": {
-                    "status": "ERROR",
-                },
+            (parent / "pipeline_result.json").write_text(json.dumps({
+                "schema_version": 1,
+                "run_id": "parent-run",
+                "client_name": "客户甲",
+                "status": "ERROR",
+                "next_action": "NEED_REPAIR",
+                "reason_code": "READER_FAILED",
+                "attempts": {"password": 0, "ai_repair": 0},
+                "stages": {"stage_1_standardize": {"status": "ERROR"}},
+                "file_results": {"files": {}},
+                "qc": {"status": "RUNNING", "files": {}, "customer": {}},
             }, ensure_ascii=False), encoding="utf-8")
-            (parent / "stage_1_results.json").write_text(
-                json.dumps({"files": {}}, ensure_ascii=False),
-                encoding="utf-8",
-            )
             attempt = parent / "repair" / "attempt-01"
             repaired = attempt / "standardized" / "流水__standardized.csv"
             repaired.parent.mkdir(parents=True)
@@ -470,24 +468,26 @@ class StatementServiceTests(unittest.TestCase):
                     "sha256": repaired_sha256,
                 }],
             }), encoding="utf-8")
-            service = StatementService(root, submit=lambda execute: None)
-            child = service._start_run(
-                None,
-                [],
-                parent_run_id="parent-run",
+            service = StatementService(root)
+            child = service._create_runner(
+                StandardizationRequest(
+                    client_name=None,
+                    files=(),
+                    parent_run_id="parent-run",
+                ),
                 repair_result_snapshot=snapshot,
-                repair_result_sha256=service._sha256_path(snapshot),
+                repair_result_sha256=hashlib.sha256(snapshot.read_bytes()).hexdigest(),
             )
 
             child_result = json.loads(
                 (root / child.run_id / "pipeline_result.json").read_text(encoding="utf-8")
             )
-            parent_manifest = json.loads((parent / "manifest.json").read_text(encoding="utf-8"))
+            parent_result = json.loads((parent / "pipeline_result.json").read_text(encoding="utf-8"))
             self.assertEqual(child_result["parent_run_id"], "parent-run")
             self.assertEqual(child_result["attempts"]["ai_repair"], 1)
             self.assertEqual(child_result["repair_snapshot"]["scope"], "run_only")
             self.assertTrue((root / child.run_id / "repair" / "standardized" / repaired.name).is_file())
-            self.assertEqual(parent_manifest["stage_1_standardize"]["status"], "ERROR")
+            self.assertEqual(parent_result["stages"]["stage_1_standardize"]["status"], "ERROR")
 
 
 class YamlRuleServiceTests(unittest.TestCase):

@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 
-from .models.run_result import CONTRACT_VERSION
+from .models.run_result import CONTRACT_VERSION, NextAction, RunResult
 from . import result_store as RS
 
 
@@ -97,14 +97,13 @@ def wait_for_run_result(run_dir, timeout_seconds, poll_seconds=0.25):
     deadline = time.monotonic() + max(0.0, float(timeout_seconds))
     root = Path(run_dir)
     result_path = root / RS.PIPELINE_RESULT_FILENAME
-    legacy_result_path = root / RS.LEGACY_RUN_RESULT_FILENAME
     while time.monotonic() <= deadline:
-        if result_path.is_file() or legacy_result_path.is_file():
+        if result_path.is_file():
             pipeline_result = RS.load_pipeline_result(root)
-            result = RS.run_result_from_pipeline(pipeline_result)
+            result = RunResult.from_pipeline_result(pipeline_result).to_dict()
         else:
             result = {}
-        if result and result.get("next_action") != "EXECUTE_PIPELINE":
+        if result and result.get("next_action") != NextAction.EXECUTE_PIPELINE:
             return result
         time.sleep(poll_seconds)
     return {}

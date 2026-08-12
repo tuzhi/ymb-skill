@@ -88,16 +88,14 @@ def validate_standardized_file(path):
 
 def validate_standardize(
     work_dir,
-    skipped_inputs=None,
     file_routes=None,
     stage_1_results=None,
     run_dir=None,
 ):
-    skipped_inputs = skipped_inputs or []
     if stage_1_results is not None:
         files = stage_1_results.get("files") if isinstance(stage_1_results, dict) else None
         if not isinstance(files, dict):
-            raise ValidationError("stage_1_results.json 缺少 files 对象")
+            raise ValidationError("pipeline_result.json 缺少 file_results.files 对象")
         failed = {
             file_id: record.get("status")
             for file_id, record in files.items()
@@ -157,7 +155,7 @@ def validate_standardize(
     rows = 0
     for path in csvs:
         rows += validate_standardized_file(path)["standardized_rows"]
-    # mapping 已降级为可选单文件审计报告；阶段间路由事实由 stage_1_results.json 承载。
+    # mapping 已降级为可选单文件审计报告；阶段间路由事实由 pipeline_result.json 承载。
     for path in reports:
         _load_json(path)
     if file_routes is not None:
@@ -183,7 +181,6 @@ def validate_standardize(
     return {
         "standardized_files": len(csvs),
         "standardized_rows": rows,
-        "skipped_inputs": len(skipped_inputs),
     }
 
 

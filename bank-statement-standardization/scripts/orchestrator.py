@@ -38,11 +38,15 @@ def main(argv=None):
     parser.add_argument("--rerun-reason", help="可选：重跑原因，例如 ai_repair_after_stage_1_failure")
     parser.add_argument(
         "--error-bundle-mode",
-        choices=["full", "safe"],
-        default="full",
-        help="full 包含完整原始流水；safe 仅包含诊断信息。默认 full",
+        choices=["none", "full", "safe"],
+        default="none",
+        help="诊断包模式；默认 none 不生成，full 包含原始输入，safe 仅包含诊断信息",
     )
-    parser.add_argument("--verbose", action="store_true", help="同时把阶段事件打印到 stdout")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="诊断模式：输出阶段事件并持久化 events/receipts",
+    )
     parser.add_argument("--password-attempt-increment", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--ai-repair-attempt-increment", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--routing-rules-snapshot", help=argparse.SUPPRESS)
@@ -68,9 +72,11 @@ def main(argv=None):
             )
         except RuntimeError as exc:
             result = _runner_runtime.entry_result(
-                _run_result.REPORT_ERROR,
-                str(exc),
-                reason_code="EXECUTION_PLAN_INVALID",
+                _run_result.RunDecision(
+                    _run_result.NextAction.REPORT_ERROR,
+                    _run_result.ReasonCode.EXECUTION_PLAN_INVALID,
+                    str(exc),
+                ),
             )
             print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
             return 0
@@ -81,8 +87,8 @@ def main(argv=None):
             result = {
                 "run_id": args.run_id,
                 "status": "RUNNING",
-                "next_action": _run_result.REPORT_ERROR,
-                "reason_code": "PIPELINE_ALREADY_RUNNING",
+                "next_action": _run_result.NextAction.REPORT_ERROR,
+                "reason_code": _run_result.ReasonCode.PIPELINE_ALREADY_RUNNING,
                 "artifact_refs": [],
                 "context_ref": "",
                 "message": "同一执行计划仍在运行；未创建重复 Run",

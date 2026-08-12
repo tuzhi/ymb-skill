@@ -33,7 +33,6 @@ class ValidateStageTests(unittest.TestCase):
                 writer.writerow(row)
             result = validate_stage.validate_standardize(
                 str(work),
-                skipped_inputs=[{"name": "b.pdf", "reason": "未识别到结构化流水表格"}],
                 file_routes={"a__standardized.csv": {
                     "fingerprint_id": "",
                     "series_family": "",
@@ -43,7 +42,6 @@ class ValidateStageTests(unittest.TestCase):
             )
 
         self.assertEqual(result["standardized_files"], 1)
-        self.assertEqual(result["skipped_inputs"], 1)
 
     def test_stage_1_rejects_embedded_english_header_as_transaction(self):
         with tempfile.TemporaryDirectory() as tmp:

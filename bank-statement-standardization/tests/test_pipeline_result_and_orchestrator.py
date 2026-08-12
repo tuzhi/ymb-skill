@@ -19,7 +19,7 @@ spec.loader.exec_module(orchestrator)
 
 from runtime import runner as runner_runtime  # noqa: E402
 from runtime import result_store as result_store  # noqa: E402
-from runtime.models import PipelineExecutionResult  # noqa: E402
+from runtime.models import PipelineExecutionResult, RunResult  # noqa: E402
 
 
 def stored_pipeline(runner):
@@ -27,7 +27,7 @@ def stored_pipeline(runner):
 
 
 def stored_run_result(runner):
-    return result_store.run_result_from_pipeline(stored_pipeline(runner))
+    return RunResult.from_pipeline_result(stored_pipeline(runner)).to_dict()
 
 
 def runner_args(run_root, folder, *, client, client_arg_provided=False, parent_run_id=""):
@@ -58,9 +58,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 status="DONE",
                 file_results={"files": {}},
                 stages={},
-                stage_summaries={},
                 qc={"status": "PASS"},
-                artifacts=(),
                 run_result={
                     "contract_version": 1,
                     "run_id": run_id,
@@ -129,10 +127,10 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             self.assertEqual(pipeline_result["attempts"]["password"], 0)
             self.assertEqual(pipeline_result["attempts"]["ai_repair"], 0)
             self.assertEqual(pipeline_result["skill_version"], "1.4.11")
-            self.assertEqual(pipeline_result["refs"], {
-                "stage_1": "stage_1_results.json",
-                "qc": "qc_results.json",
-            })
+            self.assertEqual(pipeline_result["file_results"], {"files": {}})
+            self.assertEqual(pipeline_result["qc"]["files"], {})
+            self.assertEqual(pipeline_result["qc"]["customer"], {})
+            self.assertNotIn("refs", pipeline_result)
             self.assertEqual(pipeline_result["deliverables"], [])
             for removed in (
                 "exit_code",
@@ -144,16 +142,9 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 "token_usage_ref",
             ):
                 self.assertNotIn(removed, pipeline_result)
-            usage = json.loads(
-                (Path(runner.run_dir) / "token_usage.json").read_text(encoding="utf-8")
-            )
-            self.assertEqual(usage["ai_session_count"], 0)
-            self.assertEqual(usage["measurement_status"], "not_started")
-            self.assertEqual(
-                usage["measurement_scope"],
-                "repair_sessions_only",
-            )
-            self.assertNotIn("skill_contracts", usage)
+            self.assertFalse((Path(runner.run_dir) / "token_usage.json").exists())
+            self.assertFalse((Path(runner.run_dir) / "events.jsonl").exists())
+            self.assertFalse((Path(runner.run_dir) / "receipts").exists())
             self.assertFalse((Path(runner.run_dir) / "manifest.json").exists())
             self.assertFalse((Path(runner.run_dir) / "run_result.json").exists())
             self.assertFalse((Path(runner.run_dir) / "run_manifest.json").exists())
@@ -174,16 +165,16 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             run_root = Path(tmp) / "runs"
             parent = run_root / "parent-run"
             parent.mkdir(parents=True)
-            (parent / "manifest.json").write_text(
+            (parent / "pipeline_result.json").write_text(
                 json.dumps(
                     {
-                        "skill": {"name": "bank-statement-standardization", "version": "1.2.12"},
-                        "client": "斑马商业",
+                        "schema_version": 1,
+                        "skill_version": "1.4.11",
+                        "client_name": "斑马商业",
                         "parent_run_id": "",
                         "rerun_reason": "",
-                        "stage_1_standardize": {
-                            "status": "ERROR",
-                        },
+                        "attempts": {"password": 0, "ai_repair": 0},
+                        "stages": {"stage_1_standardize": {"status": "ERROR"}},
                     },
                     ensure_ascii=False,
                 ),
@@ -200,11 +191,13 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             run_root = root / "runs"
             parent = run_root / "parent-run"
             parent.mkdir(parents=True)
-            (parent / "manifest.json").write_text(
+            (parent / "pipeline_result.json").write_text(
                 json.dumps(
                     {
-                        "client": "斑马商业",
-                        "stage_1_standardize": {"status": "ERROR", "ai_fallback_artifacts": []},
+                        "schema_version": 1,
+                        "client_name": "斑马商业",
+                        "attempts": {"password": 0, "ai_repair": 0},
+                        "stages": {"stage_1_standardize": {"status": "ERROR"}},
                     },
                     ensure_ascii=False,
                 ),
@@ -227,11 +220,13 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             run_root = root / "runs"
             parent = run_root / "parent-run"
             parent.mkdir(parents=True)
-            (parent / "manifest.json").write_text(
+            (parent / "pipeline_result.json").write_text(
                 json.dumps(
                     {
-                        "client": "斑马商业",
-                        "stage_1_standardize": {"status": "ERROR", "ai_fallback_artifacts": []},
+                        "schema_version": 1,
+                        "client_name": "斑马商业",
+                        "attempts": {"password": 0, "ai_repair": 0},
+                        "stages": {"stage_1_standardize": {"status": "ERROR"}},
                     },
                     ensure_ascii=False,
                 ),
@@ -287,12 +282,11 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             self.assertNotIn("ai_fallback_used", summary["stages"][stage_id])
             self.assertEqual(summary["file_results"], file_results)
             self.assertNotIn("action", summary)
-            self.assertEqual(summary["context_ref"], "stage_1_results.json")
+            self.assertEqual(summary["context_ref"], "pipeline_result.json")
             self.assertNotIn("dataset", summary)
             self.assertFalse((Path(runner.run_dir) / "fallback").exists())
             json.dumps(summary, ensure_ascii=False)
 
-            Path(runner.stage_1_results_path).unlink()
             public = runner_runtime.public_result(
                 summary,
                 runner.run_dir,
@@ -341,7 +335,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             snapshot = Path(runner.input_dir) / raw.name
             file_id = "md5:" + runner_runtime.md5(str(snapshot))
             runner.pipeline_state["attempts"]["ai_repair"] = (
-                runner_runtime.F.MAX_AI_REPAIR_ATTEMPTS
+                runner_runtime.F.DEFAULT_RETRY_POLICY.max_repair_attempts
             )
             runner.write_pipeline_result()
             runner.write_stage_1_results({"files": {file_id: {
@@ -378,6 +372,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 runner = runner_runtime.Runner(
                     runner_args(root / f"runs-{stage_id}", source, client="斑马商业")
                 )
+                runner.args.verbose = True
                 runner.handle_stage_failure(
                     stage_id,
                     runner.stages[stage_id],
@@ -391,7 +386,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 self.assertNotIn("ai_fallback_used", stage)
                 self.assertNotIn("ai_fallback_artifacts", stage)
                 self.assertFalse((Path(runner.run_dir) / "repair").exists())
-                result = result_store.run_result_from_pipeline(pipeline_result)
+                result = RunResult.from_pipeline_result(pipeline_result).to_dict()
                 self.assertEqual(result["next_action"], "REPORT_ERROR")
                 self.assertEqual(result["reason_code"], "DOWNSTREAM_STAGE_FAILURE")
                 events = Path(runner.event_path).read_text(encoding="utf-8")
@@ -413,16 +408,13 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
                 parent.stages["stage_1_standardize"],
                 RuntimeError("字段映射失败"),
             )
-            # Repair 以父 Run 输入快照为基础创建 Child Run。
-            (source / "_file_hints.yaml").write_text("files: {}\n", encoding="utf-8")
-
             parent_context = runner_runtime.load_parent_run_context(str(run_root), parent.run_id)
             self.assertEqual(parent_context["parent_run_id"], parent.run_id)
 
             child = runner_runtime.Runner(
                 runner_args(run_root, source, client="斑马商业", parent_run_id=parent.run_id)
             )
-            self.assertTrue((Path(child.input_dir) / "_file_hints.yaml").exists())
+            self.assertFalse((Path(child.input_dir) / "_file_hints.yaml").exists())
             for stage_id, spec in child.stages.items():
                 if stage_id.startswith("stage_") and stage_id != "stage_1_standardize":
                     spec["status"] = "DONE"
@@ -541,6 +533,8 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             source.mkdir()
             (source / "流水.csv").write_text("raw", encoding="utf-8")
             runner = runner_runtime.Runner(runner_args(root / "runs", source, client="斑马商业"))
+            runner.args.verbose = True
+            Path(runner.receipt_dir).mkdir(parents=True, exist_ok=True)
             for stage_id, stage in runner.stages.items():
                 if stage_id.startswith("stage_"):
                     stage["status"] = "DONE"
@@ -698,14 +692,8 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             self.assertIs(execution.file_results, file_results)
             self.assertIs(execution.qc, qc_results)
             self.assertEqual(input_reference, "input/流水.csv")
-            artifact_ids = {
-                item["artifact_id"]
-                for item in execution.artifacts
-            }
-            self.assertIn("stage_1_results.json", artifact_ids)
-            self.assertIn("qc_results.json", artifact_ids)
-            self.assertNotIn("pipeline_result.json", artifact_ids)
-            self.assertNotIn("input/流水.csv", artifact_ids)
+            self.assertFalse(hasattr(execution, "artifacts"))
+            self.assertFalse(hasattr(execution, "stage_summaries"))
 
     def test_stage_4_runs_final_delivery_validation_inside_program(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -716,7 +704,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
-            runner.pipeline_state = {"skipped_inputs": []}
+            runner.pipeline_state = {}
             runner.final_validation_result = None
             runner.run_dir = str(root)
             runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
@@ -724,6 +712,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             runner.integration_report = {}
             runner.tag_report = {}
             runner.balance_report = {}
+            runner.qc_results = runner_runtime.Q.empty_results()
             final = {
                 "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
                 "deliverable_rows": 1,
@@ -756,7 +745,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
             runner.args = SimpleNamespace(client="客户")
             runner.out_dir = str(out)
-            runner.pipeline_state = {"skipped_inputs": []}
+            runner.pipeline_state = {}
             runner.final_validation_result = None
             runner.run_dir = str(root)
             runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
@@ -764,6 +753,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
             runner.integration_report = {}
             runner.tag_report = {}
             runner.balance_report = {}
+            runner.qc_results = runner_runtime.Q.empty_results()
             final = {
                 "deliverable": str(out / "客户_已清洗_待分析.xlsx"),
                 "deliverable_rows": 1,
@@ -791,7 +781,7 @@ class PipelineResultAndOrchestratorTest(unittest.TestCase):
         runner = runner_runtime.Runner.__new__(runner_runtime.Runner)
         runner.args = SimpleNamespace(client="客户")
         runner.out_dir = "/tmp/artifacts"
-        runner.pipeline_state = {"skipped_inputs": []}
+        runner.pipeline_state = {}
         runner.tagged_transactions = pd.DataFrame({"交易唯一编号": ["TX-1"]})
         runner.daily_balances = pd.DataFrame()
         runner.integration_report = {}

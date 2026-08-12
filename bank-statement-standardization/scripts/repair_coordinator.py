@@ -13,9 +13,11 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 if str(SKILL_ROOT) not in sys.path:
     sys.path.insert(0, str(SKILL_ROOT))
 
-from harness.contracts import CHILD_RUN_READY  # noqa: E402
 from harness.coordinator import RepairCoordinator  # noqa: E402
+from runtime.models.run_result import NextAction, RunResult  # noqa: E402
+from runtime.result_store import load_pipeline_result  # noqa: E402
 from runtime.result_store import atomic_write_json  # noqa: E402
+from services.models import StandardizationRequest  # noqa: E402
 from services.statement_service import StatementService  # noqa: E402
 
 
@@ -32,7 +34,7 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
     snapshot = (coordinator.run_dir / snapshot_ref).resolve()
     checksum = str(outcome.get("repair_result_sha256") or "")
     launch_path = coordinator.repair_root / "child_run_launch.json"
-    service = StatementService(coordinator.run_dir.parent, submit=lambda execute: execute())
+    service = StatementService(coordinator.run_dir.parent)
     if launch_path.is_file():
         launch = _read_object(str(launch_path))
         if launch.get("parent_run_id") != coordinator.run_id:
@@ -42,15 +44,21 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
         child_run_id = str(launch.get("child_run_id") or "")
         if not child_run_id:
             raise RuntimeError("child_run_launch 缺少 child_run_id")
+        result = RunResult.from_pipeline_result(
+            load_pipeline_result(coordinator.run_dir.parent / child_run_id)
+        ).to_dict()
     else:
-        reference = service._start_run(
-            None,
-            [],
-            parent_run_id=coordinator.run_id,
+        execution = service._execute_pipeline(
+            StandardizationRequest(
+                client_name=None,
+                files=(),
+                parent_run_id=coordinator.run_id,
+            ),
             repair_result_snapshot=snapshot,
             repair_result_sha256=checksum,
         )
-        child_run_id = reference.run_id
+        child_run_id = execution.run_id
+        result = dict(execution.run_result)
         atomic_write_json(launch_path, {
             "contract_version": 1,
             "parent_run_id": coordinator.run_id,
@@ -58,11 +66,7 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
             "repair_result_sha256": checksum,
             "child_run_id": child_run_id,
         })
-    detail = service._get_run(child_run_id)
-    if not detail.run_result:
-        raise RuntimeError(f"Child Run 尚未生成 RunResult：{child_run_id}")
-    result = dict(detail.run_result)
-    if result.get("next_action") == "NEED_REPAIR":
+    if result.get("next_action") == NextAction.NEED_REPAIR:
         child_dir = coordinator.run_dir.parent / child_run_id
         decision = RepairCoordinator(child_dir).decision()
         print(
@@ -72,17 +76,6 @@ def _start_child_run(coordinator: RepairCoordinator, outcome: dict) -> dict:
         )
         return decision
     return result
-
-
-def _advance(coordinator: RepairCoordinator, outcome: dict) -> dict:
-    if outcome.get("status") != CHILD_RUN_READY:
-        return outcome
-    print(
-        f"[COORDINATOR][CHILD_RUN_READY] run_id={coordinator.run_id} "
-        f"attempt={getattr(coordinator, 'attempt', outcome.get('attempt', ''))}",
-        file=sys.stderr,
-    )
-    return _start_child_run(coordinator, outcome)
 
 
 def main() -> int:
@@ -116,28 +109,35 @@ def main() -> int:
             payload=_read_object(str(result_path)),
             usage=_read_object(args.usage) if args.usage else {},
         )
-        print(
-            f"[COORDINATOR][SUBMIT] run_id={coordinator.run_id} "
-            f"attempt={coordinator.attempt} status={outcome['status']}",
-            file=sys.stderr,
-        )
-        result = _advance(coordinator, outcome)
+        if "repair_result_ref" in outcome:
+            print(
+                f"[COORDINATOR][SUBMIT] run_id={coordinator.run_id} "
+                f"attempt={coordinator.attempt} status=REPAIRED",
+                file=sys.stderr,
+            )
+            result = _start_child_run(coordinator, outcome)
+        else:
+            print(
+                f"[COORDINATOR][SUBMIT] run_id={coordinator.run_id} "
+                f"attempt={coordinator.attempt} status={outcome['status']}",
+                file=sys.stderr,
+            )
+            result = outcome
     else:
         password = sys.stdin.readline().rstrip("\r\n")
         if not password:
             raise ValueError("密码不能为空")
         run_dir = Path(args.run_dir).resolve()
-        service = StatementService(run_dir.parent, submit=lambda execute: execute())
-        reference = service._start_run(
-            None,
-            [],
-            parent_run_id=run_dir.name,
-            file_passwords={args.file: password},
+        service = StatementService(run_dir.parent)
+        execution = service._execute_pipeline(
+            StandardizationRequest(
+                client_name=None,
+                files=(),
+                parent_run_id=run_dir.name,
+                file_passwords={args.file: password},
+            )
         )
-        detail = service._get_run(reference.run_id)
-        if not detail.run_result:
-            raise RuntimeError(f"密码 Child Run 尚未生成 RunResult：{reference.run_id}")
-        result = dict(detail.run_result)
+        result = dict(execution.run_result)
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     return 0
 
