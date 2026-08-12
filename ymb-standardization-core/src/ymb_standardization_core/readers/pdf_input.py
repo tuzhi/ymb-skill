@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from ymb_standardization_core.readers.registry import pdf_reader_registry
 from ymb_standardization_core.readers.pdf.common import (
     _clean_pdf_cell,
-    close_pdf_page,
     drop_word_filter_char,
     extract_pdf_text,
 )
@@ -72,30 +71,23 @@ def _prepare_pdf_reader_view(pdf, route_info):
 
 
 def _extract_first_page_text(pdf):
+    """抽取首页文本，并把页面缓存留给随后进行的路由和 Reader。"""
     if not pdf.pages:
         return ""
-    page = pdf.pages[0]
-    try:
-        return page.extract_text() or ""
-    finally:
-        close_pdf_page(page)
+    return pdf.pages[0].extract_text() or ""
 
 
 def _route_pdf_from_text(pdf, text, route_rules):
     from ymb_standardization_core.readers.router import route_pdf
 
-    try:
-        context = _pdf_context(pdf, text)
-        return route_pdf(
-            text,
-            0,
-            len(pdf.pages),
-            context=context,
-            rules=route_rules,
-        )
-    finally:
-        if pdf.pages:
-            close_pdf_page(pdf.pages[0])
+    context = _pdf_context(pdf, text)
+    return route_pdf(
+        text,
+        0,
+        len(pdf.pages),
+        context=context,
+        rules=route_rules,
+    )
 
 
 def _preamble_before_reader_header(text, headers):
@@ -188,8 +180,8 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
     返回 (preamble, rows, route_info)。preamble 供标准化层继续嗅探户名/账号。
     """
     with _open_pdf(path, open_password=open_password) as pdf:
-        # 大多数正式导出文件的身份与表头都在首页。先走低内存快速路由；
-        # 首页不能唯一命中时再逐页补充全文，且每页抽取后立即清缓存。
+        # 大多数正式导出文件的身份与表头都在首页。首页缓存由随后执行的
+        # Reader 复用并释放；首页不能唯一命中时才逐页补充全文。
         text = _extract_first_page_text(pdf)
         preamble = text
         route_info = _route_pdf_from_text(pdf, text, route_rules)

@@ -32,7 +32,9 @@ from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402
 from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
 from ymb_standardization_core.readers.pdf import common, coordinate_table, table  # noqa: E402
 from ymb_standardization_core.readers.pdf_input import (  # noqa: E402
+    _extract_first_page_text,
     _prepare_pdf_reader_view,
+    _route_pdf_from_text,
     read_pdf_rows,
 )
 from ymb_standardization_core import core as standardization_core  # noqa: E402
@@ -156,6 +158,67 @@ class PdfRouterDecisionTests(unittest.TestCase):
 
         self.assertEqual(rows, expected)
         coordinate_reader.assert_called_once()
+
+    def test_coordinate_reader_uses_detected_text_separator_strategy_directly(self):
+        expected = [["交易日期", "金额"], ["2025-01-01", "1.00"]]
+        with (
+            mock.patch.object(
+                coordinate_table,
+                "_starts_with_text_separator_table",
+                return_value=True,
+            ) as separator_probe,
+            mock.patch.object(
+                coordinate_table,
+                "_extract_pdf_text_separator_table_rows",
+                return_value=expected,
+            ) as separator_reader,
+            mock.patch.object(
+                coordinate_table,
+                "_probe_pdf_vertical_boundary_table",
+                side_effect=AssertionError("detected separator format must not probe boundaries"),
+            ),
+            mock.patch.object(
+                coordinate_table,
+                "_extract_pdf_coordinate_table_rows",
+                side_effect=AssertionError("detected separator format must not parse coordinates"),
+            ),
+        ):
+            rows = coordinate_table.read(self._ProbePdf([]), {})
+
+        self.assertEqual(rows, expected)
+        separator_probe.assert_called_once()
+        separator_reader.assert_called_once()
+
+    def test_first_page_cache_survives_routing_until_reader_consumes_it(self):
+        class CachedPage:
+            width = 300
+
+            def __init__(self):
+                self.close_calls = 0
+
+            def extract_text(self):
+                return "交易明细 2025-01-01"
+
+            def extract_words(self, **_kwargs):
+                return []
+
+            def close(self):
+                self.close_calls += 1
+
+        page = CachedPage()
+        pdf = mock.Mock(
+            pages=[page],
+            metadata={},
+        )
+
+        text = _extract_first_page_text(pdf)
+        with mock.patch(
+            "ymb_standardization_core.readers.router.route_pdf",
+            return_value={"decision": "matched"},
+        ):
+            _route_pdf_from_text(pdf, text, ())
+
+        self.assertEqual(page.close_calls, 0)
 
     def test_coordinate_boundaries_use_gap_between_header_boxes(self):
         boundaries = coordinate_table._coordinate_boundaries(

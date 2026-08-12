@@ -795,6 +795,9 @@ def _extract_pdf_text_separator_table_rows(pdf):
 
 
 def read(pdf, options):
+    if _starts_with_text_separator_table(pdf):
+        return apply_reader_options(_extract_pdf_text_separator_table_rows(pdf), options)
+
     candidate_headers = options.get("reader_header_candidates") or []
     row_anchor = options.get("row_anchor") or {}
     word_filters = options.get("word_filters") or {}
@@ -817,9 +820,7 @@ def read(pdf, options):
             word_filters=word_filters,
             repeated_header=options.get("repeated_header") or {},
         )
-    separator_rows = []
-    if not rows or _starts_with_text_separator_table(pdf):
-        separator_rows = _extract_pdf_text_separator_table_rows(pdf)
+    separator_rows = _extract_pdf_text_separator_table_rows(pdf) if not rows else []
     if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):
         rows = separator_rows
     return apply_reader_options(rows, options)
