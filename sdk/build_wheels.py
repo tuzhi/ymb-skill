@@ -15,6 +15,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DIST = REPO_ROOT / "dist" / "sdk"
 SDK_VERSION = "1.0.0"
+SUPPORTED_PYTHON = (3, 11)
 
 IGNORED_NAMES = {
     ".DS_Store",
@@ -79,12 +80,50 @@ build-backend = "setuptools.build_meta"
     )
 
 
-def _build_wheel(project_root: Path, output_dir: Path) -> Path:
+def _is_build_python(executable: Path) -> bool:
+    """确认解释器版本正确，并且构建依赖已预装。"""
+    completed = subprocess.run(
+        [
+            str(executable),
+            "-c",
+            (
+                "import sys, setuptools.build_meta, wheel; "
+                f"raise SystemExit(0 if sys.version_info[:2] == "
+                f"{SUPPORTED_PYTHON!r} else 1)"
+            ),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def resolve_build_python(explicit: Path | None = None) -> Path:
+    """选择可离线构建 SDK 的 Python 3.11，不在打包时安装依赖。"""
+    candidates = [explicit] if explicit else [
+        Path(sys.executable),
+        REPO_ROOT / "venv" / "bin" / "python",
+        REPO_ROOT / "venv" / "Scripts" / "python.exe",
+    ]
+    for candidate in candidates:
+        if candidate and candidate.is_file() and _is_build_python(candidate):
+            # 保留 venv/bin/python 这层入口；resolve() 会跟随符号链接回系统
+            # Python，继而丢失 venv 中的 wheel/setuptools。
+            return candidate.absolute()
+    requested = f"：{explicit}" if explicit else ""
+    raise RuntimeError(
+        "未找到带 setuptools/wheel 的 Python 3.11 构建环境"
+        f"{requested}；请创建项目 venv，或通过 --python 指定解释器"
+    )
+
+
+def _build_wheel(project_root: Path, output_dir: Path, build_python: Path) -> Path:
     with tempfile.TemporaryDirectory(prefix="wheel-output-") as temporary:
         temporary_output = Path(temporary)
         subprocess.run(
             [
-                sys.executable,
+                str(build_python),
                 "-m",
                 "pip",
                 "wheel",
@@ -261,10 +300,14 @@ def _stage_bi(stage: Path) -> None:
     )
 
 
-def build_wheels(output_dir: Path = DEFAULT_DIST) -> tuple[Path, Path]:
+def build_wheels(
+    output_dir: Path = DEFAULT_DIST,
+    build_python: Path | None = None,
+) -> tuple[Path, Path]:
     """构建标准化和 BI 两个 Wheel，并返回产物路径。"""
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    build_python = resolve_build_python(build_python)
     with tempfile.TemporaryDirectory(prefix="ymb-sdk-build-") as temporary:
         root = Path(temporary)
         standardization = root / "standardization"
@@ -273,16 +316,23 @@ def build_wheels(output_dir: Path = DEFAULT_DIST) -> tuple[Path, Path]:
         bi.mkdir()
         _stage_standardization(standardization)
         _stage_bi(bi)
-        standardization_wheel = _build_wheel(standardization, output_dir)
-        bi_wheel = _build_wheel(bi, output_dir)
+        standardization_wheel = _build_wheel(
+            standardization, output_dir, build_python
+        )
+        bi_wheel = _build_wheel(bi, output_dir, build_python)
     return standardization_wheel, bi_wheel
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="构建 YMB 流水分析的两个 SDK Wheel")
     parser.add_argument("--output-dir", default=str(DEFAULT_DIST))
+    parser.add_argument(
+        "--python",
+        type=Path,
+        help="指定带 setuptools/wheel 的 Python 3.11；默认自动使用项目 venv",
+    )
     args = parser.parse_args()
-    for wheel in build_wheels(Path(args.output_dir)):
+    for wheel in build_wheels(Path(args.output_dir), args.python):
         print(wheel)
     return 0
 
