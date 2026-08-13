@@ -283,7 +283,7 @@ class OrchestratorManifestTest(unittest.TestCase):
 
         self.assertEqual(file_kind, "pdf")
         self.assertEqual(route["reader_id"], "pdfplumber_table")
-        self.assertEqual(route["fingerprint_id"], "md5:6c51495092e9abac017b130c6e41991d")
+        self.assertEqual(route["fingerprint_id"], "md5:1e4a6cfc8887a83f92d27b84d516b926")
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(len(rows), 760)
         self.assertEqual(rows[1][0], "1")

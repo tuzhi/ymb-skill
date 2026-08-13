@@ -40,7 +40,7 @@ class RouteDecision(dict):
     @property
     def transform_ids(self):
         names = (
-            "dedupe_chars", "header_merge", "repeated_header",
+            "dedupe_chars", "drop_chars", "header_merge", "repeated_header",
             "preamble_mapping", "preamble_extractors",
             "conditional_mapping", "extract_mapping", "direction_from_column",
             "drop_rows", "split_amount_balance", "amount_columns",

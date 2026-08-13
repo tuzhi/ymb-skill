@@ -21,6 +21,7 @@ from ymb_standardization_core.models import RouteDecision
 from ymb_standardization_core.models import ReadResult
 from ymb_standardization_core.source_authenticity import pdf_to_wps_rejection_reason
 from ymb_standardization_core.transforms import (
+    annotate_payment_order_state,
     apply_reader_options,
     merge_configured_header,
     normalize_cmb_mixed_grid,
@@ -328,6 +329,19 @@ def _call_excel_reader(path, open_password=None, all_sheets_same_layout=False):
     return reader(path)
 
 
+def _finalize_rows(rows, route_info, annotate_payment=False):
+    """Reader 后统一执行表头、行变换和完整性门禁。"""
+    rows, route_info = merge_configured_header(rows, route_info)
+    rows = apply_reader_options(rows, route_info)
+    route_info = apply_required_reader_header_gate(route_info, rows)
+    if route_info.get("decision") == "matched_incomplete":
+        return [], route_info
+    return (
+        annotate_payment_order_state(rows) if annotate_payment else rows,
+        route_info,
+    )
+
+
 def read_rows(path, hints=None, route_rules=None):
     hints = hints or {}
     open_password = hints.get("open_password") or None
@@ -347,11 +361,7 @@ def read_rows(path, hints=None, route_rules=None):
             )
         if route_info.get("reader_id") == "openpyxl_cmb_mixed_grid":
             rows = normalize_cmb_mixed_grid(rows)
-        rows, route_info = merge_configured_header(rows, route_info)
-        rows = apply_reader_options(rows, route_info)
-        route_info = apply_required_reader_header_gate(route_info, rows)
-        if route_info.get("decision") == "matched_incomplete":
-            rows = []
+        rows, route_info = _finalize_rows(rows, route_info)
         return ReadResult(
             kind="excel",
             preamble="",
@@ -366,7 +376,7 @@ def read_rows(path, hints=None, route_rules=None):
             open_password=open_password,
             route_rules=route_rules,
         )
-        rows, route_info = merge_configured_header(rows, route_info)
+        rows, route_info = _finalize_rows(rows, route_info, annotate_payment=True)
         return ReadResult(
             kind="pdf",
             preamble=preamble,

@@ -40,7 +40,7 @@ class KasikornPdfRouteTests(unittest.TestCase):
 
         image = mapping["文件画像"]
         self.assertNotIn("parser", image)
-        self.assertEqual(image["fingerprint_id"], "md5:b75cf43e9a35b4ca0c082906f3aa2c7b")
+        self.assertEqual(image["fingerprint_id"], "md5:8b7eb4a358baef59f85210a5f15d28cc")
         self.assertEqual(image["reader_id"], "pdfplumber_coordinate_table")
         self.assertFalse(image["ocr_supported"])
         self.assertFalse(image["ocr_used"])

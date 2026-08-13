@@ -7,19 +7,15 @@ from types import SimpleNamespace
 from ymb_standardization_core.readers.registry import pdf_reader_registry
 from ymb_standardization_core.readers.pdf.common import (
     _clean_pdf_cell,
-    drop_word_filter_char,
     extract_pdf_text,
+    should_drop_char,
 )
 from ymb_standardization_core.readers.pdf.coordinate_table import _coordinate_metadata_preamble
 from ymb_standardization_core.readers.pdf.line_table import _extract_pdf_tables_from_horizontal_lines
 from ymb_standardization_core.readers.pdf.table import _extract_pdf_tables_default
-from ymb_standardization_core.readers.routing.rule_loader import (
-    apply_required_reader_header_gate,
-)
 from ymb_standardization_core.readers.routing.evidence import (
     enrich_pdf_table_routing_evidence,
 )
-from ymb_standardization_core.transforms import annotate_payment_order_state
 
 
 def _extract_pdf_rows_by_reader(pdf, reader_id, route_info=None):
@@ -41,7 +37,7 @@ class _PreparedPdfPages(Sequence):
     def __init__(self, pages, route_info):
         self._pages = pages
         self._dedupe_chars = bool(route_info.get("dedupe_chars"))
-        self._word_filters = route_info.get("word_filters") or {}
+        self._drop_chars = route_info.get("drop_chars") or []
 
     def __len__(self):
         return len(self._pages)
@@ -52,9 +48,9 @@ class _PreparedPdfPages(Sequence):
         page = self._pages[index]
         if self._dedupe_chars:
             page = page.dedupe_chars()
-        if self._word_filters.get("drop_chars"):
+        if self._drop_chars:
             page = page.filter(
-                lambda char: not drop_word_filter_char(char, self._word_filters)
+                lambda char: not should_drop_char(char, self._drop_chars)
             )
         return page
 
@@ -63,7 +59,7 @@ def _prepare_pdf_reader_view(pdf, route_info):
     """按路由声明惰性生成供抬头和 Reader 共用的清洁页面视图。"""
     transformed = bool(
         route_info.get("dedupe_chars")
-        or (route_info.get("word_filters") or {}).get("drop_chars")
+        or route_info.get("drop_chars")
     )
     if not transformed:
         return pdf
@@ -189,21 +185,9 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             text = extract_pdf_text(pdf)
             route_info = _route_pdf_from_text(pdf, text, route_rules)
         reader_pdf = _prepare_pdf_reader_view(pdf, route_info)
-        reader_options = route_info
         if reader_pdf is not pdf:
             text = _extract_first_page_text(reader_pdf)
             preamble = text
-        if (route_info.get("word_filters") or {}).get("drop_chars"):
-            # 字符级水印已经在统一页面视图中移除；Reader 仍须保留页底、
-            # 停止行等结构过滤，返回的 route_info 也保留原始 YAML 供审计。
-            reader_options = {
-                **route_info,
-                "word_filters": {
-                    key: value
-                    for key, value in route_info["word_filters"].items()
-                    if key != "drop_chars"
-                },
-            }
 
         # fingerprint 已定位但银行导出选项不完整时，保留路由证据交给阶段一 QC；
         # 不继续执行 Reader，避免将不完整格式误当成普通解析失败或可交付流水。
@@ -213,7 +197,7 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
         table_rows = _extract_pdf_rows_by_reader(
             reader_pdf,
             route_info.get("reader_id", ""),
-            reader_options,
+            route_info,
         )
         if (
             not table_rows
@@ -223,12 +207,8 @@ def read_pdf_rows(path, open_password=None, route_rules=None):
             full_text = extract_pdf_text(reader_pdf)
             if _matches_zero_transaction(full_text, route_info):
                 route_info = {**route_info, "zero_transaction": True}
-        route_info = apply_required_reader_header_gate(route_info, table_rows)
-        if route_info.get("decision") == "matched_incomplete":
-            return preamble or "", [], route_info
-        table_rows = annotate_payment_order_state(table_rows)
         if route_info.get("reader_id") == "pdfplumber_coordinate_table" and table_rows:
-            metadata_preamble = _coordinate_metadata_preamble(reader_pdf, reader_options)
+            metadata_preamble = _coordinate_metadata_preamble(reader_pdf, route_info)
             text_preamble = _preamble_before_reader_header(text, table_rows[0])
             preamble = "\n".join(
                 part for part in [metadata_preamble, text_preamble]

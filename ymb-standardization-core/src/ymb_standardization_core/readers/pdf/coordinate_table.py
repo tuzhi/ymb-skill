@@ -6,10 +6,9 @@ from ymb_standardization_core.readers.registry import FunctionPdfReader
 from ymb_standardization_core.readers.pdf.common import (
     _clean_pdf_cell,
     close_pdf_page,
-    drop_word_filter_char,
     iter_pdf_pages,
 )
-from ymb_standardization_core.transforms import apply_reader_options, repeated_header_bottom
+from ymb_standardization_core.transforms import repeated_header_bottom
 
 
 def _group_words_by_top(words):
@@ -149,9 +148,7 @@ def _is_coordinate_noise_word(word):
     )
 
 
-def _coordinate_page_words(page, word_filters=None):
-    if word_filters:
-        page = page.filter(lambda char: not drop_word_filter_char(char, word_filters))
+def _coordinate_page_words(page):
     return page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False)
 
 
@@ -180,7 +177,7 @@ def _coordinate_metadata_preamble(pdf, route_info):
         return ""
     page = pdf.pages[0]
     try:
-        words = _coordinate_page_words(page, word_filters=(route_info or {}).get("word_filters") or {})
+        words = _coordinate_page_words(page)
         header_top, _headers, _starts, _spans = _coordinate_header(
             words,
             (route_info or {}).get("reader_header_candidates") or [],
@@ -326,7 +323,7 @@ def _probe_pdf_vertical_boundary_table(
 
     probed_rows = 0
     for page in iter_pdf_pages(pdf.pages[:max_pages]):
-        words = _coordinate_page_words(page, word_filters=word_filters)
+        words = _coordinate_page_words(page)
         anchor_words = [
             word
             for word in words
@@ -378,7 +375,7 @@ def _extract_pdf_vertical_boundary_table_rows(pdf, candidate_headers, row_anchor
     output_headers = None
     row_anchor = row_anchor or {}
     for page in iter_pdf_pages(pdf.pages):
-        words = _coordinate_page_words(page, word_filters=word_filters)
+        words = _coordinate_page_words(page)
         first_anchor_top = min(
             (
                 float(word.get("top", 0))
@@ -468,7 +465,7 @@ def _extract_pdf_coordinate_table_rows(
     output_spans = None
     row_anchor = row_anchor or {}
     for page in iter_pdf_pages(pdf.pages):
-        words = _coordinate_page_words(page, word_filters=word_filters)
+        words = _coordinate_page_words(page)
         header_top, page_headers, page_starts, page_spans = _coordinate_header(
             words,
             candidate_headers,
@@ -796,7 +793,7 @@ def _extract_pdf_text_separator_table_rows(pdf):
 
 def read(pdf, options):
     if _starts_with_text_separator_table(pdf):
-        return apply_reader_options(_extract_pdf_text_separator_table_rows(pdf), options)
+        return _extract_pdf_text_separator_table_rows(pdf)
 
     candidate_headers = options.get("reader_header_candidates") or []
     row_anchor = options.get("row_anchor") or {}
@@ -823,7 +820,7 @@ def read(pdf, options):
     separator_rows = _extract_pdf_text_separator_table_rows(pdf) if not rows else []
     if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):
         rows = separator_rows
-    return apply_reader_options(rows, options)
+    return rows
 
 
 READER = FunctionPdfReader("pdfplumber_coordinate_table", read)

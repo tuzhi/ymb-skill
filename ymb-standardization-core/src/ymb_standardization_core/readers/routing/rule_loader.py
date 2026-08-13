@@ -29,6 +29,7 @@ class RouteRule:
     date_order: str = ""
     multi_sheet_same_layout: bool = False
     dedupe_chars: bool = False
+    drop_chars: list = field(default_factory=list)
     header_merge: dict = field(default_factory=dict)
     repeated_header: dict = field(default_factory=dict)
     row_anchor: dict = field(default_factory=dict)
@@ -377,14 +378,17 @@ def _required_column_config(source, raw_config):
                 "route_text or reader_header"
             )
         raw_field = config.get("field")
+        capture = str(config.get("capture") or "").strip()
         return {
             "field": None if raw_field is None else str(raw_field).strip(),
             "match": match,
+            "capture": capture,
         }
     if raw_config is None or isinstance(raw_config, str):
         return {
             "field": None if raw_config is None else str(raw_config).strip(),
             "match": "route_text",
+            "capture": "",
         }
     raise ValueError(
         f"fingerprint.columns.required.{source} must be null, string, or dict"
@@ -418,6 +422,7 @@ def _optional_columns(fingerprint):
             "field": None if config.get("field") is None else str(config.get("field")).strip(),
             "qc": qc,
             "missing_hint": str(config.get("missing_hint") or "").strip(),
+            "capture": str(config.get("capture") or "").strip(),
         }
     return normalized
 
@@ -505,6 +510,21 @@ def _column_mapping(fingerprint):
     if not isinstance(mapping, dict):
         raise ValueError("column_mapping must be a dict")
     return mapping
+
+
+def _column_captures(fingerprint):
+    """从 columns 派生文本 Reader 的原始列/命名分组映射。"""
+    captures = {}
+    for source, raw_config in _columns_required(fingerprint).items():
+        source = str(source).strip()
+        capture = _required_column_config(source, raw_config)["capture"]
+        if source and capture:
+            captures[source] = capture
+    for source, config in _optional_columns(fingerprint).items():
+        capture = str(config.get("capture") or "").strip()
+        if source and capture:
+            captures[source] = capture
+    return captures
 
 
 def _preamble_mapping(fingerprint):
@@ -610,19 +630,21 @@ def _require_monetary_value(item):
     return bool(_reader_options(item).get("require_monetary_value", False))
 
 
-def _text_table(item):
+def _text_table(item, fingerprint):
     config = _reader_options(item).get("text_table") or {}
     if not config:
         return {}
     if not isinstance(config, dict):
         raise ValueError("reader_options.text_table must be a dict")
 
-    fields = config.get("field_groups") or {}
+    captures = _column_captures(fingerprint)
     record_patterns = config.get("record_patterns") or []
     continuations = config.get("continuation_patterns") or []
     zero_transaction_patterns = config.get("zero_transaction_patterns") or []
-    if not isinstance(fields, dict) or not fields:
-        raise ValueError("reader_options.text_table.field_groups must be a non-empty dict")
+    if not captures:
+        raise ValueError(
+            "pdfplumber_text_lines requires fingerprint.columns.*.capture"
+        )
     if not isinstance(record_patterns, list) or not record_patterns:
         raise ValueError("reader_options.text_table.record_patterns must be a non-empty list")
     if not isinstance(zero_transaction_patterns, list):
@@ -636,8 +658,10 @@ def _text_table(item):
         except re.error as exc:
             raise ValueError(f"invalid text_table record pattern: {pattern}") from exc
         normalized_patterns.append(pattern)
-    if not set(fields.values()).issubset(named_groups):
-        raise ValueError("reader_options.text_table.field_groups reference unknown regex groups")
+    if not set(captures.values()).issubset(named_groups):
+        raise ValueError(
+            "fingerprint.columns.*.capture references unknown record regex groups"
+        )
 
     normalized_continuations = []
     for continuation in continuations:
@@ -648,7 +672,7 @@ def _text_table(item):
             groups = set(re.compile(pattern).groupindex)
         except re.error as exc:
             raise ValueError(f"invalid text_table continuation pattern: {pattern}") from exc
-        if not set(continuation["append"]).issubset(fields) or not set(continuation["append"].values()).issubset(groups):
+        if not set(continuation["append"]).issubset(captures) or not set(continuation["append"].values()).issubset(groups):
             raise ValueError("text_table continuation append references unknown headers or groups")
         normalized_continuations.append({
             "pattern": pattern,
@@ -666,7 +690,7 @@ def _text_table(item):
             raise ValueError(f"invalid text_table zero transaction pattern: {pattern}") from exc
         normalized_zero_patterns.append(pattern)
     return {
-        "field_groups": {str(header).strip(): str(group).strip() for header, group in fields.items()},
+        "captures": captures,
         "record_patterns": normalized_patterns,
         "continuation_patterns": normalized_continuations,
         "zero_transaction_patterns": normalized_zero_patterns,
@@ -693,6 +717,30 @@ def _multi_sheet_same_layout(item):
 
 def _dedupe_chars(item):
     return bool(_reader_options(item).get("dedupe_chars", False))
+
+
+def _drop_chars(item):
+    rules = _reader_options(item).get("drop_chars") or []
+    if not isinstance(rules, list):
+        raise ValueError("reader_options.drop_chars must be a list")
+    allowed = {"rotated", "text_any", "fontname_contains", "min_size", "max_size"}
+    normalized = []
+    for rule in rules:
+        if not isinstance(rule, dict) or not rule:
+            raise ValueError("reader_options.drop_chars items must be non-empty dicts")
+        unknown = set(rule) - allowed
+        if unknown:
+            raise ValueError(
+                f"unknown reader_options.drop_chars fields: {sorted(unknown)}"
+            )
+        item = dict(rule)
+        if "text_any" in item:
+            values = item["text_any"]
+            if not isinstance(values, list) or not values:
+                raise ValueError("reader_options.drop_chars.text_any must be a non-empty list")
+            item["text_any"] = [str(value) for value in values]
+        normalized.append(item)
+    return normalized
 
 
 def _header_merge(item):
@@ -738,24 +786,21 @@ def _repeated_header(item):
 
 
 def _row_anchor(item, fingerprint):
-    options = _reader_options(item)
-    row_transforms = options.get("row_transforms")
-    if row_transforms is None:
-        row_transforms = (fingerprint or {}).get("row_anchor") or {}
-    if not isinstance(row_transforms, dict):
-        raise ValueError("reader_options.row_transforms must be a dict")
+    row_anchor = (fingerprint or {}).get("row_anchor") or {}
+    if not isinstance(row_anchor, dict):
+        raise ValueError("fingerprint.row_anchor must be a dict")
 
     anchor = {}
-    column = row_transforms.get("anchor_column", row_transforms.get("column"))
+    column = row_anchor.get("column")
     if column:
         anchor["column"] = str(column).strip()
-    pattern = row_transforms.get("anchor_pattern", row_transforms.get("pattern"))
+    pattern = row_anchor.get("pattern")
     if pattern:
         anchor["pattern"] = str(pattern).strip()
-    values = row_transforms.get("anchor_values", row_transforms.get("values"))
+    values = row_anchor.get("values")
     if values:
         anchor["values"] = [str(value).strip() for value in values if str(value).strip()]
-    continuation = row_transforms.get("continuation")
+    continuation = row_anchor.get("continuation")
     if continuation:
         continuation = str(continuation).strip()
         if continuation not in {
@@ -767,14 +812,23 @@ def _row_anchor(item, fingerprint):
     return anchor
 
 
-def _word_filters(item, fingerprint):
-    options = _reader_options(item)
-    filters = options.get("word_filters")
-    if filters is None:
-        filters = (fingerprint or {}).get("word_filters") or {}
+def _word_filters(item):
+    filters = _reader_options(item).get("word_filters") or {}
     if not isinstance(filters, dict):
         raise ValueError("reader_options.word_filters must be a dict")
-    return filters
+    allowed = {"stop_line_contains_any", "drop_words_below_page_bottom"}
+    unknown = set(filters) - allowed
+    if unknown:
+        raise ValueError(f"unknown reader_options.word_filters fields: {sorted(unknown)}")
+    normalized = dict(filters)
+    if "stop_line_contains_any" in normalized:
+        values = normalized["stop_line_contains_any"]
+        if not isinstance(values, list):
+            raise ValueError("reader_options.word_filters.stop_line_contains_any must be a list")
+        normalized["stop_line_contains_any"] = [
+            str(value).strip() for value in values if str(value).strip()
+        ]
+    return normalized
 
 
 def _direction_from_column(item):
@@ -859,93 +913,178 @@ def _extract_patterns(item):
     return normalized
 
 
+_RULE_SHAPE = {
+    "rule": {
+        "id", "file_type", "bank", "account_type", "series_family",
+        "fingerprint", "reader_id", "reader_options",
+    },
+    "fingerprint": {
+        "identity", "columns", "metadata", "style", "date_format",
+        "preamble_mapping", "preamble_extractors", "row_anchor",
+    },
+    "fingerprint.identity": {"any"},
+    "fingerprint.metadata": {"all"},
+    "fingerprint.style": {"all"},
+    "fingerprint.date_format": {"any"},
+    "fingerprint.row_anchor": {"column", "pattern", "values", "continuation"},
+    "reader_options": {
+        "amount_columns", "conditional_mapping", "date_order", "dedupe_chars",
+        "direction_from_column", "drop_chars", "drop_rows", "extract_mapping",
+        "extract_patterns", "header_merge", "multi_sheet_same_layout",
+        "repeated_header", "require_monetary_value", "source_order",
+        "split_amount_balance", "text_table", "word_filters",
+    },
+    "reader_options.text_table": {
+        "record_patterns", "continuation_patterns", "zero_transaction_patterns",
+    },
+}
+
+
+def _reject_unknown_keys(value, allowed, path):
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be a dict")
+    unknown = set(value) - set(allowed)
+    if unknown:
+        raise ValueError(f"unknown {path} fields: {sorted(unknown)}")
+
+
+def _validate_column_shapes(fingerprint):
+    columns = fingerprint.get("columns") or {}
+    _reject_unknown_keys(columns, {"all", "required", "optional"}, "fingerprint.columns")
+    for section in ("all", "required"):
+        values = columns.get(section) or {}
+        if not isinstance(values, dict):
+            raise ValueError(f"fingerprint.columns.{section} must be a dict")
+        for source, config in values.items():
+            if isinstance(config, dict):
+                _reject_unknown_keys(
+                    config,
+                    {"field", "match", "capture"},
+                    f"fingerprint.columns.{section}.{source}",
+                )
+    optional = columns.get("optional") or {}
+    if not isinstance(optional, dict):
+        raise ValueError("fingerprint.columns.optional must be a dict")
+    for source, config in optional.items():
+        if isinstance(config, dict):
+            _reject_unknown_keys(
+                config,
+                {"field", "qc", "missing_hint", "capture"},
+                f"fingerprint.columns.optional.{source}",
+            )
+
+
+def _validate_reader_capabilities(item):
+    file_type = item.get("file_type")
+    reader_id = _reader_id(item, file_type)
+    options = _reader_options(item)
+    fingerprint = item.get("fingerprint") or {}
+    captures = _column_captures(fingerprint)
+
+    if file_type == "excel" and ({"dedupe_chars", "drop_chars", "word_filters", "repeated_header"} & set(options)):
+        raise ValueError("Excel reader cannot use PDF character/word filters")
+    if reader_id != "openpyxl_grid" and "multi_sheet_same_layout" in options:
+        raise ValueError("multi_sheet_same_layout is only supported by openpyxl_grid")
+    if reader_id != "pdfplumber_coordinate_table" and "word_filters" in options:
+        raise ValueError("word_filters is only supported by pdfplumber_coordinate_table")
+    if reader_id != "pdfplumber_coordinate_table" and "repeated_header" in options:
+        raise ValueError("repeated_header is only supported by pdfplumber_coordinate_table")
+    if reader_id == "pdfplumber_text_lines":
+        if "text_table" not in options:
+            raise ValueError("pdfplumber_text_lines requires reader_options.text_table")
+        if not captures:
+            raise ValueError("pdfplumber_text_lines requires fingerprint.columns.*.capture")
+    elif "text_table" in options or captures:
+        raise ValueError(
+            "text_table and columns capture are only supported by pdfplumber_text_lines"
+        )
+    if fingerprint.get("row_anchor") and reader_id not in {
+        "pdfplumber_table", "pdfplumber_coordinate_table",
+    }:
+        raise ValueError(
+            "fingerprint.row_anchor is only supported by table/coordinate PDF readers"
+        )
+
+
+def _validate_rule_shape(item, index):
+    fingerprint = item.get("fingerprint") or {}
+    options = _reader_options(item)
+    nodes = {
+        "rule": item,
+        "fingerprint": fingerprint,
+        "fingerprint.identity": fingerprint.get("identity") or {},
+        "fingerprint.metadata": fingerprint.get("metadata") or {},
+        "fingerprint.style": fingerprint.get("style") or {},
+        "fingerprint.date_format": fingerprint.get("date_format") or {},
+        "fingerprint.row_anchor": fingerprint.get("row_anchor") or {},
+        "reader_options": options,
+        "reader_options.text_table": options.get("text_table") or {},
+    }
+    for path, value in nodes.items():
+        label = f"routing rule #{index}" if path == "rule" else path
+        _reject_unknown_keys(value, _RULE_SHAPE[path], label)
+    _validate_column_shapes(fingerprint)
+    _validate_reader_capabilities(item)
+
+
+def _route_rule_kwargs(item):
+    """统一构造 PDF/Excel 规则共有字段。"""
+    fingerprint = item.get("fingerprint") or {}
+    return {
+        "id": _rule_id(item, fingerprint),
+        "reader_id": _reader_id(item, item["file_type"]),
+        "file_type": item["file_type"],
+        "bank": item["bank"],
+        "account_type": item.get("account_type", "未知"),
+        "series_family": str(item.get("series_family") or "").strip(),
+        "column_mapping": _column_mapping(fingerprint),
+        "identity_any": fingerprint.get("identity", {}).get("any", []),
+        "column_markers": _column_markers(fingerprint),
+        "optional_columns": _optional_columns(fingerprint),
+        "required_reader_headers": _required_reader_headers(fingerprint),
+        "metadata_all": fingerprint.get("metadata", {}).get("all", {}),
+        "style_all": fingerprint.get("style", {}).get("all", []),
+        "date_format_any": fingerprint.get("date_format", {}).get("any", []),
+        "text_table": _text_table(item, fingerprint),
+        "source_order": _source_order(item),
+        "date_order": _date_order(item),
+        "multi_sheet_same_layout": _multi_sheet_same_layout(item),
+        "dedupe_chars": _dedupe_chars(item),
+        "drop_chars": _drop_chars(item),
+        "header_merge": _header_merge(item),
+        "repeated_header": _repeated_header(item),
+        "row_anchor": _row_anchor(item, fingerprint),
+        "word_filters": _word_filters(item),
+        "direction_from_column": _direction_from_column(item),
+        "drop_rows": _drop_rows(item),
+        "split_amount_balance": _split_amount_balance(item),
+        "amount_columns": _amount_columns(item),
+        "extract_patterns": _extract_patterns(item),
+        "preamble_mapping": _preamble_mapping(fingerprint),
+        "preamble_extractors": _preamble_extractors(fingerprint),
+        "conditional_mapping": _conditional_mapping(item),
+        "extract_mapping": _extract_mapping(item),
+        "require_monetary_value": _require_monetary_value(item),
+        "has_fingerprint": bool(fingerprint),
+    }
+
+
+def _build_route_rules(items, file_type, rule_class):
+    return tuple(
+        rule_class(**_route_rule_kwargs(item))
+        for item in items
+        if item.get("file_type") == file_type
+    )
+
+
 def build_pdf_route_rules(items):
-    """从统一规则列表构造 PDF 路由规则。"""
-    rules = []
-    for item in items:
-        if item.get("file_type") != "pdf":
-            continue
-        fingerprint = item.get("fingerprint", {})
-        rules.append(PdfRouteRule(
-            id=_rule_id(item, fingerprint),
-            reader_id=_reader_id(item, "pdf"),
-            file_type=item.get("file_type", "pdf"),
-            bank=item["bank"],
-            account_type=item.get("account_type", "未知"),
-            series_family=str(item.get("series_family") or "").strip(),
-            text_table=_text_table(item),
-            source_order=_source_order(item),
-            date_order=_date_order(item),
-            multi_sheet_same_layout=_multi_sheet_same_layout(item),
-            dedupe_chars=_dedupe_chars(item),
-            header_merge=_header_merge(item),
-            repeated_header=_repeated_header(item),
-            column_mapping=_column_mapping(fingerprint),
-            identity_any=fingerprint.get("identity", {}).get("any", []),
-            column_markers=_column_markers(fingerprint),
-            optional_columns=_optional_columns(fingerprint),
-            required_reader_headers=_required_reader_headers(fingerprint),
-            metadata_all=fingerprint.get("metadata", {}).get("all", {}),
-            style_all=fingerprint.get("style", {}).get("all", []),
-            date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            row_anchor=_row_anchor(item, fingerprint),
-            word_filters=_word_filters(item, fingerprint),
-            direction_from_column=_direction_from_column(item),
-            drop_rows=_drop_rows(item),
-            split_amount_balance=_split_amount_balance(item),
-            amount_columns=_amount_columns(item),
-            extract_patterns=_extract_patterns(item),
-            preamble_mapping=_preamble_mapping(fingerprint),
-            preamble_extractors=_preamble_extractors(fingerprint),
-            conditional_mapping=_conditional_mapping(item),
-            extract_mapping=_extract_mapping(item),
-            require_monetary_value=_require_monetary_value(item),
-            has_fingerprint=bool(fingerprint),
-        ))
-    return tuple(rules)
+    return _build_route_rules(items, "pdf", PdfRouteRule)
 
 
 def build_excel_route_rules(items):
-    """从统一规则列表构造 Excel 路由规则。"""
-    rules = []
-    for item in items:
-        if item.get("file_type") != "excel":
-            continue
-        fingerprint = item.get("fingerprint", {})
-        rules.append(ExcelRouteRule(
-            id=_rule_id(item, fingerprint),
-            reader_id=_reader_id(item, "excel"),
-            file_type=item.get("file_type", "excel"),
-            bank=item["bank"],
-            account_type=item.get("account_type", "未知"),
-            series_family=str(item.get("series_family") or "").strip(),
-            source_order=_source_order(item),
-            date_order=_date_order(item),
-            multi_sheet_same_layout=_multi_sheet_same_layout(item),
-            header_merge=_header_merge(item),
-            column_mapping=_column_mapping(fingerprint),
-            identity_any=fingerprint.get("identity", {}).get("any", []),
-            column_markers=_column_markers(fingerprint),
-            optional_columns=_optional_columns(fingerprint),
-            required_reader_headers=_required_reader_headers(fingerprint),
-            metadata_all=fingerprint.get("metadata", {}).get("all", {}),
-            style_all=fingerprint.get("style", {}).get("all", []),
-            date_format_any=fingerprint.get("date_format", {}).get("any", []),
-            row_anchor=_row_anchor(item, fingerprint),
-            word_filters=_word_filters(item, fingerprint),
-            direction_from_column=_direction_from_column(item),
-            drop_rows=_drop_rows(item),
-            split_amount_balance=_split_amount_balance(item),
-            amount_columns=_amount_columns(item),
-            extract_patterns=_extract_patterns(item),
-            preamble_mapping=_preamble_mapping(fingerprint),
-            preamble_extractors=_preamble_extractors(fingerprint),
-            conditional_mapping=_conditional_mapping(item),
-            extract_mapping=_extract_mapping(item),
-            require_monetary_value=_require_monetary_value(item),
-            has_fingerprint=bool(fingerprint),
-        ))
-    return tuple(rules)
+    return _build_route_rules(items, "excel", ExcelRouteRule)
 
 
 def validate_routing_rule_items(items):
@@ -958,6 +1097,7 @@ def validate_routing_rule_items(items):
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             raise ValueError(f"routing rule #{index + 1} must be a mapping")
+        _validate_rule_shape(item, index + 1)
         file_type = item.get("file_type")
         if file_type not in {"pdf", "excel"}:
             raise ValueError(f"routing rule #{index + 1} has invalid file_type: {file_type}")

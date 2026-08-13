@@ -60,7 +60,7 @@ class JiangxiRuralCommercialPdfRouteTests(unittest.TestCase):
         self.assertNotIn("parser", abc)
         self.assertEqual(abc["fingerprint_id"], "md5:9e511d80594efdc217b4ce8a6d1cfd5a")
         self.assertNotIn("parser", jxrcb)
-        self.assertEqual(jxrcb["fingerprint_id"], "md5:3a12345edcf754cba36162616ca4737d")
+        self.assertEqual(jxrcb["fingerprint_id"], "md5:ba0374ff76b34443a8c555c3f52f83dd")
 
     def test_jxrcb_requires_bank_heading(self):
         text = (

@@ -6,10 +6,8 @@ from ymb_standardization_core.readers.registry import FunctionPdfReader
 from ymb_standardization_core.readers.pdf.common import (
     _append_pdf_table_rows,
     _clean_pdf_cell,
-    drop_word_filter_char,
     iter_pdf_pages,
 )
-from ymb_standardization_core.transforms import apply_reader_options
 
 
 def _pdf_table_row_anchor_matches(row, headers, row_anchor):
@@ -44,7 +42,7 @@ def _merge_pdf_table_continuation(previous, continuation, headers):
     return merged
 
 
-def _extract_pdf_tables_default(pdf, word_filters=None, row_anchor=None):
+def _extract_pdf_tables_default(pdf, row_anchor=None):
     all_rows = []
     header_sig = None
     merge_across_pages = (
@@ -53,8 +51,6 @@ def _extract_pdf_tables_default(pdf, word_filters=None, row_anchor=None):
     )
     for page in iter_pdf_pages(pdf.pages):
         page_start = len(all_rows)
-        if word_filters:
-            page = page.filter(lambda char: not drop_word_filter_char(char, word_filters))
         for tbl in page.extract_tables():
             header_sig = _append_pdf_table_rows(all_rows, tbl, header_sig)
         if not merge_across_pages or page_start <= 1 or len(all_rows) <= page_start:
@@ -87,10 +83,9 @@ def _extract_pdf_tables_default(pdf, word_filters=None, row_anchor=None):
 def read(pdf, options):
     rows = _extract_pdf_tables_default(
         pdf,
-        word_filters=options.get("word_filters") or {},
         row_anchor=options.get("row_anchor") or {},
     )
-    return apply_reader_options(rows, {"drop_rows": options.get("drop_rows") or []})
+    return rows
 
 
 READER = FunctionPdfReader("pdfplumber_table", read)

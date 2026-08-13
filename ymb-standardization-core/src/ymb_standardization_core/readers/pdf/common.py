@@ -62,9 +62,9 @@ def _append_pdf_table_rows(all_rows, table_rows, header_sig):
     return header_sig
 
 
-def drop_word_filter_char(char, word_filters):
+def should_drop_char(char, rules):
     text = str(char.get("text") or "")
-    for item in (word_filters or {}).get("drop_chars", []):
+    for item in rules or []:
         if item.get("rotated"):
             matrix = char.get("matrix") or (1, 0, 0, 1)
             if len(matrix) < 4 or (

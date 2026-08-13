@@ -1288,7 +1288,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 self.assertEqual({row["本方账户"] for row in rows}, {account})
                 self.assertEqual(
                     report["文件画像"]["fingerprint_id"],
-                    "md5:907beda6d95ea54b2f6e380193726787",
+                    "md5:f824f600cfaa67611d1d3178fec6929b",
                 )
 
                 if owner == "范新春":

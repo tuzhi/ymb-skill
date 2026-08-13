@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -49,6 +50,33 @@ def iter_string_values(value):
 
 
 class InputRouterTests(unittest.TestCase):
+    def test_pdf_shared_row_transforms_run_once_at_input_boundary(self):
+        module = load_input_router()
+        rows = [["类型"], ["保留"]]
+        route = {
+            "decision": "matched",
+            "reader_id": "pdfplumber_table",
+            "drop_rows": [{"column": "类型", "values": ["删除"]}],
+        }
+
+        with (
+            mock.patch.object(module, "read_pdf_rows", return_value=("", rows, route)),
+            mock.patch.object(
+                module,
+                "merge_configured_header",
+                side_effect=lambda value, info: (value, info),
+            ),
+            mock.patch.object(
+                module,
+                "apply_reader_options",
+                wraps=module.apply_reader_options,
+            ) as apply_options,
+        ):
+            result = module.read_rows("statement.pdf")
+
+        self.assertEqual(result.rows, rows)
+        apply_options.assert_called_once_with(rows, route)
+
     def test_core_passes_in_memory_password_to_reader(self):
         from ymb_standardization_core.readers import input_router
 
@@ -1016,7 +1044,7 @@ class InputRouterTests(unittest.TestCase):
                 self.assertEqual(result.route_info["reader_id"], "pdfplumber_coordinate_table")
                 self.assertEqual(
                     result.route_info["fingerprint_id"],
-                    "md5:66e9c906a6c3c121ddce1ca9ecb8824d",
+                    "md5:87cea4a65034a1a57614bbf20c562156",
                 )
                 self.assertEqual(len(result.rows) - 1, expected_rows)
                 self.assertFalse(any(
@@ -1042,7 +1070,7 @@ class InputRouterTests(unittest.TestCase):
         result = module.read_rows(str(pdf))
 
         self.assertEqual(result.route_info["decision"], "matched_incomplete")
-        self.assertEqual(result.route_info["fingerprint_id"], "md5:66e9c906a6c3c121ddce1ca9ecb8824d")
+        self.assertEqual(result.route_info["fingerprint_id"], "md5:87cea4a65034a1a57614bbf20c562156")
         self.assertEqual(result.route_info["bank"], "招商银行")
         self.assertEqual(result.route_info["account_type"], "个人")
         self.assertEqual(result.route_info["missing_required_columns"], ["对手信息"])
@@ -1064,7 +1092,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["reader_id"], "pdfplumber_table")
         self.assertEqual(route["decision"], "matched")
-        self.assertEqual(route["fingerprint_id"], "md5:f2ac81b34fea59be828e6e5dbd017b63")
+        self.assertEqual(route["fingerprint_id"], "md5:49e1adc89b01128a16efbef11637143e")
         self.assertEqual(route["bank"], "上饶银行")
         self.assertEqual(route["account_type"], "对公")
         self.assertEqual(
@@ -1114,7 +1142,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
-        self.assertEqual(route["fingerprint_id"], "md5:bda38aa38c23f9da394c8fc8d0159d61")
+        self.assertEqual(route["fingerprint_id"], "md5:8437cc3cef89f20c4d7390df0d34372d")
         self.assertTrue(route["zero_transaction"])
         self.assertEqual(result.rows, [])
 
@@ -1140,7 +1168,7 @@ class InputRouterTests(unittest.TestCase):
 
         self.assertEqual(route["decision"], "matched")
         self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
-        self.assertEqual(route["fingerprint_id"], "md5:e7f0518ace4aa490503bd46199d230de")
+        self.assertEqual(route["fingerprint_id"], "md5:56000f63b074f9ee6df8318c2515ef4f")
         self.assertEqual(route["bank"], "九江银行")
         self.assertEqual(route["account_type"], "个人")
         self.assertEqual(len(rows), 1378)
@@ -1165,7 +1193,7 @@ class InputRouterTests(unittest.TestCase):
 
                 self.assertEqual(route["decision"], "matched")
                 self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
-                self.assertEqual(route["fingerprint_id"], "md5:ba2af70896a3b63b1371eac75e78c51f")
+                self.assertEqual(route["fingerprint_id"], "md5:8604418c67df1679e5679cb95f42cb4e")
                 self.assertEqual(route["bank"], "江西银行")
                 self.assertEqual(route["account_type"], "个人")
                 self.assertEqual(len(result.rows) - 1, expected_rows)

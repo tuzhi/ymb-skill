@@ -99,7 +99,7 @@
       pattern: ^D$
       replacement: 支出
   reader_id: pdfplumber_table
-- id: md5:3a12345edcf754cba36162616ca4737d
+- id: md5:ba0374ff76b34443a8c555c3f52f83dd
   file_type: pdf
   bank: 江西农商银行
   account_type: 个人
@@ -131,6 +131,7 @@
     row_anchor:
       column: 记账日期
       pattern: ^20\d{2}-\d{2}-\d{2}$
+  reader_options:
     word_filters:
       drop_words_below_page_bottom: 45
       stop_line_contains_any:
@@ -138,19 +139,19 @@
       - 借方发生额累计
       - 贷方总笔数
       - 贷方发生额累计
-      drop_chars:
-      - text_any:
-        - 江
-        - 西
-        - 农
-        - 商
-        - 银
-        - 行
-        - ·
-        fontname_contains: SimHei
-        min_size: 18
+    drop_chars:
+    - text_any:
+      - 江
+      - 西
+      - 农
+      - 商
+      - 银
+      - 行
+      - ·
+      fontname_contains: SimHei
+      min_size: 18
   reader_id: pdfplumber_coordinate_table
-- id: md5:b75cf43e9a35b4ca0c082906f3aa2c7b
+- id: md5:8b7eb4a358baef59f85210a5f15d28cc
   file_type: pdf
   bank: 开泰银行（Kasikorn Bank）
   account_type: 个人
@@ -187,12 +188,12 @@
         Channel: 交易渠道
         Details: 账户方附言
         Eff.Date: null
+    row_anchor:
+      column: Date
+      pattern: ^\d{2}-\d{2}-\d{2}$
+      continuation: until_next_anchor
   reader_options:
     date_order: dmy
-    row_transforms:
-      anchor_column: Date
-      anchor_pattern: ^\d{2}-\d{2}-\d{2}$
-      continuation: until_next_anchor
     drop_rows:
     - column: Descriptions
       values:
@@ -240,7 +241,7 @@
       pattern: '^Paid for Ref\s+(?:X[A-Z0-9]{4,}|\d+)\s+(.*)$'
       replacement: '\1'
   reader_id: pdfplumber_coordinate_table
-- id: md5:eb90af33b5f89117b801f28b10fdc111
+- id: md5:bb38be0a2f2c1a510c75b839dc0588fb
   file_type: pdf
   bank: 浙江庆元农商银行
   account_type: 个人
@@ -278,11 +279,11 @@
         对方行: null
         交易渠道: 交易渠道
         备注: 银行备注
-  reader_options:
-    row_transforms:
-      anchor_column: 交易日期
-      anchor_pattern: ^20\d{2}-\d{2}-\d{2}$
+    row_anchor:
+      column: 交易日期
+      pattern: ^20\d{2}-\d{2}-\d{2}$
       continuation: until_next_anchor
+  reader_options:
     word_filters:
       stop_line_contains_any:
       - 重要提示
@@ -341,9 +342,8 @@
         备注: 账户方附言
   reader_options:
     dedupe_chars: true
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
   reader_id: pdfplumber_table
 - id: md5:aecf32d3b7fafab4b468106cd8a06d3a
   file_type: pdf
@@ -434,9 +434,8 @@
         余额: 账户余额
         渠道: 交易渠道
   reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
   reader_id: pdfplumber_table
 - id: md5:1ac2b953b8acacc332c7e2e0544eb1f6
   file_type: pdf
@@ -475,9 +474,8 @@
         余额: 账户余额
         渠道: 交易渠道
   reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
   reader_id: pdfplumber_table
 - id: md5:d933e13d10427ffb9d2590d52325b15e
   file_type: pdf
@@ -518,15 +516,14 @@
         对方户名: 对手名称
         对方账号: null
   reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
     extract_mapping:
     - source: 对方账号
       field: 对手账户
       pattern: '^([0-9*]{8,})$'
   reader_id: pdfplumber_table
-- id: md5:6c51495092e9abac017b130c6e41991d
+- id: md5:1e4a6cfc8887a83f92d27b84d516b926
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -561,13 +558,10 @@
         size_min: 14.5
         size_max: 15.5
         top_max: 30
+    row_anchor:
+      column: 序号
+      pattern: '^\d{1,6}$'
   reader_options:
-    row_transforms:
-      anchor_column: 序号
-      anchor_pattern: '^\d{1,6}$'
-    word_filters:
-      stop_line_contains_any:
-      - 生成时间
     extract_mapping:
     - source: 对方账号与户名
       field: 对手账户
@@ -577,7 +571,7 @@
       pattern: '^[A-Z0-9][A-Z0-9*]{7,}/'
       replacement: ''
   reader_id: pdfplumber_table
-- id: md5:64d7b7142eb110705657f8871d27877f
+- id: md5:19189dbff2ac47c7d95e35f2df197b91
   file_type: pdf
   bank: 中国建设银行
   account_type: 个人
@@ -605,10 +599,10 @@
           field: 交易日期
         交易地点/附言:
           field: 账户方附言
+    row_anchor:
+      column: 序号
+      pattern: '^\d{1,6}$'
   reader_options:
-    row_transforms:
-      anchor_column: 序号
-      anchor_pattern: '^\d{1,6}$'
     word_filters:
       stop_line_contains_any:
       - 生成时间
@@ -821,7 +815,7 @@
       pattern: '\s+'
       replacement: ''
   reader_id: pdfplumber_table
-- id: md5:f2ac81b34fea59be828e6e5dbd017b63
+- id: md5:49e1adc89b01128a16efbef11637143e
   file_type: pdf
   bank: 上饶银行
   account_type: 对公
@@ -851,10 +845,9 @@
         账户余额: 账户余额
         摘要: 银行备注
         附言: 账户方附言
-  reader_options:
-    row_transforms:
-      anchor_column: 序号
-      anchor_pattern: '^\d+$'
+    row_anchor:
+      column: 序号
+      pattern: '^\d+$'
       continuation: until_next_anchor_across_pages
   reader_id: pdfplumber_table
 - id: md5:cccf7815c4118910b72612de7a9a8d0b
@@ -891,7 +884,7 @@
         对方机构: null
         备注: 银行备注
   reader_id: pdfplumber_coordinate_table
-- id: md5:66e9c906a6c3c121ddce1ca9ecb8824d
+- id: md5:87cea4a65034a1a57614bbf20c562156
   file_type: pdf
   bank: 招商银行
   account_type: 个人
@@ -923,10 +916,10 @@
           field: 对手名称
           qc: required
           missing_hint: 请重新导出招商银行交易流水，并勾选“对手信息”
+    row_anchor:
+      column: 记账日期
+      pattern: '^20\d{2}-\d{2}-\d{2}$'
   reader_options:
-    row_transforms:
-      anchor_column: 记账日期
-      anchor_pattern: '^20\d{2}-\d{2}-\d{2}$'
     repeated_header:
       end_markers:
       - Amount
@@ -979,9 +972,8 @@
         Counterparty’s: 对手名称
         Counterparty’s Account No.: 对手账户
   reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
     extract_mapping:
     - source: Counterparty’s Account No.
       field: 对手账户
@@ -1044,9 +1036,8 @@
           field: null
           match: reader_header
   reader_options:
-    word_filters:
-      drop_chars:
-      - rotated: true
+    drop_chars:
+    - rotated: true
     extract_mapping:
     - source: 对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank
       field: 对手账户
@@ -1138,7 +1129,7 @@
         摘要: 银行备注
         交易用途: 银行备注
   reader_id: pdfplumber_table
-- id: md5:e7f0518ace4aa490503bd46199d230de
+- id: md5:56000f63b074f9ee6df8318c2515ef4f
   file_type: pdf
   bank: 九江银行
   account_type: 个人
@@ -1153,23 +1144,28 @@
       pattern: '账号[:：]\s*(\d{8,})'
     columns:
       all:
-        记账日期: 交易日期
-        货币: null
-        交易金额: 交易金额
-        联机余额: 账户余额
-        交易摘要: 银行备注
-        对手信息: 对手信息
+        记账日期:
+          field: 交易日期
+          capture: date
+        货币:
+          field: null
+          capture: currency
+        交易金额:
+          field: 交易金额
+          capture: amount
+        联机余额:
+          field: 账户余额
+          capture: balance
+        交易摘要:
+          field: 银行备注
+          capture: summary
+        对手信息:
+          field: 对手信息
+          capture: counterparty
   reader_options:
     source_order: ascending
     date_order: ymd
     text_table:
-      field_groups:
-        记账日期: date
-        货币: currency
-        交易金额: amount
-        联机余额: balance
-        交易摘要: summary
-        对手信息: counterparty
       record_patterns:
       - '^(?P<date>20\d{6})\s+(?P<currency>[A-Z]{3})\s+(?P<amount>-?\d[\d,]*\.\d{2})\s+(?P<balance>-?\d[\d,]*\.\d{2})\s+(?P<summary>\S+)(?:\s+(?P<counterparty>.*))?$'
       continuation_patterns:
@@ -1256,7 +1252,7 @@
         余额: 账户余额
         时间戳: null
   reader_id: pdfplumber_table
-- id: md5:907beda6d95ea54b2f6e380193726787
+- id: md5:f824f600cfaa67611d1d3178fec6929b
   file_type: pdf
   bank: 中国民生银行
   account_type: 个人
@@ -1274,19 +1270,28 @@
         中国民生银行: null
         客户姓名: null
         客户账号: 本方账户
-        交易时间: 交易时间
-        交易金额: 交易金额
-        账户余额: 账户余额
-        对方户名/账号: 对手名称
+        交易时间:
+          field: 交易时间
+          capture: trade_time
+        摘要:
+          field: 银行备注
+          capture: summary
+          match: reader_header
+        交易金额:
+          field: 交易金额
+          capture: amount
+        账户余额:
+          field: 账户余额
+          capture: balance
+        交易渠道:
+          field: 交易渠道
+          capture: channel
+          match: reader_header
+        对方户名/账号:
+          field: 对手名称
+          capture: counterparty
   reader_options:
     text_table:
-      field_groups:
-        交易时间: trade_time
-        摘要: summary
-        交易金额: amount
-        账户余额: balance
-        交易渠道: channel
-        对方户名/账号: counterparty
       record_patterns:
       - '^(?P<voucher_type>\S+)\s+(?P<voucher_no>\d[\d*]{5,})\s+(?P<trade_time>20\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(?P<summary>.*?)\s+(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+(?P<current_flag>\S+)(?:\s+(?P<channel>\S+))?(?:\s+(?P<institution>\S+))?(?:\s+(?P<counterparty>.*))?$'
       - '^(?P<trade_time>20\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(?P<summary>.*?)\s+(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+(?P<current_flag>\S+)(?:\s+(?P<channel>\S+))?(?:\s+(?P<institution>\S+))?(?:\s+(?P<counterparty>.*))?$'
@@ -1306,7 +1311,7 @@
       pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
       replacement: '\1'
   reader_id: pdfplumber_text_lines
-- id: md5:bda38aa38c23f9da394c8fc8d0159d61
+- id: md5:8437cc3cef89f20c4d7390df0d34372d
   file_type: pdf
   bank: 中国银行
   account_type: 对公
@@ -1326,27 +1331,33 @@
     columns:
       all:
         序号: null
-        记账日: 交易日期
+        记账日:
+          field: 交易日期
+          capture: book_date
         起息日: null
-        交易类型: 银行备注
+        交易类型:
+          field: 银行备注
+          capture: trade_type
         凭证: null
-        凭证号码/业务编号/用途/摘要: 账户方附言
-        借方发生额: 支出金额
-        贷方发生额: 收入金额
-        余额: 账户余额
+        凭证号码/业务编号/用途/摘要:
+          field: 账户方附言
+          capture: details
+        借方发生额:
+          field: 支出金额
+          capture: debit
+        贷方发生额:
+          field: 收入金额
+          capture: credit
+        余额:
+          field: 账户余额
+          capture: balance
         机构/柜员/流水: null
-        备注: 对手名称
+        备注:
+          field: 对手名称
+          capture: notes
   reader_options:
     date_order: ymd
     text_table:
-      field_groups:
-        记账日: book_date
-        交易类型: trade_type
-        凭证号码/业务编号/用途/摘要: details
-        借方发生额: debit
-        贷方发生额: credit
-        余额: balance
-        备注: notes
       record_patterns:
       - '^\|\s*(?P<sequence>\d+)\s*\|\s*(?P<book_date>[^|]*)\|\s*(?P<value_date>[^|]*)\|\s*(?P<trade_type>[^|]*)\|\s*(?P<voucher>[^|]*)\|\s*(?P<details>[^|]*)\|\s*(?P<debit>[^|]*)\|\s*(?P<credit>[^|]*)\|\s*(?P<balance>[^|]*)\|\s*(?P<reference>[^|]*)\|\s*(?P<notes>[^|]*)\|$'
       continuation_patterns:
@@ -2934,7 +2945,7 @@
         账户余额(元):
           field: 账户余额
   reader_id: pdfplumber_table
-- id: md5:ba2af70896a3b63b1371eac75e78c51f
+- id: md5:8604418c67df1679e5679cb95f42cb4e
   file_type: pdf
   bank: 江西银行
   account_type: 个人
@@ -2949,25 +2960,31 @@
       pattern: '账号[:：]\s*(\d{8,})'
     columns:
       all:
-        交易日期: 交易日期
-        交易类型: 银行备注
-        币种: null
-        交易金额: 交易金额
-        联机余额: 账户余额
-        交易对手账号: 对手账户
-        交易对手名称: 对手名称
+        交易日期:
+          field: 交易日期
+          capture: date
+        交易类型:
+          field: 银行备注
+          capture: trade_type
+        币种:
+          field: null
+          capture: currency
+        交易金额:
+          field: 交易金额
+          capture: amount
+        联机余额:
+          field: 账户余额
+          capture: balance
+        交易对手账号:
+          field: 对手账户
+          capture: cp_account
+        交易对手名称:
+          field: 对手名称
+          capture: cp_name
   reader_options:
     source_order: descending
     date_order: ymd
     text_table:
-      field_groups:
-        交易日期: date
-        交易类型: trade_type
-        币种: currency
-        交易金额: amount
-        联机余额: balance
-        交易对手账号: cp_account
-        交易对手名称: cp_name
       record_patterns:
       - '^(?P<date>20\d{6})\s+(?P<trade_type>.*?)\s+(?P<currency>人民币)\s+(?P<amount>-?\d[\d,]*\.\d{2})\s+(?P<balance>-?\d[\d,]*\.\d{2})(?:\s+(?P<cp_account>(?:\d{4}\s+\*{4}\s+\*{3}|\d{8,}))\s+(?P<cp_name>.*))?$'
       continuation_patterns:
@@ -3303,7 +3320,6 @@
   bank: 中信银行
   account_type: 个人
   series_family: citic_personal_transaction_details_openpdf
-  source_order: chronological
   fingerprint:
     metadata:
       all:

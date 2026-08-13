@@ -69,7 +69,7 @@ class PinganPersonalPdfRouteTests(unittest.TestCase):
         self.assertEqual(route["series_family"], "")
         self.assertTrue(route["dedupe_chars"])
         self.assertEqual(
-            route["word_filters"]["drop_chars"],
+            route["drop_chars"],
             [{"rotated": True}],
         )
 

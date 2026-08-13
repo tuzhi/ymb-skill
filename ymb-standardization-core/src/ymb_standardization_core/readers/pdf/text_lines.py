@@ -18,9 +18,9 @@ def _first_match(patterns, line):
     return None
 
 
-def _row_from_match(match, headers, fields):
+def _row_from_match(match, headers, captures):
     groups = match.groupdict()
-    return [str(groups.get(fields.get(header, "")) or "").strip() for header in headers]
+    return [str(groups.get(captures.get(header, "")) or "").strip() for header in headers]
 
 
 def _append_continuation(row, match, headers, append_fields, joiner):
@@ -35,8 +35,8 @@ def _append_continuation(row, match, headers, append_fields, joiner):
 
 def _extract_pdf_text_table_rows(text, config):
     """按通用文本行契约提取记录，首行返回配置声明的表头。"""
-    fields = dict(config.get("field_groups") or {})
-    headers = list(fields)
+    captures = dict(config.get("captures") or {})
+    headers = list(captures)
     record_patterns = _compiled_patterns(config, "record_patterns")
     continuations = [
         (
@@ -46,7 +46,7 @@ def _extract_pdf_text_table_rows(text, config):
         )
         for item in config.get("continuation_patterns", [])
     ]
-    if not headers or not fields or not record_patterns:
+    if not headers or not captures or not record_patterns:
         return []
 
     rows = [headers]
@@ -56,7 +56,7 @@ def _extract_pdf_text_table_rows(text, config):
             continue
         record = _first_match(record_patterns, line)
         if record:
-            rows.append(_row_from_match(record, headers, fields))
+            rows.append(_row_from_match(record, headers, captures))
             continue
         if len(rows) == 1:
             continue

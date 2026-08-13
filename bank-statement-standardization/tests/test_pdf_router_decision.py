@@ -28,6 +28,7 @@ from ymb_standardization_core.readers.routing.rule_loader import (  # noqa: E402
     apply_required_reader_header_gate,
     fingerprint_md5,
     load_pdf_route_rules,
+    validate_routing_rule_items,
 )
 from ymb_standardization_core.readers.registry import FunctionPdfReader, PdfReaderRegistry  # noqa: E402
 from ymb_standardization_core.readers.pdf import common, coordinate_table, table  # noqa: E402
@@ -277,7 +278,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         raw_pdf = FakePdf()
         clean_pdf = _prepare_pdf_reader_view(raw_pdf, {
             "dedupe_chars": True,
-            "word_filters": {"drop_chars": [{"rotated": True}]},
+            "drop_chars": [{"rotated": True}],
         })
 
         self.assertIsNot(clean_pdf, raw_pdf)
@@ -708,7 +709,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         _preamble, rows, route_info = read_pdf_rows(str(path))
 
         self.assertEqual(route_info["reader_id"], "pdfplumber_coordinate_table")
-        self.assertEqual(route_info["fingerprint_id"], "md5:eb90af33b5f89117b801f28b10fdc111")
+        self.assertEqual(route_info["fingerprint_id"], "md5:bb38be0a2f2c1a510c75b839dc0588fb")
         self.assertEqual(rows[0], [
             "交易日期",
             "币种",
@@ -736,9 +737,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
         by_id = {rule.id: rule for rule in rules}
         for fingerprint_id in [
             "md5:9e511d80594efdc217b4ce8a6d1cfd5a",
-            "md5:3a12345edcf754cba36162616ca4737d",
-            "md5:b75cf43e9a35b4ca0c082906f3aa2c7b",
-            "md5:eb90af33b5f89117b801f28b10fdc111",
+            "md5:ba0374ff76b34443a8c555c3f52f83dd",
+            "md5:8b7eb4a358baef59f85210a5f15d28cc",
+            "md5:bb38be0a2f2c1a510c75b839dc0588fb",
             "md5:ad9958268d66435c0cba9f63bd3f8a34",
             "md5:736db5142663fe121ee00a19d869e2a9",
         ]:
@@ -786,6 +787,48 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 self.assertTrue(source)
                 self.assertIsInstance(config, dict)
                 self.assertIn(config.get("qc", "optional"), {"optional", "required"})
+
+    def test_routing_yaml_has_no_legacy_capability_locations(self):
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "routing_rules.yaml"
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+
+        for item in items:
+            self.assertNotIn("source_order", item)
+            fingerprint = item.get("fingerprint") or {}
+            self.assertNotIn("word_filters", fingerprint)
+            options = item.get("reader_options") or {}
+            self.assertNotIn("row_transforms", options)
+            text_table = options.get("text_table") or {}
+            self.assertNotIn("field_groups", text_table)
+            self.assertNotIn("drop_chars", options.get("word_filters") or {})
+
+    def test_routing_yaml_rejects_unknown_and_misplaced_capabilities(self):
+        rules_path = CORE_PACKAGE / "ymb_standardization_core" / "config" / "routing" / "routing_rules.yaml"
+
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        items[0]["source_order"] = "chronological"
+        with self.assertRaisesRegex(ValueError, "unknown routing rule"):
+            validate_routing_rule_items(items)
+
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        text_rule = next(
+            item for item in items
+            if item.get("reader_id") == "pdfplumber_text_lines"
+        )
+        text_rule["reader_options"]["text_table"]["field_groups"] = {"交易日期": "date"}
+        with self.assertRaisesRegex(ValueError, "unknown reader_options.text_table"):
+            validate_routing_rule_items(items)
+
+        items = yaml.safe_load(rules_path.read_text(encoding="utf-8"))
+        table_rule = next(
+            item for item in items
+            if item.get("reader_id") == "pdfplumber_table"
+        )
+        table_rule.setdefault("reader_options", {})["word_filters"] = {
+            "stop_line_contains_any": ["页脚"]
+        }
+        with self.assertRaisesRegex(ValueError, "word_filters is only supported"):
+            validate_routing_rule_items(items)
 
     def test_wechat_pay_proof_pdf_route_requires_full_statement_header(self):
         text = (
@@ -1006,7 +1049,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 0, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:3a12345edcf754cba36162616ca4737d'})
+        self.assertIn(result["fingerprint_id"], {'md5:ba0374ff76b34443a8c555c3f52f83dd'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "江西农商银行")
         self.assertEqual(result["file_type"], "pdf")
@@ -1340,7 +1383,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "个人")
-        self.assertEqual(result["word_filters"], {"drop_chars": [{"rotated": True}]})
+        self.assertEqual(result["drop_chars"], [{"rotated": True}])
 
     def test_industrial_bank_transaction_detail_pdf_route(self):
         text = (
@@ -1396,7 +1439,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
                 "对方账户/对方银行Counterparty's Account No.Counterparty's Account Bank",
             },
         )
-        self.assertEqual(result["word_filters"], {"drop_chars": [{"rotated": True}]})
+        self.assertEqual(result["drop_chars"], [{"rotated": True}])
         self.assertEqual(result["preamble_extractors"], [
             {"field": "本方名称", "pattern": r"户\s*名[：:]\s*([^\s]+)"},
             {"field": "本方账户", "pattern": r"(?:账户)?账号[：:]\s*(\d{12,})"},
@@ -1436,7 +1479,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:f2ac81b34fea59be828e6e5dbd017b63'})
+        self.assertIn(result["fingerprint_id"], {'md5:49e1adc89b01128a16efbef11637143e'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["bank"], "上饶银行")
         self.assertEqual(result["account_type"], "对公")

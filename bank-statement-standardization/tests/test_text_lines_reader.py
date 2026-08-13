@@ -3,7 +3,7 @@ from ymb_standardization_core.readers.pdf.text_lines import _extract_pdf_text_ta
 
 def test_regex_records_append_wrapped_counterparty():
     config = {
-        "field_groups": {"交易时间": "trade_time", "对方户名/账号": "counterparty"},
+        "captures": {"交易时间": "trade_time", "对方户名/账号": "counterparty"},
         "record_patterns": [
             r"^卡\s+(?P<voucher_no>\d+)\s+(?P<trade_time>20\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})\s+(?P<summary>.*?)\s+(?P<amount>[+-]?\d[\d,]*\.\d{2})\s+(?P<balance>[+-]?\d[\d,]*\.\d{2})\s+(?P<counterparty>.*)$",
         ],
@@ -31,7 +31,7 @@ def test_regex_records_append_wrapped_counterparty():
 
 def test_pipe_records_merge_wrapped_cells_without_inserting_spaces():
     config = {
-        "field_groups": {"序号": "sequence", "用途": "details", "备注": "notes"},
+        "captures": {"序号": "sequence", "用途": "details", "备注": "notes"},
         "record_patterns": [
             r"^\|\s*(?P<sequence>\d+)\s*\|\s*(?P<details>[^|]*)\|\s*(?P<notes>[^|]*)\|$",
         ],
