@@ -1123,6 +1123,58 @@ class InputRouterTests(unittest.TestCase):
                 core.standardize(str(pdf), out_dir=tmp)
         self.assertEqual(caught.exception.code, "ZERO_TRANSACTION_STATEMENT")
 
+    def test_jiujiang_personal_text_statement_uses_yaml_reader(self):
+        module = load_input_router()
+        pdf = (
+            DATA_ROOT
+            / "testdata2"
+            / "吴伟华"
+            / "d683c28522c9deef06e5e27fd1102e9a_4614763175059843620_m_2086630959107502082_1.pdf"
+        )
+        if not pdf.exists():
+            self.skipTest("本地未提供吴伟华九江银行个人 PDF 样本")
+
+        result = module.read_rows(str(pdf))
+        route = result.route_info
+        rows = [dict(zip(result.rows[0], row)) for row in result.rows[1:]]
+
+        self.assertEqual(route["decision"], "matched")
+        self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
+        self.assertEqual(route["fingerprint_id"], "md5:e7f0518ace4aa490503bd46199d230de")
+        self.assertEqual(route["bank"], "九江银行")
+        self.assertEqual(route["account_type"], "个人")
+        self.assertEqual(len(rows), 1378)
+        self.assertEqual(rows[0]["记账日期"], "20250810")
+        self.assertEqual(rows[0]["对手信息"], "吴伟华 6222031502002705335")
+
+    def test_jiangxi_personal_text_statement_rule_covers_both_volumes(self):
+        module = load_input_router()
+        samples = {
+            "d683c28522c9deef06e5e27fd1102e9a_4614763175059843620_m_62608100944320216396_result.pdf": 895,
+            "d683c28522c9deef06e5e27fd1102e9a_4614763175059843620_m_62608100945180485562_result.pdf": 704,
+        }
+
+        for name, expected_rows in samples.items():
+            with self.subTest(name=name):
+                pdf = DATA_ROOT / "testdata2" / "吴伟华" / name
+                if not pdf.exists():
+                    self.skipTest("本地未提供吴伟华江西银行个人 PDF 样本")
+
+                result = module.read_rows(str(pdf))
+                route = result.route_info
+
+                self.assertEqual(route["decision"], "matched")
+                self.assertEqual(route["reader_id"], "pdfplumber_text_lines")
+                self.assertEqual(route["fingerprint_id"], "md5:ba2af70896a3b63b1371eac75e78c51f")
+                self.assertEqual(route["bank"], "江西银行")
+                self.assertEqual(route["account_type"], "个人")
+                self.assertEqual(len(result.rows) - 1, expected_rows)
+
+        first_volume = module.read_rows(str(DATA_ROOT / "testdata2" / "吴伟华" / next(iter(samples))))
+        first_row = dict(zip(first_volume.rows[0], first_volume.rows[1]))
+        self.assertEqual(first_row["交易对手账号"], "6226 **** *** * 4785")
+        self.assertEqual(first_row["交易对手名称"], "吴伟华")
+
     def test_boc_personal_statement_joins_multiline_counterparty_fields(self):
         module = load_input_router()
         pdf = TESTDATA_ROOT / "王超" / "KA0200035ff72ed91cf0001.pdf"

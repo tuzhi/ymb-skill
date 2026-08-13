@@ -1138,6 +1138,53 @@
         摘要: 银行备注
         交易用途: 银行备注
   reader_id: pdfplumber_table
+- id: md5:e7f0518ace4aa490503bd46199d230de
+  file_type: pdf
+  bank: 九江银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 九江银行交易流水
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '姓名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        记账日期: 交易日期
+        货币: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易摘要: 银行备注
+        对手信息: 对手信息
+  reader_options:
+    source_order: ascending
+    date_order: ymd
+    text_table:
+      field_groups:
+        记账日期: date
+        货币: currency
+        交易金额: amount
+        联机余额: balance
+        交易摘要: summary
+        对手信息: counterparty
+      record_patterns:
+      - '^(?P<date>20\d{6})\s+(?P<currency>[A-Z]{3})\s+(?P<amount>-?\d[\d,]*\.\d{2})\s+(?P<balance>-?\d[\d,]*\.\d{2})\s+(?P<summary>\S+)(?:\s+(?P<counterparty>.*))?$'
+      continuation_patterns:
+      - pattern: '^(?P<counterparty_suffix>(?:[\u4e00-\u9fff]{1,12}\s+)?\d{8,})$'
+        append:
+          对手信息: counterparty_suffix
+    extract_mapping:
+    - source: 对手信息
+      field: 对手账户
+      pattern: '.*?(\d{8,})$'
+    - source: 对手信息
+      field: 对手名称
+      pattern: '^\s*(.*?)(?:\s+\d{8,})?\s*$'
+      replacement: '\1'
+  reader_id: pdfplumber_text_lines
 - id: md5:e6e38346900050e3619ef4d86ec20fb1
   file_type: pdf
   bank: 中国光大银行
@@ -2887,6 +2934,48 @@
         账户余额(元):
           field: 账户余额
   reader_id: pdfplumber_table
+- id: md5:ba2af70896a3b63b1371eac75e78c51f
+  file_type: pdf
+  bank: 江西银行
+  account_type: 个人
+  fingerprint:
+    identity:
+      any:
+      - 江西银行交易流水
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        交易日期: 交易日期
+        交易类型: 银行备注
+        币种: null
+        交易金额: 交易金额
+        联机余额: 账户余额
+        交易对手账号: 对手账户
+        交易对手名称: 对手名称
+  reader_options:
+    source_order: descending
+    date_order: ymd
+    text_table:
+      field_groups:
+        交易日期: date
+        交易类型: trade_type
+        币种: currency
+        交易金额: amount
+        联机余额: balance
+        交易对手账号: cp_account
+        交易对手名称: cp_name
+      record_patterns:
+      - '^(?P<date>20\d{6})\s+(?P<trade_type>.*?)\s+(?P<currency>人民币)\s+(?P<amount>-?\d[\d,]*\.\d{2})\s+(?P<balance>-?\d[\d,]*\.\d{2})(?:\s+(?P<cp_account>(?:\d{4}\s+\*{4}\s+\*{3}|\d{8,}))\s+(?P<cp_name>.*))?$'
+      continuation_patterns:
+      - pattern: '^(?P<account_suffix>\*\s+\d{4})(?:\s+(?P<name_suffix>.*))?$'
+        append:
+          交易对手账号: account_suffix
+          交易对手名称: name_suffix
+  reader_id: pdfplumber_text_lines
 - id: md5:84a8614651d8e779b66865cb175843ff
   file_type: excel
   bank: 九江银行
