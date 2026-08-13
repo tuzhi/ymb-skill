@@ -190,6 +190,30 @@ class PdfRouterDecisionTests(unittest.TestCase):
         separator_probe.assert_called_once()
         separator_reader.assert_called_once()
 
+    def test_text_separator_probe_respects_bottom_body_boundary(self):
+        page = self._ProbePage([
+            {"text": "2025/07/04", "x0": 20, "top": 511.3},
+            {"text": "17:18:11", "x0": 20, "top": 518.3},
+            {"text": "_" * 40, "x0": 20, "top": 563.98},
+            {"text": "打印渠道:企业网银", "x0": 20, "top": 574.0},
+        ])
+        page.height = 595
+
+        detected = coordinate_table._starts_with_text_separator_table(
+            self._ProbePdf([page]),
+            word_filters={"drop_words_below_page_bottom": 45},
+        )
+
+        self.assertFalse(detected)
+
+    def test_coordinate_stop_line_uses_original_fractional_top(self):
+        stop_top = coordinate_table._coordinate_stop_top(
+            [{"text": "停止标记", "x0": 10, "top": 563.98}],
+            word_filters={"stop_line_contains_any": ["停止标记"]},
+        )
+
+        self.assertEqual(stop_top, 563.98)
+
     def test_first_page_cache_survives_routing_until_reader_consumes_it(self):
         class CachedPage:
             width = 300

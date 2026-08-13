@@ -225,7 +225,7 @@ def _coordinate_stop_top(words, word_filters=None):
     for top, group in sorted(_group_words_by_top(words).items()):
         line = " ".join(str(word.get("text") or "") for word in group)
         if any(marker in line for marker in markers):
-            return float(top)
+            return min(float(word.get("top", top)) for word in group)
     return None
 
 
@@ -748,11 +748,43 @@ def _is_text_separator_line(line):
     return len(text) >= 8 and len(set(text)) == 1 and text[0] in {"—", "-", "_", "─"}
 
 
-def _starts_with_text_separator_table(pdf, probe_pages=3):
-    """只探测开头少量页面，避免已成功的 coordinate 结果触发全文重复扫描。"""
+def _page_body_lines(page, word_filters):
+    """按 YAML 正文下边界返回页面文本行，供策略探测复用。"""
+    words = _coordinate_page_words(page)
+    stop_top = _coordinate_stop_top(words, word_filters=word_filters)
+    bottom_margin = (word_filters or {}).get("drop_words_below_page_bottom")
+    bottom_top = (
+        page.height - float(bottom_margin)
+        if bottom_margin is not None
+        else None
+    )
+    limits = [value for value in (stop_top, bottom_top) if value is not None]
+    body_bottom = min(limits) if limits else None
+    lines = []
+    for top, group in sorted(_group_words_by_top(words).items()):
+        actual_top = min(float(word.get("top", top)) for word in group)
+        if body_bottom is not None and actual_top >= body_bottom:
+            continue
+        lines.append("".join(
+            str(word.get("text") or "").strip()
+            for word in sorted(group, key=lambda item: float(item.get("x0", 0)))
+        ))
+    return lines
+
+
+def _starts_with_text_separator_table(pdf, word_filters=None, probe_pages=3):
+    """只在 YAML 声明的正文范围内探测文本分隔表格。"""
+    uses_body_boundary = bool(
+        (word_filters or {}).get("stop_line_contains_any")
+        or (word_filters or {}).get("drop_words_below_page_bottom") is not None
+    )
     for page in iter_pdf_pages(pdf.pages[:probe_pages]):
-        text = page.extract_text() or ""
-        if any(_is_text_separator_line(line) for line in text.splitlines()):
+        lines = (
+            _page_body_lines(page, word_filters)
+            if uses_body_boundary
+            else (page.extract_text() or "").splitlines()
+        )
+        if any(_is_text_separator_line(line) for line in lines):
             return True
     return False
 
@@ -792,12 +824,12 @@ def _extract_pdf_text_separator_table_rows(pdf):
 
 
 def read(pdf, options):
-    if _starts_with_text_separator_table(pdf):
+    word_filters = options.get("word_filters") or {}
+    if _starts_with_text_separator_table(pdf, word_filters=word_filters):
         return _extract_pdf_text_separator_table_rows(pdf)
 
     candidate_headers = options.get("reader_header_candidates") or []
     row_anchor = options.get("row_anchor") or {}
-    word_filters = options.get("word_filters") or {}
     if _probe_pdf_vertical_boundary_table(
         pdf,
         row_anchor=row_anchor,

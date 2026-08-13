@@ -1252,6 +1252,51 @@
         余额: 账户余额
         时间戳: null
   reader_id: pdfplumber_table
+- id: md5:78bb07576564665f3677e50b703f6755
+  file_type: pdf
+  bank: 中国民生银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.31
+    identity:
+      any:
+      - 单位账户对账单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '客户名称[:：]\s*(.+?)\s+客户账号'
+    - field: 本方账户
+      pattern: '客户账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        交易时间: 交易时间
+        摘要: 银行备注
+        凭证类型: null
+        凭证号码: null
+        借方发生额: 支出金额
+        贷方发生额: 收入金额
+        账户余额: 账户余额
+        流水号: null
+        对方户名/账号: 对手名称
+        对方行名: __对手开户行
+    row_anchor:
+      column: 交易时间
+      pattern: ^20\d{2}/\d{2}/\d{2}$
+      continuation: until_next_anchor
+  reader_options:
+    date_order: ymd
+    word_filters:
+      drop_words_below_page_bottom: 45
+    extract_mapping:
+    - source: 对方户名/账号
+      field: 对手账户
+      pattern: '^.*?/\s*(\d{8,})(?:\s+.*)?$'
+    - source: 对方户名/账号
+      field: 对手名称
+      pattern: '^\s*(.*?)\s*/\s*\d{8,}(?:\s+.*)?$'
+      replacement: '\1'
+  reader_id: pdfplumber_coordinate_table
 - id: md5:f824f600cfaa67611d1d3178fec6929b
   file_type: pdf
   bank: 中国民生银行
