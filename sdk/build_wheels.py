@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_DIST = REPO_ROOT / "dist" / "sdk"
+DEFAULT_DIST = REPO_ROOT / "dist"
 SDK_VERSION = "1.0.0"
 SUPPORTED_PYTHON = (3, 11)
 
