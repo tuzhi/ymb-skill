@@ -1787,6 +1787,51 @@
   reader_options:
     source_order: descending
   reader_id: openpyxl_grid
+- id: md5:1347c0e5d7e07c5fc3530440ffceb889
+  file_type: pdf
+  bank: 兴业银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.35
+    identity:
+      any:
+      - 交易明细对账单
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    preamble_extractors:
+    - field: 本方账户
+      pattern: '活期账号[:：]\s*([0-9]+)'
+    - field: 本方名称
+      pattern: '户名[:：]\s*(.+?)\s+开户行'
+    columns:
+      all:
+        交易时间: 交易时间
+        摘要: 银行备注
+        凭证代号: null
+        支出: 支出金额
+        收入: 收入金额
+        收支方向: 收支方向
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+  reader_options:
+    source_order: descending
+    drop_chars:
+    - text_any:
+      - e
+      - l
+      - c
+      - t
+      - _
+      - s
+      - i
+      - g
+      - n
+      max_size: 1
+  reader_id: pdfplumber_table
 - id: md5:47e810879c9143fec9a6c5bde359a12a
   file_type: excel
   bank: 中国银行
