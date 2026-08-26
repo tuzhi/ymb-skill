@@ -224,6 +224,9 @@ class PdfRouterDecisionTests(unittest.TestCase):
             def extract_text(self):
                 return "交易明细 2025-01-01"
 
+            def dedupe_chars(self):
+                return self
+
             def extract_words(self, **_kwargs):
                 return []
 
@@ -244,6 +247,26 @@ class PdfRouterDecisionTests(unittest.TestCase):
             _route_pdf_from_text(pdf, text, ())
 
         self.assertEqual(page.close_calls, 0)
+
+    def test_first_page_routing_text_deduplicates_overlapping_glyphs(self):
+        class DuplicatedPage:
+            def __init__(self, text):
+                self.text = text
+
+            def dedupe_chars(self):
+                return type(self)("中国工商银行借记账户历史明细")
+
+            def extract_text(self):
+                return self.text
+
+        pdf = type("FakePdf", (), {
+            "pages": [DuplicatedPage("中国工商银银行行借借记记")],
+        })()
+
+        self.assertEqual(
+            _extract_first_page_text(pdf),
+            "中国工商银行借记账户历史明细",
+        )
 
     def test_coordinate_boundaries_use_gap_between_header_boxes(self):
         boundaries = coordinate_table._coordinate_boundaries(
@@ -1304,7 +1327,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:93b9d354b3ce0c48b27c87441bf73dd8'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -1375,7 +1398,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "交易日期 账号 储种 序号 币种 钞汇 摘要 地区 收入/支出金额 余额 对方户名 对方账号 渠道"
         )
         context = {
-            "metadata": {"Producer": "OpenPDF 1.3.27", "Title": "借记卡账户明细清单"},
+            "metadata": {"Producer": "OpenPDF 1.3.27"},
             "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
             "styles": [],
             "lines": text.splitlines(),
@@ -1384,7 +1407,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertNotIn("parser", result)
-        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:d933e13d10427ffb9d2590d52325b15e'})
+        self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:93b9d354b3ce0c48b27c87441bf73dd8'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
 
@@ -1403,7 +1426,7 @@ class PdfRouterDecisionTests(unittest.TestCase):
         result = router.route_pdf(text, 1, 1, context=context)
 
         self.assertEqual(result["decision"], "matched")
-        self.assertEqual(result["fingerprint_id"], "md5:1ac2b953b8acacc332c7e2e0544eb1f6")
+        self.assertEqual(result["fingerprint_id"], "md5:4e33a02760dd269b104ba310e8383799")
         self.assertEqual(result["reader_id"], "pdfplumber_table")
         self.assertEqual(result["bank"], "中国工商银行")
         self.assertEqual(result["account_type"], "个人")

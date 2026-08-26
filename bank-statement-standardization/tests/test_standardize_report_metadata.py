@@ -348,7 +348,7 @@ class StandardizeReportMetadataTest(unittest.TestCase):
                 rows = list(csv.DictReader(f))
 
         self.assertEqual(len(rows), 2500)
-        self.assertEqual(report["文件画像"]["fingerprint_id"], "md5:1ac2b953b8acacc332c7e2e0544eb1f6")
+        self.assertEqual(report["文件画像"]["fingerprint_id"], "md5:4e33a02760dd269b104ba310e8383799")
         self.assertEqual({row["本方名称"] for row in rows}, {"夏侯军刚"})
         self.assertEqual({row["本方账户"] for row in rows}, {"6222081505000091789"})
         self.assertEqual({row["开户行"] for row in rows}, {"中国工商银行"})

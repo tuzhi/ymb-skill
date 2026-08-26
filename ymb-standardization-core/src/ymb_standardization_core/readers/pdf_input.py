@@ -67,10 +67,10 @@ def _prepare_pdf_reader_view(pdf, route_info):
 
 
 def _extract_first_page_text(pdf):
-    """抽取首页文本，并把页面缓存留给随后进行的路由和 Reader。"""
+    """抽取首页路由文本，去除同坐标重复字形并保留原页面缓存。"""
     if not pdf.pages:
         return ""
-    return pdf.pages[0].extract_text() or ""
+    return pdf.pages[0].dedupe_chars().extract_text() or ""
 
 
 def _route_pdf_from_text(pdf, text, route_rules):
