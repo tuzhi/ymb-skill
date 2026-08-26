@@ -369,6 +369,75 @@ def _coordinate_row_bounds(index, anchors, body_top_min, page_height, row_anchor
     return start_top, end_top
 
 
+_DATETIME_FORMAT_TOKENS = {
+    "yyyy": r"\d{4}",
+    "yy": r"\d{2}",
+    "mm": r"\d{2}",
+    "dd": r"\d{2}",
+    "hh": r"\d{2}",
+    "ss": r"\d{2}",
+}
+
+
+def _datetime_format_regex(date_format):
+    """把 YAML date_format 契约编译为整串正则，不在 Reader 固定分隔符。"""
+    text = str(date_format or "").strip().lower()
+    parts = re.split(r"(yyyy|yy|mm|dd|hh|ss)", text)
+    if not text or not any(part in _DATETIME_FORMAT_TOKENS for part in parts):
+        return ""
+    return "".join(
+        _DATETIME_FORMAT_TOKENS[part]
+        if part in _DATETIME_FORMAT_TOKENS
+        else re.escape(part)
+        for part in parts
+    )
+
+
+def _second_precision_formats(date_formats):
+    """返回 YAML 声明的完整秒级格式及其缺秒前缀格式。"""
+    for date_format in date_formats or ():
+        normalized = str(date_format or "").strip().lower()
+        if not normalized.endswith("ss"):
+            continue
+        complete = _datetime_format_regex(normalized)
+        pending = _datetime_format_regex(normalized[:-2])
+        if complete and pending:
+            yield complete, pending
+
+
+def _merge_coordinate_datetime_page_boundary(
+        previous, continuation, headers, date_formats):
+    """按 YAML 日期格式修复跨物理页的秒数续行。"""
+    datetime_index = next(
+        (
+            headers.index(header)
+            for header in ("交易时间", "交易日期", "日期")
+            if header in headers
+        ),
+        None,
+    )
+    if datetime_index is None:
+        return False
+    previous_value = str(
+        previous[datetime_index] if datetime_index < len(previous) else ""
+    ).strip()
+    continuation_value = str(
+        continuation[datetime_index] if datetime_index < len(continuation) else ""
+    ).strip()
+    if not re.fullmatch(_DATETIME_FORMAT_TOKENS["ss"], continuation_value):
+        return False
+    for complete_pattern, pending_pattern in _second_precision_formats(date_formats):
+        match = re.fullmatch(
+            rf"(?P<complete>{complete_pattern})(?P<pending>{pending_pattern})",
+            previous_value,
+        )
+        if match:
+            previous[datetime_index] = match.group("complete")
+            continuation[datetime_index] = match.group("pending") + continuation_value
+            return True
+    return False
+
+
 def _extract_pdf_vertical_boundary_table_rows(pdf, candidate_headers, row_anchor=None, word_filters=None):
     """Coordinate-reader strategy: use stable vertical boundaries and row-anchor words."""
     all_rows = []
@@ -457,14 +526,19 @@ def _extract_pdf_vertical_boundary_table_rows(pdf, candidate_headers, row_anchor
 
 def _extract_pdf_coordinate_table_rows(
         pdf, candidate_headers, row_anchor=None, word_filters=None,
-        repeated_header=None):
+        repeated_header=None, date_formats=None):
     """Recover visual tables whose text words have stable column coordinates."""
     all_rows = []
     output_headers = None
     output_starts = None
     output_spans = None
     row_anchor = row_anchor or {}
+    merge_across_pages = (
+        str(row_anchor.get("continuation") or "").strip()
+        == "until_next_anchor_across_pages"
+    )
     for page in iter_pdf_pages(pdf.pages):
+        page_start = len(all_rows)
         words = _coordinate_page_words(page)
         header_top, page_headers, page_starts, page_spans = _coordinate_header(
             words,
@@ -573,6 +647,17 @@ def _extract_pdf_coordinate_table_rows(
             ]
             if row and row[0]:
                 all_rows.append(row)
+        if (
+            merge_across_pages
+            and page_start > 1
+            and len(all_rows) > page_start
+        ):
+            _merge_coordinate_datetime_page_boundary(
+                all_rows[page_start - 1],
+                all_rows[page_start],
+                output_headers or [],
+                date_formats,
+            )
     return all_rows if len(all_rows) > 1 else []
 
 
@@ -848,6 +933,7 @@ def read(pdf, options):
             row_anchor,
             word_filters=word_filters,
             repeated_header=options.get("repeated_header") or {},
+            date_formats=options.get("date_formats") or [],
         )
     separator_rows = _extract_pdf_text_separator_table_rows(pdf) if not rows else []
     if separator_rows and (not rows or len(rows[0]) < len(separator_rows[0])):

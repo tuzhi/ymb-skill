@@ -461,6 +461,62 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertEqual(merged[1][1], "2025-03-1414:52:19")
         self.assertEqual(merged[1][2], "100101223011001005")
 
+    def test_coordinate_reader_repairs_datetime_split_across_physical_pages(self):
+        headers = ["交易时间", "币种", "交易金额", "账户余额"]
+        previous = [
+            "2025-12-31 06:36:512025-12-30 16:23:",
+            "人民币",
+            "+53620.64",
+            "232756.27",
+        ]
+        continuation = ["57", "人民币", "-30000.00", "179135.63"]
+
+        repaired = coordinate_table._merge_coordinate_datetime_page_boundary(
+            previous,
+            continuation,
+            headers,
+            ["yyyy-mm-dd hh:mm:ss"],
+        )
+
+        self.assertTrue(repaired)
+        self.assertEqual(previous[0], "2025-12-31 06:36:51")
+        self.assertEqual(continuation[0], "2025-12-30 16:23:57")
+
+    def test_coordinate_reader_leaves_normal_page_boundary_rows_unchanged(self):
+        headers = ["交易时间", "币种"]
+        previous = ["2025-12-31 06:36:51", "人民币"]
+        continuation = ["2025-12-30 16:23:57", "人民币"]
+
+        repaired = coordinate_table._merge_coordinate_datetime_page_boundary(
+            previous,
+            continuation,
+            headers,
+            ["yyyy-mm-dd hh:mm:ss"],
+        )
+
+        self.assertFalse(repaired)
+        self.assertEqual(previous[0], "2025-12-31 06:36:51")
+        self.assertEqual(continuation[0], "2025-12-30 16:23:57")
+
+    def test_coordinate_reader_uses_yaml_datetime_format(self):
+        headers = ["交易时间", "币种"]
+        previous = [
+            "2025/12/31 06:36:512025/12/30 16:23:",
+            "人民币",
+        ]
+        continuation = ["57", "人民币"]
+
+        repaired = coordinate_table._merge_coordinate_datetime_page_boundary(
+            previous,
+            continuation,
+            headers,
+            ["yyyy/mm/dd hh:mm:ss"],
+        )
+
+        self.assertTrue(repaired)
+        self.assertEqual(previous[0], "2025/12/31 06:36:51")
+        self.assertEqual(continuation[0], "2025/12/30 16:23:57")
+
     def test_pdf_table_column_transform_uses_actual_header_after_preamble(self):
         rows = [
             ["交易明细对应时间段", "2025-01-01 至 2025-12-31", ""],
@@ -1330,6 +1386,32 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertIn(result["fingerprint_id"], {'md5:12073bf82ed836a1dcba3d4bb8aa2047', 'md5:93b9d354b3ce0c48b27c87441bf73dd8'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "个人")
+
+    def test_cgb_personal_transaction_certificate_pdfium_route(self):
+        text = (
+            "个人账户交易流水证明 账号: 6225685628000071156 户名: 赵德华 "
+            "交易时间 币种 交易金额 账户余额 对方姓名 对方账号 商户名称 摘要 附言"
+        )
+        context = {
+            "metadata": {"Creator": "PDFium", "Producer": "PDFium"},
+            "date_patterns": ["yyyy-mm-dd"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["fingerprint_id"], "md5:85579354be4140b0a03a09410d785031")
+        self.assertEqual(result["bank"], "广发银行")
+        self.assertEqual(result["account_type"], "个人")
+        self.assertEqual(result["reader_id"], "pdfplumber_coordinate_table")
+        self.assertIn("yyyy-mm-dd hh:mm:ss", result["date_formats"])
+        self.assertEqual(
+            result["row_anchor"]["continuation"],
+            "until_next_anchor_across_pages",
+        )
 
     def test_abc_corporate_account_detail_pdf_route(self):
         text = (

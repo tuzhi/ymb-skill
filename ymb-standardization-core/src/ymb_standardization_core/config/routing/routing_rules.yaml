@@ -1677,6 +1677,57 @@
     - any_values:
       - 上期余额
   reader_id: pdfplumber_table
+- id: md5:85579354be4140b0a03a09410d785031
+  file_type: pdf
+  bank: 广发银行
+  account_type: 个人
+  series_family: cgb_personal_transaction_certificate_pdfium
+  fingerprint:
+    metadata:
+      all:
+        Creator: PDFium
+        Producer: PDFium
+    date_format:
+      any:
+      - yyyy-mm-dd
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 个人账户交易流水证明
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '户名[:：]\s*([^\s]+)'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        交易时间: 交易时间
+        币种: null
+        交易金额: 交易金额
+        账户余额: 账户余额
+        对方姓名: 对手名称
+        对方账号: 对手账户
+        商户名称: null
+        摘要: 银行备注
+        附言: 账户方附言
+    row_anchor:
+      column: 币种
+      values:
+      - 人民币
+      continuation: until_next_anchor_across_pages
+  reader_options:
+    source_order: descending
+    word_filters:
+      stop_line_contains_any:
+      - 日期：
+    amount_columns:
+    - 账户余额
+    extract_mapping:
+    - source: 摘要
+      field: 对手名称
+      pattern: ^收单入账$
+      replacement: 广发银行股份有限公司
+  reader_id: pdfplumber_coordinate_table
 - id: md5:18cd1e83f703a76a2c83a791160a8eb9
   file_type: pdf
   bank: 上海浦东发展银行
