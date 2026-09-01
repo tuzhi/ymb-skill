@@ -90,10 +90,17 @@ class SdkWheelTests(unittest.TestCase):
                     "-c",
                     (
                         "from importlib.resources import files; "
-                        "from ymb_statement_standardization import StatementService, YamlRuleService; "
+                        "from ymb_statement_standardization import ("
+                        "StatementService, YamlRuleService, TransactionDTO, AccountBalanceDTO, "
+                        "DailyBalanceDTO, AccountDTO, BalanceCheckDTO, "
+                        "TagSummaryDTO, ReviewItemDTO, LabelDistributionDTO, FieldDistributionDTO); "
                         "from bank_statement_bi_analysis import BiAnalysisService; "
                         "from pathlib import Path; "
                         "assert StatementService.__module__.startswith('ymb_statement_standardization.'); "
+                        "assert TransactionDTO(transaction_id='TX-1').transaction_id == 'TX-1'; "
+                        "assert all(value is not None for value in (DailyBalanceDTO, AccountDTO, "
+                        "BalanceCheckDTO, TagSummaryDTO, ReviewItemDTO, AccountBalanceDTO, "
+                        "LabelDistributionDTO, FieldDistributionDTO)); "
                         "assert YamlRuleService.deserialize(files('ymb_standardization_core')"
                         ".joinpath('config/routing/routing_rules.yaml').read_text(encoding='utf-8')); "
                         "assert BiAnalysisService(Path.cwd() / 'workspace')._engine()"

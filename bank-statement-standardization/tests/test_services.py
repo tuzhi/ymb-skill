@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import fields
 import pandas as pd
 import zipfile
 from pathlib import Path
@@ -19,9 +20,19 @@ for path in (SKILL_ROOT, CORE_PACKAGE):
         sys.path.insert(0, str(path))
 
 from services import (  # noqa: E402
+    AccountBalanceDTO,
+    AccountDTO,
+    BalanceCheckDTO,
+    DailyBalanceDTO,
+    FieldDistributionDTO,
     InputFile,
+    LabelDistributionDTO,
+    ReviewItemDTO,
+    StandardizationDatasetDTO,
     StandardizationRequest,
     StatementService,
+    TagSummaryDTO,
+    TransactionDTO,
     YamlRuleService,
 )
 from services.models import StandardizationResult  # noqa: E402
@@ -39,21 +50,21 @@ class StatementServiceTests(unittest.TestCase):
 
             self.assertEqual(service.workspace_path, workspace.resolve())
             self.assertEqual(service.run_root, workspace.resolve() / "runs")
-            for name in ("inputs", "runs", "bi_output"):
+            for name in ("input", "runs", "bi_output"):
                 self.assertTrue((workspace / name).is_dir())
 
     def test_workspace_path_must_be_absolute(self):
         with self.assertRaisesRegex(ValueError, "绝对路径"):
             StatementService("relative/task")
 
-    def test_first_run_rejects_input_outside_workspace_inputs(self):
+    def test_first_run_rejects_input_outside_workspace_input(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "outside.xlsx"
             source.write_bytes(b"excel")
             service = StatementService(root / "task-1")
 
-            with self.assertRaisesRegex(ValueError, "Workspace inputs"):
+            with self.assertRaisesRegex(ValueError, "Workspace input"):
                 service._create_runner(StandardizationRequest(
                     client_name="客户甲",
                     files=(InputFile(source.name, str(source)),),
@@ -86,6 +97,7 @@ class StatementServiceTests(unittest.TestCase):
                 "标签梳理概览": {
                     "规则命中数量": 1,
                     "兜底其他类数量": 0,
+                    "命中字段分布": {"银行备注": 1},
                     "交易关系汇总": {"银行冲正": {"配对组数": 0}},
                 },
                 "一级标签分布": {"经营类": 1},
@@ -97,7 +109,20 @@ class StatementServiceTests(unittest.TestCase):
 
         self.assertEqual(result.summary["net_amount"], 100.0)
         self.assertEqual(result.business_summary["integration"]["quality_score"], 98)
-        self.assertEqual(result.business_summary["tagging"]["level_1_distribution"], {"经营类": 1})
+        tagging = result.business_summary["tagging"]
+        self.assertEqual(
+            tagging["level_1_distribution"],
+            (LabelDistributionDTO(label="经营类", transaction_count=1),),
+        )
+        self.assertEqual(
+            tagging["matched_field_distribution"],
+            (FieldDistributionDTO(field="银行备注", transaction_count=1),),
+        )
+        summary = result.to_summary_dict()
+        self.assertEqual(
+            summary["business_summary"]["tagging"]["level_1_distribution"],
+            [{"label": "经营类", "transaction_count": 1}],
+        )
         self.assertEqual(result.stages["stage_3"]["status"], "DONE")
 
     def test_standardization_result_streams_dataframe_directly_to_zip(self):
@@ -123,6 +148,9 @@ class StatementServiceTests(unittest.TestCase):
         )
 
         self.assertIs(result.dataset["transactions"], transactions)
+        self.assertIs(result.dataset.get("transactions"), transactions)
+        self.assertIsInstance(result.dataset, StandardizationDatasetDTO)
+        self.assertIsInstance(next(iter(result.dataset.transactions)), TransactionDTO)
         self.assertNotIn("dataset", result.to_summary_dict())
         self.assertFalse(hasattr(result, "to_dict"))
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,10 +161,90 @@ class StatementServiceTests(unittest.TestCase):
                     archive.read("standardization_result.json").decode("utf-8")
                 )
         self.assertEqual(
-            payload["dataset"]["transactions"][0]["交易唯一编号"],
+            payload["dataset"]["transactions"][0]["transaction_id"],
             "TX-1",
         )
-        self.assertIsNone(payload["dataset"]["transactions"][0]["支出金额"])
+        self.assertIsNone(payload["dataset"]["transactions"][0]["expense_amount"])
+        self.assertNotIn("交易唯一编号", payload["dataset"]["transactions"][0])
+        self.assertFalse(self._contains_chinese_mapping_key(payload["dataset"]))
+
+    @staticmethod
+    def _contains_chinese_mapping_key(value):
+        if isinstance(value, dict):
+            return any(
+                any("\u4e00" <= char <= "\u9fff" for char in str(key))
+                or StatementServiceTests._contains_chinese_mapping_key(item)
+                for key, item in value.items()
+            )
+        if isinstance(value, list):
+            return any(
+                StatementServiceTests._contains_chinese_mapping_key(item)
+                for item in value
+            )
+        return False
+
+    def test_standardization_dataset_defines_all_public_row_dtos(self):
+        frames = {
+            "transactions": pd.DataFrame([{"交易唯一编号": "TX-1"}]),
+            "daily_balances": pd.DataFrame([{
+                "日期": "2026-08-27",
+                "62220001": 100.0,
+                "合计余额": 100.0,
+            }]),
+            "accounts": pd.DataFrame([{"本方账户": "62220001"}]),
+            "balance_checks": pd.DataFrame([{"账户": "62220001"}]),
+            "tag_summaries": pd.DataFrame([{"一级标签": "经营类"}]),
+            "review_items": pd.DataFrame([{"事项类型": "QC-SOFT"}]),
+        }
+
+        dataset = StandardizationDatasetDTO.from_mapping(frames)
+
+        self.assertIs(dataset["transactions"], frames["transactions"])
+        self.assertIsInstance(next(iter(dataset.transactions)), TransactionDTO)
+        daily = next(iter(dataset.daily_balances))
+        self.assertIsInstance(daily, DailyBalanceDTO)
+        self.assertEqual(
+            daily.accounts,
+            (AccountBalanceDTO(account="62220001", balance=100.0),),
+        )
+        self.assertIsInstance(next(iter(dataset.accounts)), AccountDTO)
+        self.assertIsInstance(next(iter(dataset.balance_checks)), BalanceCheckDTO)
+        self.assertIsInstance(next(iter(dataset.tag_summaries)), TagSummaryDTO)
+        self.assertIsInstance(next(iter(dataset.review_items)), ReviewItemDTO)
+
+    def test_standardization_result_example_matches_dataset_dtos(self):
+        payload = json.loads(
+            (
+                SKILL_ROOT
+                / "services"
+                / "examples"
+                / "standardization_result.example.json"
+            ).read_text(encoding="utf-8")
+        )
+        row_types = {
+            "transactions": TransactionDTO,
+            "daily_balances": DailyBalanceDTO,
+            "accounts": AccountDTO,
+            "balance_checks": BalanceCheckDTO,
+            "tag_summaries": TagSummaryDTO,
+            "review_items": ReviewItemDTO,
+        }
+
+        self.assertEqual(set(payload["dataset"]), set(row_types))
+        for table_name, row_type in row_types.items():
+            expected_keys = {item.name for item in fields(row_type)}
+            for row in payload["dataset"][table_name]:
+                self.assertEqual(set(row), expected_keys)
+        tagging = payload["business_summary"]["tagging"]
+        self.assertTrue(all(
+            set(row) == {"field", "transaction_count"}
+            for row in tagging["matched_field_distribution"]
+        ))
+        self.assertTrue(all(
+            set(row) == {"label", "transaction_count"}
+            for row in tagging["level_1_distribution"]
+        ))
+        self.assertFalse(self._contains_chinese_mapping_key(payload["dataset"]))
 
     def test_execute_standardization_uses_supplied_rule_snapshot_and_returns_dto(self):
         production = (
@@ -147,9 +255,9 @@ class StatementServiceTests(unittest.TestCase):
             / "routing_rules.yaml"
         )
         with tempfile.TemporaryDirectory() as tmp:
-            inputs = Path(tmp) / "inputs"
-            inputs.mkdir()
-            source = inputs / "流水.xlsx"
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            source = input_dir / "流水.xlsx"
             source.write_bytes(b"excel")
             rules = YamlRuleService.deserialize(production.read_text(encoding="utf-8"))
             service = StatementService(tmp)
@@ -165,6 +273,7 @@ class StatementServiceTests(unittest.TestCase):
                             "name": "流水.xlsx",
                             "relative_path": "流水.xlsx",
                             "status": "DONE",
+                            "record_count": 42,
                         },
                     },
                 },
@@ -189,9 +298,10 @@ class StatementServiceTests(unittest.TestCase):
             self.assertEqual(result.rule_snapshot["version"], rules.version)
             self.assertEqual(result.stages["stage_1"]["status"], "DONE")
             self.assertEqual(result.file_results[0]["file_id"], "md5:test")
+            self.assertEqual(result.file_results[0]["record_count"], 42)
             self.assertEqual(result.qc_client["status"], "PASS")
             self.assertEqual(result.next_action, "DELIVER")
-            self.assertEqual(result.dataset, {})
+            self.assertFalse(result.dataset)
             self.assertIs(execute.call_args.args[1], rules)
 
     @staticmethod
@@ -210,7 +320,7 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_create_runner_snapshots_input_without_async_service_state(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "inputs" / "source.xlsx"
+            source = Path(tmp) / "input" / "source.xlsx"
             source.parent.mkdir()
             source.write_bytes(b"excel")
             service = StatementService(tmp)
@@ -233,11 +343,11 @@ class StatementServiceTests(unittest.TestCase):
 
     def test_incremental_run_inherits_parent_and_applies_remove_and_add(self):
         with tempfile.TemporaryDirectory() as tmp:
-            inputs = Path(tmp) / "inputs"
-            inputs.mkdir()
-            old_source = inputs / "source-old.xlsx"
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            old_source = input_dir / "source-old.xlsx"
             old_source.write_bytes(b"old")
-            new_source = inputs / "source-new.xlsx"
+            new_source = input_dir / "source-new.xlsx"
             new_source.write_bytes(b"new")
             service = StatementService(tmp)
             parent = service._create_runner(
@@ -268,7 +378,7 @@ class StatementServiceTests(unittest.TestCase):
     def test_input_file_password_is_available_on_first_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            source = root / "inputs" / "加密流水.pdf"
+            source = root / "input" / "加密流水.pdf"
             source.parent.mkdir()
             source.write_bytes(b"%PDF-1.4\n")
             request = StandardizationRequest(

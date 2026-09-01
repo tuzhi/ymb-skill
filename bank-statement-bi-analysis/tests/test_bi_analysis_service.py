@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -10,6 +11,7 @@ if str(BI_ROOT) not in sys.path:
     sys.path.insert(0, str(BI_ROOT))
 
 from bank_statement_bi_analysis import (  # noqa: E402
+    AIAnalysisSummaryDTO,
     BiAnalysisRequest,
     BiAnalysisService,
 )
@@ -48,7 +50,24 @@ def test_execute_analysis_returns_synchronous_dto(tmp_path):
         ))
 
     assert result.status == "DONE"
-    assert result.ai_analysis_summary["有效流入"] == 100.0
+    assert result.ai_analysis_summary == AIAnalysisSummaryDTO(
+        effective_inflow=100.0,
+        effective_outflow=80.0,
+        annual_sales_median=90.0,
+        attention_counterparty_count=1,
+        night_sensitive_expense_count=2,
+        data_quality_score=88.0,
+        data_quality_grade="良好",
+    )
+    assert asdict(result)["ai_analysis_summary"] == {
+        "effective_inflow": 100.0,
+        "effective_outflow": 80.0,
+        "annual_sales_median": 90.0,
+        "attention_counterparty_count": 1,
+        "night_sensitive_expense_count": 2,
+        "data_quality_score": 88.0,
+        "data_quality_grade": "良好",
+    }
     assert Path(result.artifacts["bi_report_path"]).is_file()
     assert Path(result.artifacts["bi_report_path"]).parent == tmp_path.resolve() / "bi_output"
     assert result.chart_data == {"echarts_version": "5", "charts": []}
@@ -65,6 +84,7 @@ def test_execute_analysis_returns_structured_error(tmp_path):
     assert result.status == "ERROR"
     assert result.error is not None
     assert result.error.code == "BI_ANALYSIS_FAILED"
+    assert result.ai_analysis_summary == AIAnalysisSummaryDTO()
 
 
 def test_execute_analysis_accepts_standardization_dataset_without_reading_excel(tmp_path):
@@ -115,6 +135,13 @@ def test_services_require_absolute_workspace_path():
         assert "绝对路径" in str(exc)
     else:
         raise AssertionError("relative workspace should be rejected")
+
+
+def test_service_initializes_singular_input_directory(tmp_path):
+    service = BiAnalysisService(tmp_path)
+
+    assert service.input_root == tmp_path.resolve() / "input"
+    assert service.input_root.is_dir()
 
 
 def test_bi_rejects_standardized_file_outside_workspace(tmp_path):

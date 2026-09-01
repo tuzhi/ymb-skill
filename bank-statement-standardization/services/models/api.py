@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 import io
@@ -12,6 +12,8 @@ from pathlib import Path
 import tempfile
 from typing import Any, Mapping
 import zipfile
+
+from .dataset import DatasetTableDTO, StandardizationDatasetDTO
 
 
 @dataclass(frozen=True)
@@ -60,13 +62,21 @@ class StandardizationResult:
     stages: Mapping[str, Any]
     qc_client: Mapping[str, Any]
     business_summary: Mapping[str, Any]
-    dataset: Mapping[str, Any]
+    dataset: StandardizationDatasetDTO
     deliverable: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.dataset, StandardizationDatasetDTO):
+            object.__setattr__(
+                self,
+                "dataset",
+                StandardizationDatasetDTO.from_mapping(self.dataset),
+            )
 
     def to_summary_dict(self) -> dict[str, Any]:
         """返回不含 dataset 的轻量结果，供状态返回、日志和数据库主表使用。"""
         return {
-            item.name: getattr(self, item.name)
+            item.name: self._json_value(getattr(self, item.name))
             for item in fields(self)
             if item.name != "dataset"
         }
@@ -98,8 +108,22 @@ class StandardizationResult:
         return value
 
     @classmethod
+    def _json_value(cls, value: Any) -> Any:
+        """递归展开轻量 DTO；不会接触或复制 dataset DataFrame。"""
+        if is_dataclass(value) and not isinstance(value, type):
+            return {
+                item.name: cls._json_value(getattr(value, item.name))
+                for item in fields(value)
+            }
+        if isinstance(value, Mapping):
+            return {key: cls._json_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._json_value(item) for item in value]
+        return cls._json_scalar(value)
+
+    @classmethod
     def _json_default(cls, value: Any) -> Any:
-        normalized = cls._json_scalar(value)
+        normalized = cls._json_value(value)
         if normalized is value:
             raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
         return normalized
@@ -110,20 +134,25 @@ class StandardizationResult:
             stream.write(chunk.encode("utf-8"))
 
     @classmethod
-    def _write_dataframe(cls, stream: io.BufferedWriter, frame: Any, encoder: json.JSONEncoder) -> None:
-        columns = [str(column) for column in frame.columns]
+    def _write_dataset_table(
+        cls,
+        stream: io.BufferedWriter,
+        table: DatasetTableDTO[Any],
+        encoder: json.JSONEncoder,
+    ) -> None:
+        """逐行写入英文 DTO 字段；每次只创建当前行的轻量字典。"""
         stream.write(b"[")
         first = True
-        for values in frame.itertuples(index=False, name=None):
+        for row in table:
             if first:
                 first = False
             else:
                 stream.write(b",")
-            row = {
-                column: cls._json_scalar(value)
-                for column, value in zip(columns, values)
+            payload = {
+                item.name: cls._json_value(getattr(row, item.name))
+                for item in fields(row)
             }
-            cls._write_chunks(stream, encoder.iterencode(row))
+            cls._write_chunks(stream, encoder.iterencode(payload))
         stream.write(b"]")
 
     def write_zip(
@@ -173,17 +202,21 @@ class StandardizationResult:
                                 continue
                             stream.write(b"{")
                             first_dataset = True
-                            for key, frame in value.items():
+                            for dataset_field in fields(value):
                                 if first_dataset:
                                     first_dataset = False
                                 else:
                                     stream.write(b",")
-                                self._write_chunks(stream, encoder.iterencode(str(key)))
+                                self._write_chunks(
+                                    stream,
+                                    encoder.iterencode(dataset_field.name),
+                                )
                                 stream.write(b":")
-                                if hasattr(frame, "columns") and hasattr(frame, "itertuples"):
-                                    self._write_dataframe(stream, frame, encoder)
-                                else:
-                                    self._write_chunks(stream, encoder.iterencode(frame))
+                                self._write_dataset_table(
+                                    stream,
+                                    getattr(value, dataset_field.name),
+                                    encoder,
+                                )
                             stream.write(b"}")
                         stream.write(b"}")
             os.replace(temporary, destination)

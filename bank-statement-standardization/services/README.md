@@ -28,8 +28,8 @@ execute_standardization(
 上层传入正式或草稿的规则快照，并负责记录任务用途。
 
 `workspace_path` 必须是绝对路径，例如 `/data/runner_workspace/{task_id}`。
-Service 初始化时建立 `inputs/`、`runs/`和 `bi_output/`；首次运行的
-`InputFile.file_path` 必须位于该 Workspace 的 `inputs/` 下，Run 产物只写入 `runs/`。
+Service 初始化时建立 `input/`、`runs/`和 `bi_output/`；首次运行的
+`InputFile.file_path` 必须位于该 Workspace 的 `input/` 下，Run 产物只写入 `runs/`。
 
 DTO 定义在 `models/`：
 
@@ -59,7 +59,8 @@ execute_analysis(request: BiAnalysisRequest) -> BiAnalysisResult
 DTO 定义：
 
 - `BiAnalysisRequest(bi_run_id, statement_run_id, standardized_file_path, client_name, whitelist_path="", loans_path="", new_loan=None)`
-- `BiAnalysisResult(bi_run_id, statement_run_id, status, artifacts, ai_analysis_summary, chart_data, error)`
+- `AIAnalysisSummaryDTO(effective_inflow, effective_outflow, annual_sales_median, attention_counterparty_count, night_sensitive_expense_count, data_quality_score, data_quality_grade)`
+- `BiAnalysisResult(bi_run_id, statement_run_id, status, artifacts, ai_analysis_summary, chart_data, error)`，其中 `ai_analysis_summary` 为 `AIAnalysisSummaryDTO`，字段名统一使用英文
 
 BI Service 使用与标准化相同的 `workspace_path`：文件路径输入只能位于
 `runs/`，报告固定写入 `bi_output/`。直接传递 `StandardizationResult.dataset`
@@ -86,7 +87,7 @@ result = service.execute_standardization(
         client_name="客户甲",
         files=(InputFile(
             "流水.xlsx",
-            f"{workspace}/inputs/流水.xlsx",
+            f"{workspace}/input/流水.xlsx",
             "md5:...",
             "密码",
         ),),

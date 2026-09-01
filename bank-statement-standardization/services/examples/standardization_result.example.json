@@ -50,6 +50,7 @@
       "file_id": "md5:3d8a039aea42e53b24a96671329f46bd",
       "file_name": "hqmx_20260729110506.pdf",
       "status": "DONE",
+      "record_count": 307,
       "route": {
         "fingerprint_id": "md5:6c51495092e9abac017b130c6e41991d",
         "reader_id": "pdfplumber_table",
@@ -84,6 +85,7 @@
       "file_id": "md5:69535de72f68da8b88ca28e66704a366",
       "file_name": "交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf",
       "status": "DONE",
+      "record_count": 2930,
       "route": {
         "fingerprint_id": "md5:fa649447a118b2028758eb29b8dd0401",
         "reader_id": "pdfplumber_table",
@@ -182,17 +184,38 @@
     "tagging": {
       "rule_matched_count": 2850,
       "fallback_tag_count": 387,
-      "matched_field_distribution": {
-        "银行备注": 2839,
-        "对手名称": 11
-      },
-      "level_1_distribution": {
-        "经营类": 2784,
-        "筹资类": 34,
-        "投资类": 25,
-        "内部调拨类": 7,
-        "其他类": 387
-      },
+      "matched_field_distribution": [
+        {
+          "field": "银行备注",
+          "transaction_count": 2839
+        },
+        {
+          "field": "对手名称",
+          "transaction_count": 11
+        }
+      ],
+      "level_1_distribution": [
+        {
+          "label": "经营类",
+          "transaction_count": 2784
+        },
+        {
+          "label": "筹资类",
+          "transaction_count": 34
+        },
+        {
+          "label": "投资类",
+          "transaction_count": 25
+        },
+        {
+          "label": "内部调拨类",
+          "transaction_count": 7
+        },
+        {
+          "label": "其他类",
+          "transaction_count": 387
+        }
+      ],
       "bank_reversal": {
         "matched_group_count": 3,
         "original_transaction_count": 3,
@@ -205,172 +228,188 @@
   "dataset": {
     "transactions": [
       {
-        "交易唯一编号": "TX-af97d9a0a90d",
-        "客户名称": "黄么其",
-        "账户类型": "个人",
-        "本方名称": "郭月娥",
-        "本方账户": "6217002060004223794",
-        "开户行": "中国建设银行",
-        "交易时间": "2025-07-30",
-        "对手名称": "郭月娥",
-        "对手账户": "6217994260001312992",
-        "收入金额": null,
-        "支出金额": 500.0,
-        "交易金额": -500.0,
-        "分析收入金额": 0.0,
-        "分析支出金额": 500.0,
-        "分析交易金额": -500.0,
-        "账户余额": 40379.22,
-        "虚拟账户余额": 44198.25,
-        "银行备注": "跨行转出",
-        "账户方附言": "***",
-        "交易状态": "正常",
-        "关联冲正交易编号": null,
-        "收支方向": "支出",
-        "一级标签": "其他类",
-        "二级标签": "其他",
-        "三级标签": "其他支出",
-        "标签来源": "兜底",
-        "标签置信度": 0.3,
-        "命中关键词": null,
-        "交易渠道": null,
-        "来源文件名": "hqmx_20260729110506.pdf",
-        "来源行号": 2
+        "transaction_id": "TX-af97d9a0a90d",
+        "client_name": "黄么其",
+        "account_type": "个人",
+        "owner_name": "郭月娥",
+        "owner_account": "6217002060004223794",
+        "bank_name": "中国建设银行",
+        "transaction_time": "2025-07-30",
+        "counterparty_name": "郭月娥",
+        "counterparty_account": "6217994260001312992",
+        "income_amount": null,
+        "expense_amount": 500.0,
+        "transaction_amount": -500.0,
+        "analysis_income_amount": 0.0,
+        "analysis_expense_amount": 500.0,
+        "analysis_transaction_amount": -500.0,
+        "balance": 40379.22,
+        "virtual_balance": 44198.25,
+        "bank_memo": "跨行转出",
+        "account_memo": "***",
+        "transaction_status": "正常",
+        "reversal_transaction_id": null,
+        "direction": "支出",
+        "level_1_tag": "其他类",
+        "level_2_tag": "其他",
+        "level_3_tag": "其他支出",
+        "tag_source": "兜底",
+        "tag_confidence": 0.3,
+        "matched_keyword": null,
+        "transaction_channel": null,
+        "source_file_name": "hqmx_20260729110506.pdf",
+        "source_row_number": 2
       },
       {
-        "交易唯一编号": "TX-85c768f613fd",
-        "客户名称": "黄么其",
-        "账户类型": "个人",
-        "本方名称": "郭月娥",
-        "本方账户": "6217002060004223794",
-        "开户行": "中国建设银行",
-        "交易时间": "2025-08-01",
-        "对手名称": "郭月娥",
-        "对手账户": "6217994260001312992",
-        "收入金额": null,
-        "支出金额": 10000.0,
-        "交易金额": -10000.0,
-        "分析收入金额": 0.0,
-        "分析支出金额": 10000.0,
-        "分析交易金额": -10000.0,
-        "账户余额": 30379.22,
-        "虚拟账户余额": 33762.25,
-        "银行备注": "跨行转出",
-        "账户方附言": "***",
-        "交易状态": "正常",
-        "关联冲正交易编号": null,
-        "收支方向": "支出",
-        "一级标签": "其他类",
-        "二级标签": "其他",
-        "三级标签": "其他支出",
-        "标签来源": "兜底",
-        "标签置信度": 0.3,
-        "命中关键词": null,
-        "交易渠道": null,
-        "来源文件名": "hqmx_20260729110506.pdf",
-        "来源行号": 3
+        "transaction_id": "TX-85c768f613fd",
+        "client_name": "黄么其",
+        "account_type": "个人",
+        "owner_name": "郭月娥",
+        "owner_account": "6217002060004223794",
+        "bank_name": "中国建设银行",
+        "transaction_time": "2025-08-01",
+        "counterparty_name": "郭月娥",
+        "counterparty_account": "6217994260001312992",
+        "income_amount": null,
+        "expense_amount": 10000.0,
+        "transaction_amount": -10000.0,
+        "analysis_income_amount": 0.0,
+        "analysis_expense_amount": 10000.0,
+        "analysis_transaction_amount": -10000.0,
+        "balance": 30379.22,
+        "virtual_balance": 33762.25,
+        "bank_memo": "跨行转出",
+        "account_memo": "***",
+        "transaction_status": "正常",
+        "reversal_transaction_id": null,
+        "direction": "支出",
+        "level_1_tag": "其他类",
+        "level_2_tag": "其他",
+        "level_3_tag": "其他支出",
+        "tag_source": "兜底",
+        "tag_confidence": 0.3,
+        "matched_keyword": null,
+        "transaction_channel": null,
+        "source_file_name": "hqmx_20260729110506.pdf",
+        "source_row_number": 3
       }
     ],
     "daily_balances": [
       {
-        "日期": "2025-07-21",
-        "6217002060004223794": 0.0,
-        "6222620660003403560": 2874.58,
-        "合计余额": 2874.58
+        "date": "2025-07-21",
+        "accounts": [
+          {
+            "account": "6217002060004223794",
+            "balance": 0.0
+          },
+          {
+            "account": "6222620660003403560",
+            "balance": 2874.58
+          }
+        ],
+        "total_balance": 2874.58
       },
       {
-        "日期": "2025-07-22",
-        "6217002060004223794": 0.0,
-        "6222620660003403560": 3395.58,
-        "合计余额": 3395.58
+        "date": "2025-07-22",
+        "accounts": [
+          {
+            "account": "6217002060004223794",
+            "balance": 0.0
+          },
+          {
+            "account": "6222620660003403560",
+            "balance": 3395.58
+          }
+        ],
+        "total_balance": 3395.58
       }
     ],
     "accounts": [
       {
-        "本方名称": "郭月娥",
-        "账户类型": "个人",
-        "开户行": "中国建设银行",
-        "本方账户": "6217002060004223794",
-        "交易笔数": 307,
-        "流入合计": 1997312.69,
-        "流出合计": 2034698.41,
-        "期初日期": "2025-07-30",
-        "期末日期": "2026-07-28",
-        "来源文件": "hqmx_20260729110506.pdf"
+        "owner_name": "郭月娥",
+        "account_type": "个人",
+        "bank_name": "中国建设银行",
+        "owner_account": "6217002060004223794",
+        "transaction_count": 307,
+        "total_inflow": 1997312.69,
+        "total_outflow": 2034698.41,
+        "opening_date": "2025-07-30",
+        "closing_date": "2026-07-28",
+        "source_files": "hqmx_20260729110506.pdf"
       },
       {
-        "本方名称": "黄么其",
-        "账户类型": "个人",
-        "开户行": "交通银行",
-        "本方账户": "6222620660003403560",
-        "交易笔数": 2930,
-        "流入合计": 3385861.09,
-        "流出合计": 3381225.15,
-        "期初日期": "2025-07-21",
-        "期末日期": "2026-07-21",
-        "来源文件": "交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf"
+        "owner_name": "黄么其",
+        "account_type": "个人",
+        "bank_name": "交通银行",
+        "owner_account": "6222620660003403560",
+        "transaction_count": 2930,
+        "total_inflow": 3385861.09,
+        "total_outflow": 3381225.15,
+        "opening_date": "2025-07-21",
+        "closing_date": "2026-07-21",
+        "source_files": "交通银行交易流水(申请时间2026年07月21日16时08分08秒).pdf"
       }
     ],
     "balance_checks": [
       {
-        "账户": "6217002060004223794",
-        "交易数": 307,
-        "校验状态": "通过",
-        "余额断点": 0,
-        "断点率": 0.0,
-        "疑似解析不全": false,
-        "断点交易示例": [],
-        "期末余额": 3493.5
+        "account": "6217002060004223794",
+        "transaction_count": 307,
+        "status": "通过",
+        "balance_breakpoint_count": 0,
+        "breakpoint_rate": 0.0,
+        "suspected_incomplete_parse": false,
+        "breakpoint_examples": [],
+        "closing_balance": 3493.5
       },
       {
-        "账户": "6222620660003403560",
-        "交易数": 2930,
-        "校验状态": "通过",
-        "余额断点": 0,
-        "断点率": 0.0,
-        "疑似解析不全": false,
-        "断点交易示例": [],
-        "期末余额": 7320.01
+        "account": "6222620660003403560",
+        "transaction_count": 2930,
+        "status": "通过",
+        "balance_breakpoint_count": 0,
+        "breakpoint_rate": 0.0,
+        "suspected_incomplete_parse": false,
+        "breakpoint_examples": [],
+        "closing_balance": 7320.01
       }
     ],
     "tag_summaries": [
       {
-        "收支方向": "支出",
-        "一级标签": "经营类",
-        "二级标签": "主营业务",
-        "三级标签": "采购支出",
-        "笔数": 1840,
-        "收入合计": 0.0,
-        "支出合计": 1880532.22
+        "direction": "支出",
+        "level_1_tag": "经营类",
+        "level_2_tag": "主营业务",
+        "level_3_tag": "采购支出",
+        "transaction_count": 1840,
+        "total_inflow": 0.0,
+        "total_outflow": 1880532.22
       },
       {
-        "收支方向": "收入",
-        "一级标签": "经营类",
-        "二级标签": "退款交易",
-        "三级标签": "退款收入",
-        "笔数": 743,
-        "收入合计": 392708.39,
-        "支出合计": 0.0
+        "direction": "收入",
+        "level_1_tag": "经营类",
+        "level_2_tag": "退款交易",
+        "level_3_tag": "退款收入",
+        "transaction_count": 743,
+        "total_inflow": 392708.39,
+        "total_outflow": 0.0
       }
     ],
     "review_items": [
       {
-        "事项类型": "QC-SOFT",
-        "复核原因": "全部有效文件覆盖不足两年：2025-07-21 至 2026-07-28",
-        "证据交易编号": "客户目录 / customer.coverage_two_years",
-        "建议动作": "补件或确认接受例外"
+        "item_type": "QC-SOFT",
+        "reason": "全部有效文件覆盖不足两年：2025-07-21 至 2026-07-28",
+        "evidence_transaction_id": "客户目录 / customer.coverage_two_years",
+        "recommended_action": "补件或确认接受例外"
       },
       {
-        "事项类型": "标签待复核",
-        "复核原因": "规则未命中，归兜底其他类",
-        "证据交易编号": "TX-af97d9a0a90d",
-        "建议动作": "人工确认标签"
+        "item_type": "标签待复核",
+        "reason": "规则未命中，归兜底其他类",
+        "evidence_transaction_id": "TX-af97d9a0a90d",
+        "recommended_action": "人工确认标签"
       },
       {
-        "事项类型": "标签待复核",
-        "复核原因": "规则未命中，归兜底其他类",
-        "证据交易编号": "TX-85c768f613fd",
-        "建议动作": "人工确认标签"
+        "item_type": "标签待复核",
+        "reason": "规则未命中，归兜底其他类",
+        "evidence_transaction_id": "TX-85c768f613fd",
+        "recommended_action": "人工确认标签"
       }
     ]
   },

@@ -7,7 +7,12 @@ from typing import Any, Mapping
 from runtime.models import PipelineExecutionResult
 from runtime.models.run_result import NextAction
 
-from .models import StandardizationResult
+from .models import (
+    FieldDistributionDTO,
+    LabelDistributionDTO,
+    StandardizationDatasetDTO,
+    StandardizationResult,
+)
 
 
 def _qc_contract(
@@ -60,6 +65,7 @@ def _file_results(
             "file_id": str(file_id),
             "file_name": str(record.get("name") or ""),
             "status": str(record.get("status") or ""),
+            "record_count": int(record.get("record_count") or 0),
             "route": {
                 "fingerprint_id": str(route.get("fingerprint_id") or ""),
                 "reader_id": str(route.get("reader_id") or ""),
@@ -178,6 +184,8 @@ def _business_summary(
     continuity = balance.get("组合连续性校验") or {}
     tag_overview = tagging.get("标签梳理概览") or {}
     reversal = (tag_overview.get("交易关系汇总") or {}).get("银行冲正") or {}
+    matched_fields = tag_overview.get("命中字段分布") or {}
+    level_1_tags = tagging.get("一级标签分布") or {}
     return {
         "integration": {
             "quality_score": overview.get("整体质量评分"),
@@ -195,8 +203,20 @@ def _business_summary(
         "tagging": {
             "rule_matched_count": int(tag_overview.get("规则命中数量") or 0),
             "fallback_tag_count": int(tag_overview.get("兜底其他类数量") or 0),
-            "matched_field_distribution": dict(tag_overview.get("命中字段分布") or {}),
-            "level_1_distribution": dict(tagging.get("一级标签分布") or {}),
+            "matched_field_distribution": tuple(
+                FieldDistributionDTO(
+                    field=str(name),
+                    transaction_count=int(count or 0),
+                )
+                for name, count in matched_fields.items()
+            ),
+            "level_1_distribution": tuple(
+                LabelDistributionDTO(
+                    label=str(name),
+                    transaction_count=int(count or 0),
+                )
+                for name, count in level_1_tags.items()
+            ),
             "bank_reversal": {
                 "matched_group_count": int(reversal.get("配对组数") or 0),
                 "original_transaction_count": int(reversal.get("被冲正原始交易数") or 0),
@@ -240,6 +260,6 @@ def build_standardization_result(
         stages=stages,
         qc_client=_qc_contract(qc.get("customer") or {}, rules_key="customer_rules"),
         business_summary=_business_summary(integration, balance, tagging),
-        dataset=dataset,
+        dataset=StandardizationDatasetDTO.from_mapping(dataset),
         deliverable=dict(execution.deliverable or {}),
     )

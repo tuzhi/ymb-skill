@@ -7,7 +7,12 @@ from typing import Any
 import json
 import sys
 
-from .models import BiAnalysisRequest, BiAnalysisResult, ServiceError
+from .models import (
+    AIAnalysisSummaryDTO,
+    BiAnalysisRequest,
+    BiAnalysisResult,
+    ServiceError,
+)
 
 
 class BiAnalysisService:
@@ -17,7 +22,7 @@ class BiAnalysisService:
         script_dir: str | Path | None = None,
     ) -> None:
         self.workspace_path = self._initialize_workspace(workspace_path)
-        self.input_root = self.workspace_path / "inputs"
+        self.input_root = self.workspace_path / "input"
         self.run_root = self.workspace_path / "runs"
         self.output_root = self.workspace_path / "bi_output"
         self.script_dir = Path(
@@ -101,15 +106,15 @@ class BiAnalysisService:
                 metrics,
             )
             sales = dict(detail.get("sales") or {})
-            summary = {
-                "有效流入": float(detail.get("eff_in") or 0),
-                "有效流出": float(detail.get("eff_out") or 0),
-                "年销售额中值": float(sales.get("mid") or 0),
-                "需关注对手": len(detail.get("watch") or []),
-                "夜间敏感支出": int(detail.get("n_night") or 0),
-                "数据质量分": float(analysis.get("q_total") or 0),
-                "数据质量等级": str(analysis.get("q_grade") or ""),
-            }
+            summary = AIAnalysisSummaryDTO(
+                effective_inflow=float(detail.get("eff_in") or 0),
+                effective_outflow=float(detail.get("eff_out") or 0),
+                annual_sales_median=float(sales.get("mid") or 0),
+                attention_counterparty_count=len(detail.get("watch") or []),
+                night_sensitive_expense_count=int(detail.get("n_night") or 0),
+                data_quality_score=float(analysis.get("q_total") or 0),
+                data_quality_grade=str(analysis.get("q_grade") or ""),
+            )
             return BiAnalysisResult(
                 bi_run_id=request.bi_run_id,
                 statement_run_id=request.statement_run_id,
@@ -143,7 +148,7 @@ class BiAnalysisService:
             raise ValueError("workspace_path 必须是绝对路径")
         workspace = raw.resolve()
         workspace.mkdir(parents=True, exist_ok=True)
-        for name in ("inputs", "runs", "bi_output"):
+        for name in ("input", "runs", "bi_output"):
             child = workspace / name
             child.mkdir(parents=True, exist_ok=True)
             if child.resolve().parent != workspace:

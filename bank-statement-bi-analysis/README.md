@@ -32,7 +32,7 @@ result = service.execute_analysis(BiAnalysisRequest(
 ))
 ```
 
-`workspace` 必须是绝对路径。Service 统一建立 `inputs/`、`runs/`和
+`workspace` 必须是绝对路径。Service 统一建立 `input/`、`runs/`和
 `bi_output/`；BI 只读取当前 Workspace `runs/` 中的标准化产物，
 并将报告固定写入 `bi_output/`。
 

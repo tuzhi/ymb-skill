@@ -37,7 +37,7 @@ class StatementService:
 
     def __init__(self, workspace_path: str | os.PathLike[str]) -> None:
         self.workspace_path = self._initialize_workspace(workspace_path)
-        self.input_root = self.workspace_path / "inputs"
+        self.input_root = self.workspace_path / "input"
         self.run_root = self.workspace_path / "runs"
         self.bi_output_root = self.workspace_path / "bi_output"
 
@@ -273,7 +273,7 @@ class StatementService:
             raise ValueError("workspace_path 必须是绝对路径")
         workspace = raw.resolve()
         workspace.mkdir(parents=True, exist_ok=True)
-        for name in ("inputs", "runs", "bi_output"):
+        for name in ("input", "runs", "bi_output"):
             child = workspace / name
             child.mkdir(parents=True, exist_ok=True)
             if child.resolve().parent != workspace:
@@ -297,9 +297,9 @@ class StatementService:
                 raise FileNotFoundError(f"输入文件不存在：{path}")
             if not any(path == root or root in path.parents for root in allowed_roots):
                 scope = (
-                    "Workspace inputs/ 或父 Run input/"
+                    "Workspace input/ 或父 Run input/"
                     if parent_run_id
-                    else "Workspace inputs/"
+                    else "Workspace input/"
                 )
                 raise ValueError(f"输入文件必须位于{scope}内：{path}")
             expected = str(item.file_md5 or "").strip()
