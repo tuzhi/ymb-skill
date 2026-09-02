@@ -66,8 +66,12 @@ BI Service 使用与标准化相同的 `workspace_path`：文件路径输入只�
 `runs/`，报告固定写入 `bi_output/`。直接传递 `StandardizationResult.dataset`
 时不回读 Excel，但 BI 报告仍只写入当前任务的 `bi_output/`。
 
-当前 BI V4 引擎生成 Excel 原生图表，但尚未生成 ECharts JSON，因此 `chart_data.charts` 当前为空数组；
-接口保留该字段，后续由同一 BI 引擎补齐，Service 不伪造图表数据。
+当前 BI V4 引擎先生成统一 `ChartBundle`，再分别渲染 Excel 原生图表和 ECharts 5 JSON，
+两个出口不重复计算业务数据。`chart_data` 包含 `schema_version`、`strategy_version`、
+`source_statement_run_id`、`currency`、`charts`、`omitted_charts` 和 `warnings`；每张图结构为
+`{"chart_id": "...", "title": "...", "option": {...}}`，`option` 可直接传给 ECharts 5。
+正常且具备月度分析数据的报告返回九张图，缺少某类数据时在 `omitted_charts` 中明确原因。
+`chart_data` 可能包含对手名称和金额，上层日志不得在 INFO 级别打印完整内容。
 
 ## 调用示例
 

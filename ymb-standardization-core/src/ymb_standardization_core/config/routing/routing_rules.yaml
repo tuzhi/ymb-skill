@@ -400,6 +400,39 @@
         转入金额: 收入金额
         余额: 账户余额
   reader_id: pdfplumber_table
+- id: md5:6788b775ef842f16b8933d314b83b43e
+  file_type: pdf
+  bank: 中国工商银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: iText 2.1.7 by 1T3XT
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 中国工商银行账户明细清单
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '本方账号户名[:：]\s*(.+?)\s+本方账号开户行[:：]'
+    - field: 本方账户
+      pattern: '账号[:：]\s*(\d{8,})'
+    columns:
+      all:
+        凭证号: null
+        对方账号: 对手账户
+        交易时间: 交易时间
+        借贷标志: 收支方向
+        对方单位: 对手名称
+        用途: 银行备注
+        摘要: 银行备注
+        转入金额: 收入金额
+        转出金额: 支出金额
+        入账日期: 交易日期
+        余额: 账户余额
+  reader_id: pdfplumber_table
 - id: md5:12073bf82ed836a1dcba3d4bb8aa2047
   file_type: pdf
   bank: 中国工商银行
@@ -792,6 +825,38 @@
   reader_options:
     source_order: descending
   reader_id: pdfplumber_table
+- id: md5:9ed6b5da599ca9b97406e7dc137d1e9f
+  file_type: pdf
+  bank: 中国农业银行
+  account_type: 对公
+  fingerprint:
+    metadata:
+      all:
+        Producer: OpenPDF 1.3.32
+    date_format:
+      any:
+      - yyyy-mm-dd hh:mm:ss
+    identity:
+      any:
+      - 账户明细
+    preamble_extractors:
+    - field: 本方名称
+      pattern: '账户名称[:：]\s*(.+?)\s+币种[:：]'
+    - field: 本方账户
+      pattern: '账户号[:：]\s*([0-9-]+)'
+    columns:
+      all:
+        交易时间: 交易时间
+        收入金额: 收入金额
+        支出金额: 支出金额
+        账户余额: 账户余额
+        对方账号: 对手账户
+        对方户名: 对手名称
+        对方开户行: __对手开户行
+        摘要: 银行备注
+  reader_options:
+    source_order: descending
+  reader_id: pdfplumber_line_table
 - id: md5:6a5112d8308bc6c15bc9e8da752c1bcf
   file_type: pdf
   bank: 上饶银行

@@ -7,6 +7,8 @@ from typing import Any
 import json
 import sys
 
+from .chart_renderers import render_echarts
+from .chart_spec import build_chart_bundle
 from .models import (
     AIAnalysisSummaryDTO,
     BiAnalysisRequest,
@@ -42,8 +44,8 @@ class BiAnalysisService:
             ``ServiceError``。
 
         本方法同步执行且只读取标准化交付物。它不会修改标准化 Run，
-        也不会持久化上层任务状态。当前 V4 引擎使用 Excel 原生图表，
-        尚未生成 ECharts JSON，因此 ``chart_data.charts`` 暂为空数组。
+        也不会持久化上层任务状态。当前 V4 引擎同时生成 Excel 原生图表
+        和可由前端直接渲染的 ECharts 5 JSON。
         """
         if not isinstance(request, BiAnalysisRequest):
             raise TypeError("request 必须是 BiAnalysisRequest")
@@ -96,6 +98,16 @@ class BiAnalysisService:
                 whitelist=whitelist_names,
             )
             output = self._output_path(request.client_name)
+            chart_bundle = build_chart_bundle(
+                analysis,
+                detail,
+                frame,
+                strategy_version=str(getattr(engine, "STRATEGY_VERSION", "")),
+            )
+            chart_data = render_echarts(
+                chart_bundle,
+                source_statement_run_id=request.statement_run_id,
+            )
             engine.build_workbook(
                 analysis,
                 detail,
@@ -104,6 +116,7 @@ class BiAnalysisService:
                 str(output),
                 whitelist,
                 metrics,
+                chart_bundle=chart_bundle,
             )
             sales = dict(detail.get("sales") or {})
             summary = AIAnalysisSummaryDTO(
@@ -121,7 +134,7 @@ class BiAnalysisService:
                 status="DONE",
                 artifacts={"bi_report_path": str(output)},
                 ai_analysis_summary=summary,
-                chart_data={"echarts_version": "5", "charts": []},
+                chart_data=chart_data,
             )
         except Exception as exc:
             return BiAnalysisResult(

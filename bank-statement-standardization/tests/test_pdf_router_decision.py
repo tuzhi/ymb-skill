@@ -1437,6 +1437,42 @@ class PdfRouterDecisionTests(unittest.TestCase):
             "pattern": r"户名[:：]\s*([^\s]+)",
         }])
 
+    def test_abc_corporate_compact_account_detail_openpdf_route(self):
+        text = (
+            "账户明细 账户号:14-000000000000000 账户名称:某某有限公司 "
+            "币种:人民币 起止日期: 2025年08月19日 - 2026年01月31日 "
+            "交易时间 收入金额 支出金额 账户余额 对方账号 对方户名 对方开户行 摘要"
+        )
+        context = {
+            "metadata": {"Producer": "OpenPDF 1.3.32"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertNotIn("parser", result)
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(
+            result["fingerprint_id"],
+            "md5:9ed6b5da599ca9b97406e7dc137d1e9f",
+        )
+        self.assertEqual(result["bank"], "中国农业银行")
+        self.assertEqual(result["account_type"], "对公")
+        self.assertEqual(result["reader_id"], "pdfplumber_line_table")
+        self.assertEqual(result["source_order"], "descending")
+        self.assertEqual(result["preamble_extractors"], [
+            {
+                "field": "本方名称",
+                "pattern": r"账户名称[:：]\s*(.+?)\s+币种[:：]",
+            },
+            {
+                "field": "本方账户",
+                "pattern": r"账户号[:：]\s*([0-9-]+)",
+            },
+        ])
+
     def test_icbc_corporate_account_statement_pdf_route(self):
         text = (
             "中国工商银行账户明细清单 账号：1512201409000016548 本方账号户名 本方账号开户行 时间范围 "
@@ -1455,6 +1491,40 @@ class PdfRouterDecisionTests(unittest.TestCase):
         self.assertIn(result["fingerprint_id"], {'md5:84a33d2b19cac75ce0e72118080eb538'})
         self.assertEqual(result["decision"], "matched")
         self.assertEqual(result["account_type"], "对公")
+
+    def test_icbc_corporate_account_detail_with_voucher_and_booking_date_route(self):
+        text = (
+            "中国工商银行账户明细清单 "
+            "凭证号 对方账号 交易时间 借贷标志 对方单位 用途 摘要 "
+            "转入金额 转出金额 入账日期 余额"
+        )
+        context = {
+            "metadata": {"Producer": "iText 2.1.7 by 1T3XT"},
+            "date_patterns": ["yyyy-mm-dd hh:mm:ss", "yyyy-mm-dd"],
+            "styles": [],
+            "lines": text.splitlines(),
+        }
+
+        result = router.route_pdf(text, 1, 1, context=context)
+
+        self.assertNotIn("parser", result)
+        self.assertEqual(
+            result["fingerprint_id"],
+            "md5:6788b775ef842f16b8933d314b83b43e",
+        )
+        self.assertEqual(result["decision"], "matched")
+        self.assertEqual(result["bank"], "中国工商银行")
+        self.assertEqual(result["account_type"], "对公")
+        self.assertEqual(result["preamble_extractors"], [
+            {
+                "field": "本方名称",
+                "pattern": r"本方账号户名[:：]\s*(.+?)\s+本方账号开户行[:：]",
+            },
+            {
+                "field": "本方账户",
+                "pattern": r"账号[:：]\s*(\d{8,})",
+            },
+        ])
 
     def test_icbc_debit_history_wps_pdf_route(self):
         text = (

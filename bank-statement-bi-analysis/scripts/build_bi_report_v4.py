@@ -32,9 +32,13 @@ except ImportError:
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PACKAGE_ROOT not in sys.path:
+    sys.path.insert(0, PACKAGE_ROOT)
+from bank_statement_bi_analysis.chart_renderers import render_excel_charts
+from bank_statement_bi_analysis.chart_spec import build_chart_bundle
 from build_bi_report_v3 import (pick_input, load, prep, spec_augment, daily_balance, nature,
                                 norm_cp, analyze, THRESHOLDS, FIN_KW, JUD_KW, SPEC_KW,
                                 PENDING, NEW_LOAN)
@@ -365,7 +369,10 @@ def analyze_v4(df, A, vchk):
     return V
 
 # ---------------------------------------------------------------- 写报告（见知样式系统）
-def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
+def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None, chart_bundle=None):
+    chart_bundle = chart_bundle or build_chart_bundle(
+        A, V, df, strategy_version=STRATEGY_VERSION
+    )
     wb = Workbook(); wb.remove(wb.active)
     def F(**kw):
         kw.setdefault("size", 11); kw.setdefault("name", "微软雅黑"); return Font(**kw)
@@ -989,7 +996,7 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     put(ws, r, 2, "新增授信月供(元)", bold=True)
     put(ws, r, 3, f'=ROUND(-PMT({IN["新增授信年利率"]}/12,{IN["新增授信期数(月)"]},{IN["拟新增授信本金(元)"]}),0)', fmt=MF0, fillc=WARN)
     NEWPMT = f"$C${r}"; r += 2
-    hdr_row(ws, r, ["月份", "存量债务服务", "总债务服务(含新增)", "基线:期末现金", "收入-20%:期末现金", "收入-30%:期末现金", "基线DSCR"])
+    hdr_row(ws, r, ["月份", "存量债务服务", "总债务服务(含新增)", "基线", "压力情景1（收入-20%、支出-10%）", "压力情景2（收入-30%、支出-15%）", "基线DSCR"])
     T0 = r + 1
     for i, m in enumerate(fwd):
         rr = T0 + i; put(ws, rr, 1, i + 1); put(ws, rr, 2, m)
@@ -1084,47 +1091,31 @@ def build_workbook(A, V, df, client, out_path, whitelist, spec_list=None):
     r = table(ws, r, ["类型", "日期", "对手", "收入", "支出", "说明"], sus or [["无", "", "", 0, 0, ""]],
               fmts=[None, None, None, MF, MF, None], spans={2: 2, 5: 3})
 
-    # ============ Sheet4 可视化看板（9 图）============
+    # ============ Sheet4 可视化看板（与 ECharts 共用 ChartBundle）============
     ws = S4
     put(ws, 1, 2, "可视化看板（自上而下下拉查看）", font=TITLE_F)
-    def add(ch, anchor, t, h=9, w=22):
-        ch.title = t; ch.height = h; ch.width = w; ws.add_chart(ch, anchor)
-    c1 = BarChart(); c1.type = "col"
-    c1.add_data(Reference(S3, min_col=3, max_col=4, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c1.set_categories(Reference(S3, min_col=2, min_row=TS_H + 1, max_row=TS_N))
-    l1 = LineChart(); l1.add_data(Reference(S3, min_col=5, max_col=5, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c1.y_axis.majorGridlines = None; c1 += l1
-    add(c1, "B2", "月度流入/流出与净流入")
-    c2 = LineChart(); c2.add_data(Reference(S3, min_col=7, max_col=9, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c2.set_categories(Reference(S3, min_col=2, min_row=TS_H + 1, max_row=TS_N)); add(c2, "B22", "余额波动（月末/月均/月最低）")
-    c3 = LineChart(); c3.add_data(Reference(S3, min_col=10, max_col=12, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c3.set_categories(Reference(S3, min_col=2, min_row=TS_H + 1, max_row=TS_N)); add(c3, "B42", "经营 vs 融资 vs 往来款 月度流入")
-    c9 = BarChart(); c9.type = "col"
-    c9.add_data(Reference(S3, min_col=14, max_col=15, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c9.set_categories(Reference(S3, min_col=2, min_row=TS_H + 1, max_row=TS_N))
-    l9 = LineChart(); l9.add_data(Reference(S3, min_col=16, max_col=16, min_row=TS_H, max_row=TS_N), titles_from_data=True)
-    c9.y_axis.majorGridlines = None; c9 += l9
-    add(c9, "B62", "借贷趋势（借贷流入/偿还借贷/净额）")
-    inc = ext[ext["收入金额"] > 0].groupby("二级标签")["收入金额"].sum().sort_values(ascending=False)
-    exp = ext[ext["支出金额"] > 0].groupby("二级标签")["支出金额"].sum().sort_values(ascending=False)
-    for i, (k, v) in enumerate(inc.head(8).items()): ws.cell(1 + i, 50, k); ws.cell(1 + i, 51, float(v))
-    c4 = PieChart(); c4.add_data(Reference(ws, min_col=51, min_row=1, max_row=max(1, min(8, len(inc)))))
-    c4.set_categories(Reference(ws, min_col=50, min_row=1, max_row=max(1, min(8, len(inc))))); add(c4, "B82", "收入用途结构(对外)", h=9, w=13)
-    for i, (k, v) in enumerate(exp.head(8).items()): ws.cell(11 + i, 50, k); ws.cell(11 + i, 51, float(v))
-    c5 = PieChart(); c5.add_data(Reference(ws, min_col=51, min_row=11, max_row=max(11, 10 + min(8, len(exp)))))
-    c5.set_categories(Reference(ws, min_col=50, min_row=11, max_row=max(11, 10 + min(8, len(exp))))); add(c5, "L82", "支出用途结构(对外)", h=9, w=13)
-    ti2 = cp.sort_values("流入", ascending=False).head(10); to2 = cp.sort_values("流出", ascending=False).head(10)
-    for i, (_, x) in enumerate(ti2.iterrows()): ws.cell(25 + i, 50, x["对手"]); ws.cell(25 + i, 51, float(x["流入"]))
-    c6 = BarChart(); c6.type = "bar"; c6.add_data(Reference(ws, min_col=51, min_row=25, max_row=24 + len(ti2)))
-    c6.set_categories(Reference(ws, min_col=50, min_row=25, max_row=24 + len(ti2))); c6.legend = None
-    add(c6, "B102", "十大流入对手（外部上游/客户）")
-    for i, (_, x) in enumerate(to2.iterrows()): ws.cell(40 + i, 50, x["对手"]); ws.cell(40 + i, 51, float(x["流出"]))
-    c7 = BarChart(); c7.type = "bar"; c7.add_data(Reference(ws, min_col=51, min_row=40, max_row=39 + len(to2)))
-    c7.set_categories(Reference(ws, min_col=50, min_row=40, max_row=39 + len(to2))); c7.legend = None
-    add(c7, "B122", "十大流出对手（外部下游/供应商）")
-    c8 = LineChart(); c8.add_data(Reference(S2, min_col=5, max_col=7, min_row=DYN_T0 - 1, max_row=DYN_TN), titles_from_data=True)
-    c8.set_categories(Reference(S2, min_col=2, min_row=DYN_T0, max_row=DYN_TN))
-    add(c8, "B142", "未来12个月期末现金推演（三情景）")
+    render_excel_charts(ws, chart_bundle, live_references={
+        "monthly_cash_flow": {
+            "worksheet": S3, "header_row": TS_H, "first_row": TS_H + 1,
+            "last_row": TS_N, "category_col": 2, "series_cols": (3, 4, 5),
+        },
+        "monthly_balance": {
+            "worksheet": S3, "header_row": TS_H, "first_row": TS_H + 1,
+            "last_row": TS_N, "category_col": 2, "series_cols": (7, 8, 9),
+        },
+        "monthly_inflow_composition": {
+            "worksheet": S3, "header_row": TS_H, "first_row": TS_H + 1,
+            "last_row": TS_N, "category_col": 2, "series_cols": (10, 11, 12),
+        },
+        "monthly_loan_trend": {
+            "worksheet": S3, "header_row": TS_H, "first_row": TS_H + 1,
+            "last_row": TS_N, "category_col": 2, "series_cols": (14, 15, 16),
+        },
+        "future_cash_projection": {
+            "worksheet": S2, "header_row": DYN_T0 - 1, "first_row": DYN_T0,
+            "last_row": DYN_TN, "category_col": 2, "series_cols": (5, 6, 7),
+        },
+    })
 
     # ============ Sheet5 风险指标 ============
     ws = S5

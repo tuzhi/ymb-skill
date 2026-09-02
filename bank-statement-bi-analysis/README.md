@@ -36,6 +36,14 @@ result = service.execute_analysis(BiAnalysisRequest(
 `bi_output/`；BI 只读取当前 Workspace `runs/` 中的标准化产物，
 并将报告固定写入 `bi_output/`。
 
+BI 先生成与渲染技术无关的统一 `ChartBundle`，Excel 原生图表和 ECharts 5 JSON
+均由该模型渲染，不分别重复计算业务数据。成功结果中的 `chart_data` 每个元素包含稳定的
+`chart_id`、`title` 和可直接传给 ECharts 的 `option`。正常且具备月度分析数据时，
+返回与 Excel 看板对应的九张图；缺少某类数据时在 `omitted_charts` 中返回原因。
+金额统一保留两位小数，所有输出必须通过 `allow_nan=False` 的严格 JSON 序列化。
+`chart_data` 可能包含对手名称和金额，上层 INFO 日志只应记录图表数量、`chart_id`
+和序列化字节数，不应打印完整图表数据。
+
 输入可为标准化交付物 `.xlsx`（含「整合打标流水」等工作表）、`*__打标流水.csv`、`*__整合流水.csv`，
 或包含它们的文件夹。V3/V1 脚本（`build_bi_report_v3.py` / `build_bi_report.py`）保留为兼容入口。
 
